@@ -61,10 +61,10 @@ Every row names the code that handles the case and the evidence that it works.
 | 23 | Legacy 6-digit code (`900288`) | Recognised and not sent to NIPOST (no API). The rest of the text is geocoded. A code alone → `needs_detail`. | U |
 | 24 | Phone numbers mistaken for postcodes | Runs of 7+ digits are not treated as legacy codes. | U |
 | 25 | Lagos address ("Ikeja City Mall") | In coverage, labelled `state: "Lagos"`; Lagos → Lagos quotes and books | E (Lagos quote, booking, cancel) |
-| ST1 | Lagos → Abuja (or Abuja → Lagos) | `quote_delivery` → `INTERSTATE_NOT_SUPPORTED`; the agent offers a human | E |
+| ST1 | Lagos → Abuja (or Abuja → Lagos) | `quote_delivery` → `INTERSTATE_NOT_SUPPORTED`; the agent offers a human | E; simulator: declined before quoting, human offered |
 | ST2 | An Abuja place named during a Lagos booking | `what_to_do` carries an interstate note before quoting | E |
 | ST3 | Border suburbs in other states (Mararaba, Karu: Nasarawa; Suleja: Niger; Ota, Arepo, Agbara: Ogun) | `out_of_area`, named | U (22 towns vs OSM's own state); E (Ota, Suleja) |
-| ST4 | Same name in both cities ("Shoprite") | Without a hint: candidates from both, labelled by state; with `state` the other city's are dropped | U `preferState`; live MCP run |
+| ST4 | Same name in both cities ("Shoprite") | Skill: ask "Is this in Abuja or Lagos?"; with `state` the other city's matches are dropped | U `preferState`; live MCP run; simulator asked exactly that |
 | ST5 | Every match is outside both states ("Ota, Ogun State" → two Ogun places) | One `out_of_area`, not a "which one?" question | Live MCP run |
 | ST6 | Duplicate labels ("Badagry, Lagos State" twice) | Merged | Live MCP run |
 | ST7 | Just "Lagos" / "Eko" | `needs_detail` | E |
