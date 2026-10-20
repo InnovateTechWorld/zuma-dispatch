@@ -64,7 +64,7 @@ const JOB_SQL = `SELECT j.id, j.status, j.created_at, j.updated_at, j.paid_at, j
 export function toRow(j: JoinedJob, origin: string): string[] {
   const phone = normalizeNigerianPhone(j.recipient_phone);
   return [
-    j.id, j.status.replace('_', ' '), wat(j.created_at), j.sender_name, j.recipient_name, phone.ok ? phone.masked : '(on file)',
+    j.id, j.status.replaceAll('_', ' '), wat(j.created_at), j.sender_name, j.recipient_name, phone.ok ? phone.masked : '(on file)',
     j.pickup ?? '', j.dropoff ?? '', j.package_size ?? '', j.distance_m !== null ? (j.distance_m / 1000).toFixed(1) : '',
     formatNaira(j.amount_kobo), j.method === 'bank_transfer' ? 'Bank transfer' : j.method === 'link' ? 'Payment link' : '',
     j.paid_via ? (PAID_VIA[j.paid_via] ?? j.paid_via) : '', wat(j.paid_at), wat(j.updated_at), `${origin}/board/jobs/${j.id}`,

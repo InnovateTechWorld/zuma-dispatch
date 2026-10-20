@@ -176,7 +176,7 @@ export async function board(request: Request, url: URL, env: Env, config: Config
         .map(([key, a]) => `<form method="post" action="/board/jobs/${h(j.id)}"><input type="hidden" name="action" value="${key}"><input type="hidden" name="version" value="${j.version}"><button>${a.label}</button></form>`)
         .join(' ');
       return `<tr><td><a href="/board/jobs/${h(j.id)}"><code>${h(j.id)}</code></a><div class="muted">${time(j.created_at)}</div></td>
-<td><span class="pill s-${h(j.status)}">${h(j.status.replace('_', ' '))}</span>${j.paid_via ? `<div class="muted">paid via ${h(PAID_VIA[j.paid_via] ?? j.paid_via)}</div>` : ''}</td>
+<td><span class="pill s-${h(j.status)}">${h(j.status.replaceAll('_', ' '))}</span>${j.paid_via ? `<div class="muted">paid via ${h(PAID_VIA[j.paid_via] ?? j.paid_via)}</div>` : ''}</td>
 <td>${h(j.pickup_label ?? '?')}<div class="muted">→ ${h(j.dropoff_label ?? '?')}</div></td>
 <td>${h(j.package_size ?? '')}${j.approximate ? ' <span class="muted">(est. distance)</span>' : ''}</td>
 <td><b>${formatNaira(j.amount_kobo)}</b></td>
@@ -227,7 +227,7 @@ ${sheetState ? ` Last sync ${time(sheetState.updated_at)}: ${sheetState.ok ? 'ok
 ${flash ? `<div class="card">${h(flash)}</div>` : ''}${escalationHtml}${reviewHtml}
 <div class="card"><form method="get" action="/board" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
 <input name="q" value="${h(search)}" placeholder="Job id, phone, name or address" style="flex:1;min-width:220px;font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)">
-<select name="status" style="font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)"><option value="">All statuses</option>${STATUSES.map((st) => `<option value="${st}"${st === statusFilter ? ' selected' : ''}>${st.replace('_', ' ')} (${counts.results.find((c) => c.status === st)?.n ?? 0})</option>`).join('')}</select>
+<select name="status" style="font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)"><option value="">All statuses</option>${STATUSES.map((st) => `<option value="${st}"${st === statusFilter ? ' selected' : ''}>${st.replaceAll('_', ' ')} (${counts.results.find((c) => c.status === st)?.n ?? 0})</option>`).join('')}</select>
 <button>Filter</button>${search || statusFilter ? ' <a href="/board">Clear</a>' : ''}</form>
 <p class="muted">${jobs.results.length} job(s)${jobs.results.length === 100 ? ' (latest 100; narrow the search to see older ones)' : ''}. Click a job id for everything about it.</p>
 <table><tr><th>Job</th><th>Status</th><th>Route</th><th>Size</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th></tr>${rows || `<tr><td colspan="7" class="muted">${search || statusFilter ? 'No jobs match this filter.' : 'No jobs yet.'}</td></tr>`}</table></div>
@@ -329,7 +329,7 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config): Promis
       } catch {
         detail = e.detail_json ?? '';
       }
-      return `<tr><td>${time(e.created_at)}</td><td>${h(e.type.replace('_', ' '))}</td><td>${e.from_status || e.to_status ? `${h(e.from_status ?? '')} → ${h(e.to_status ?? '')}` : ''}</td><td>${h(e.actor)}</td><td class="muted">${h(detail)}</td></tr>`;
+      return `<tr><td>${time(e.created_at)}</td><td>${h(e.type.replaceAll('_', ' '))}</td><td>${e.from_status || e.to_status ? `${h(e.from_status ?? '')} → ${h(e.to_status ?? '')}` : ''}</td><td>${h(e.actor)}</td><td class="muted">${h(detail)}</td></tr>`;
     })
     .join('');
   const noticeRows = notices.results
@@ -339,7 +339,7 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config): Promis
   return page(
     `${job.id} · ${config.businessName}`,
     `<p><a href="/board">← All jobs</a></p>
-<h1>${h(job.id)} <span class="pill s-${h(job.status)}">${h(job.status.replace('_', ' '))}</span></h1>
+<h1>${h(job.id)} <span class="pill s-${h(job.status)}">${h(job.status.replaceAll('_', ' '))}</span></h1>
 <p class="muted">Booked ${time(job.created_at)} · last change ${time(job.updated_at)}${job.paid_at ? ` · paid ${time(job.paid_at)}` : ''}${job.cancel_reason ? ` · cancelled: "${h(job.cancel_reason)}"` : ''}</p>
 ${flash ? `<div class="card">${h(flash)}</div>` : ''}
 <div class="card"><table>
