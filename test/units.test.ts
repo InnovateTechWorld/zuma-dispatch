@@ -210,3 +210,33 @@ describe('board search', async () => {
     expect(searchFilter('%_%')?.binds[0]).toBe('%%');
   });
 });
+
+describe('NIPOST postcode areas', async () => {
+  const { FCT_AREA_COUNCILS, findPostcode, namesLga } = await import('../src/geocode/postcode');
+  const { withinKm, POSTCODE_AREA_KM } = await import('../src/tools/resolveAddress');
+  const { SERVICE_AREA } = await import('../src/business/profile');
+  const { haversineMeters } = await import('../src/lib/geo');
+  const kmFromCentre = (p: { lat: number; lng: number }) => haversineMeters(p, SERVICE_AREA.centre) / 1000;
+
+  it('knows all six FCT area councils, and where NIPOST\'s sandbox codes are', () => {
+    expect(Object.keys(FCT_AREA_COUNCILS).sort()).toEqual(['01', '02', '03', '04', '05', '06']);
+    const sandbox = findPostcode('FC-01-A01-KP-27');
+    expect(sandbox).toMatchObject({ kind: 'nipost', state: 'FC', lga: '01' });
+    expect(FCT_AREA_COUNCILS['01']!.name).toBe('Abaji');
+    expect(kmFromCentre(FCT_AREA_COUNCILS['01']!)).toBeGreaterThan(SERVICE_AREA.radiusKm); // the sandbox is outside the metro area
+    expect(kmFromCentre(FCT_AREA_COUNCILS['02']!)).toBeLessThan(1); // Abuja Municipal holds the city centre
+  });
+
+  it('accepts a geocoder answer as an LGA only if it names that LGA (Photon returned the FCT Administration for Abaji)', () => {
+    expect(namesLga('Abaji, FC', 'Abaji')).toBe(true);
+    expect(namesLga('Federal Capital Territory Administration, Ahmadu Bello Way, Garki II', 'Abaji')).toBe(false);
+    expect(namesLga('Agege, Lagos', 'Agege')).toBe(true);
+  });
+
+  it('keeps only landmark matches near the postcode area', () => {
+    const abaji = FCT_AREA_COUNCILS['01']!;
+    const wuseHospital = { lat: 9.0627, lng: 7.4687 };
+    const nearAbaji = { lat: 8.48, lng: 6.95 };
+    expect(withinKm([wuseHospital, nearAbaji], abaji, POSTCODE_AREA_KM)).toEqual([nearAbaji]);
+  });
+});

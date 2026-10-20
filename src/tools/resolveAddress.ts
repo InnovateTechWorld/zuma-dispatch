@@ -1,7 +1,8 @@
 import { SERVICE_AREA } from '../business/profile';
 import { insertPlaceStmt, type PlaceRow } from '../db/repo';
 import { geocode, type Confidence } from '../geocode/chain';
-import { findPostcode, lgaQuery, nipostLgaName, nipostValidity, STATES, type NipostStatus } from '../geocode/postcode';
+import type { LatLng } from '../lib/geo';
+import { FCT_AREA_COUNCILS, findPostcode, lgaQuery, namesLga, nipostLgaName, nipostValidity, STATES, type NipostStatus } from '../geocode/postcode';
 import type { Candidate } from '../geocode/providers';
 import { haversineMeters } from '../lib/geo';
 import { newPlaceId } from '../lib/ids';
@@ -30,7 +31,9 @@ const STABLE_RESULT_MS = 6 * 60 * 60_000;
 export async function resolveAddress(args: ResolveArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
   const text = cleanText(args.text, 300);
   const now = ctx.now();
-  const stableKey = `resolve:${normalizeQuery(text)}`;
+  // v2: postcode areas from the fixed FCT table and landmark matches limited to the postcode's area;
+  // answers cached under the old logic are not reused.
+  const stableKey = `resolve:v2:${normalizeQuery(text)}`;
   try {
     const prior = await ctx.db
       .prepare('SELECT result_json, created_at FROM geocode_cache WHERE cache_key = ?')
@@ -65,6 +68,7 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
   let postcode: { code: string; nipost_status: NipostStatus | 'legacy_unverifiable'; area: string | null } | null = null;
   let query = text;
   let postcodeOnly = false;
+  let areaPoint: Candidate | null = null;
   if (pc?.kind === 'nipost') {
     const [validity, lgaName] = await Promise.all([
       nipostValidity(pc.code, ctx.config, ctx.trace),
@@ -81,6 +85,7 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
       };
     }
     postcodeOnly = pc.rest.length < 3;
+    areaPoint = await postcodeArea(pc.state, pc.lga, lgaName, ctx, now);
     const areaQuery = lgaName ? lgaQuery(pc.state, lgaName) : STATES[pc.state]!;
     query = postcodeOnly ? areaQuery : `${pc.rest}, ${lgaName ?? STATES[pc.state]}`;
   } else if (pc?.kind === 'legacy') {
@@ -89,12 +94,19 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
     query = pc.rest;
   }
 
-  // 2. Geocoder chain (fallback or crosscheck).
-  let outcome = await geocode(query, ctx.config, ctx.db, now, ctx.trace, ctx.waitUntil);
-  // A postcode with a landmark that the map doesn't know: fall back to the postcode's LGA.
+  // 2. Geocoder chain (fallback or crosscheck). A postcode on its own is answered from its area point.
+  const areaOutcome = (p: Candidate) => ({ candidates: [p], confidence: 'medium' as Confidence, ambiguous: false, allFailed: false });
+  let outcome = postcodeOnly && areaPoint ? areaOutcome(areaPoint) : await geocode(query, ctx.config, ctx.db, now, ctx.trace, ctx.waitUntil);
+  // A postcode says which LGA the place is in. Map results far from that LGA are other places with the
+  // same name ("Abaji General Hospital" came back as Wuse's and a Bauchi hospital): drop them.
+  if (areaPoint && !postcodeOnly && outcome.candidates.length > 0) {
+    const kept = withinKm(outcome.candidates, areaPoint, POSTCODE_AREA_KM);
+    outcome = { ...outcome, candidates: kept, ambiguous: outcome.ambiguous && kept.length > 1 };
+  }
+  // A postcode with a landmark that the map doesn't know (in that area): fall back to the postcode's area.
   if (outcome.candidates.length === 0 && pc?.kind === 'nipost' && !postcodeOnly && postcode?.area) {
     postcodeOnly = true;
-    outcome = await geocode(lgaQuery(pc.state, postcode.area.split(',')[0]!), ctx.config, ctx.db, now, ctx.trace, ctx.waitUntil);
+    outcome = areaPoint ? areaOutcome(areaPoint) : await geocode(lgaQuery(pc.state, postcode.area.split(',')[0]!), ctx.config, ctx.db, now, ctx.trace, ctx.waitUntil);
   }
 
   if (outcome.candidates.length === 0) {
@@ -217,4 +229,24 @@ function needsDetail(
     what_to_do: `${why} Ask the customer for the street, estate or a nearby landmark${role === 'pickup' ? ' where the rider should collect the package' : ' where the package should be delivered'}, then call resolve_address again with the fuller address. Do not quote yet.`,
     received: text,
   };
+}
+
+/** How far from the postcode's LGA centre a match may be. FCT's largest area councils are ~50 km across. */
+export const POSTCODE_AREA_KM = 35;
+
+/** Keeps candidates within `km` of a point. Pure, exported for tests. */
+export function withinKm<T extends LatLng>(candidates: T[], centre: LatLng, km: number): T[] {
+  return candidates.filter((c) => haversineMeters(c, centre) <= km * 1000);
+}
+
+/**
+ * Where a NIPOST postcode's LGA is. FCT: the fixed area-council table. Elsewhere: the geocoder, but only
+ * a result whose label names the LGA (otherwise null, and the caller geocodes the text as before).
+ */
+async function postcodeArea(state: string, lga: string, lgaName: string | null, ctx: ToolContext, now: number): Promise<Candidate | null> {
+  const fct = state === 'FC' ? FCT_AREA_COUNCILS[lga] : undefined;
+  if (fct) return { label: `${fct.name}, ${STATES.FC}`, lat: fct.lat, lng: fct.lng, precision: 'lga', provider: 'nipost' };
+  if (!lgaName) return null;
+  const r = await geocode(lgaQuery(state, lgaName), ctx.config, ctx.db, now, ctx.trace, ctx.waitUntil);
+  return r.candidates.find((c) => namesLga(c.label, lgaName)) ?? null;
 }

@@ -33,7 +33,7 @@ real Paystack test mode, and the real Chord teammate in the TSG simulator.
 | Approve reviewed payment | Local, against D1 | `paid_at` and `via: dispatcher` recorded |
 | Google Sheet mirror | Production | Append, update in place, formula text kept as text, phones masked, resync |
 | Paystack webhook | Production | Real `charge.success` events from Paystack IPs |
-| Raw NIPOST postcodes | `resolve_address` over MCP, real NIPOST API (2026-10-20 18:10) | `FC-02-A09-DB-09` and `fc02a09db09` → Abuja Municipal, ask for a landmark; `FC 02 A09 DB 09, Wuse Market` → Wuse Market (exact); `LA-01-B12-CD-03` → Agege, Lagos → out of area; `900211` → old code, ask for a landmark. NIPOST's validity check answers `not_found` for every code with our test key (empty sandbox, FIELD_NOTES #1), reported but never blocking |
+| Raw NIPOST postcodes | `resolve_address` over MCP with the real NIPOST API, after the fix (2026-10-20 18:30) | `FC-02-A09-DB-09` → Abuja Municipal, ask for a landmark. `+ Wuse Market` → exact. `FC-03-…` → Bwari (27.9 km), ask for a landmark. Sandbox `FC-01-A01-KP-27` → Abaji (88.8 km), out of area. `LA-01-…` → Agege, Lagos, out of area. `900211` → old code, ask for a landmark. NIPOST's validity check answers `not_found` for every code with our test key, including its own sandbox codes |
 
 ## Not tested, and why
 

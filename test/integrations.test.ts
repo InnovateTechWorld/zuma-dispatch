@@ -91,7 +91,7 @@ describe('Paystack client failure handling', () => {
 // ------------------------------------------------------------------ geocoder chain timing
 describe('geocoder cross-check timing', () => {
   const at = (lat: number, lng: number, provider: Candidate['provider']): Candidate => ({ label: provider, lat, lng, precision: 'exact', provider });
-  const ok = (name: Candidate['provider'], candidates: Candidate[], delayMs = 0) =>
+  const ok = (name: Exclude<Candidate['provider'], 'nipost'>, candidates: Candidate[], delayMs = 0) =>
     vi.spyOn(GEOCODERS[name], 'search').mockImplementation(
       () => new Promise((r) => setTimeout(() => r({ provider: name, outcome: 'ok', candidates, trace: `${name}:ok` }), delayMs)),
     );

@@ -46,6 +46,12 @@ Every row names the code that handles the case and the evidence that it works.
 
 | # | Case | Handling | Evidence |
 |---|---|---|---|
+| A1 | Raw NIPOST postcode, any format (`FC-02-A09-DB-09`, `fc02a09db09`, `FC 02 A09 DB 09`) | Parsed, then LGA from NIPOST, area from the fixed FCT table, `needs_detail` | U `findPostcode`; live MCP run (TESTING.md) |
+| A2 | NIPOST's sandbox codes (`FC-01-A01-KP-27` …) | NIPOST answers `not_found`. They are in Abaji, ~89 km out, so `out_of_area` with the place named and a human offered | U; live MCP run; NIPOST re-checked 2026-10-20 18:20 |
+| A3 | Geocoder places an LGA in the wrong spot (Photon: "Abaji" → FCT Administration, Garki) | FCT uses the fixed area-council table; elsewhere a result must name the LGA | U `namesLga`; live: Abaji now 88.8 km every time |
+| A4 | Postcode + landmark matching places elsewhere ("Abaji General Hospital" → Wuse, Bauchi) | Matches more than 35 km from the postcode's area are dropped; if none remain, the postcode's area is used | U `withinKm`; live MCP run |
+| A5 | Postcode in another state (`LA-01-…`) | Area named (Agege, Lagos), `out_of_area` | Live MCP run |
+| A6 | Cached answers computed by older logic | Stable-answer cache key versioned (`resolve:v2:`) | Code |
 | 17 | Landmark addresses ("Jabi Lake Mall") | Geocoder chain: Nominatim + Photon cross-check by default, Google if a key is set, ORS last. | E |
 | 18 | Same name, different places ("Shoprite") | Providers disagreeing by more than 400 m, or one provider returning places more than 3 km apart → `ambiguous` with up to 3 candidates for the customer to pick. | U "Shoprite Lugbe case", E (production returned Jabi, Wuse II, Wuse branches) |
 | 19 | Too vague ("Abuja", "my house") | `needs_detail` without calling any provider. | E "just 'Abuja'" |

@@ -476,3 +476,39 @@ calls carry no conversation id.
 - Operator messages without the "connecting you with a teammate" system message, or a way to post a
   business message without a take-over.
 - Let the simulator show messages pushed into the conversation.
+
+## 15. NIPOST's sandbox codes: documented to resolve, don't, and point outside the city
+
+**The question (from the user).** "Can it recognise a raw postcode using the NIPOST API? Can't you use the
+test locations in the sandbox?"
+
+**What NIPOST's docs promise** (`docs.postcode.gov.ng/authentication.md`, "Test mode"):
+- Five sandbox postcodes "always resolve under a test key": `FC-01-A01-KP-27`, `-LR-01`, `-MH-01`,
+  `-MV-01`, `-MW-01`. Each is described only as "Public building (FCT)".
+- "Test calls never consume credits, at any lookup level."
+
+**What actually happens** (re-checked 2026-10-20 18:20 with our test key):
+- `GET /v1/lookup?code=FC-01-A01-KP-27&level=1` → `{"valid":false,"status":"not_found"}`, the same for all
+  five.
+- `level=5` → `403 level_not_granted` ("this key is granted up to lookup level 1"). "Any lookup level" is
+  about billing, not access.
+- Autocomplete for `FC01A01` returns `suggestions: []`. There is no way to discover more sandbox places.
+- My first re-test used `?postcode=` instead of `?code=`. NIPOST answered `200` with `status: "invalid"` and an
+  empty postcode, rather than a 400 for the unknown parameter. That is easy to misread as "invalid code".
+
+**What we found on our side.**
+- All five sandbox codes are in LGA `01`, which is **Abaji**, ~89 km from Abuja's centre. Our 40 km
+  service area therefore answered "out of area". That is correct for a same-day city courier, but a
+  reviewer trying NIPOST's own examples hits a dead end.
+- **A real bug.** For "Abaji Area Council, Federal Capital Territory", Photon returns the *FCT
+  Administration* building in Garki, 1.4 km from the centre. Whichever geocoder answered first decided
+  whether an Abaji postcode was 1.4 km or 89 km away.
+- *Fixed:* a fixed table of the six FCT area councils, and outside FCT a geocoder result must name the LGA.
+- **A second bug.** "FC-01-A01-KP-27, Abaji General Hospital" offered Wuse General Hospital and one in Bauchi
+  State. *Fixed:* when a postcode is given, matches more than 35 km from its area are dropped.
+
+**What would help (NIPOST).**
+- Make the documented sandbox codes resolve, with a name and coordinates, at L1 for test keys.
+- Reject unknown query parameters with a 400.
+- Put at least one sandbox code in each of the six FCT area councils, so a city-centre integration can be
+  tested end to end.

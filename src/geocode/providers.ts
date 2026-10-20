@@ -11,7 +11,8 @@ export interface Candidate {
   lat: number;
   lng: number;
   precision: Precision;
-  provider: GeocoderName;
+  /** 'nipost' = the fixed FCT area-council table used for a postcode's area (src/geocode/postcode.ts). */
+  provider: GeocoderName | 'nipost';
 }
 
 export interface ProviderResult {

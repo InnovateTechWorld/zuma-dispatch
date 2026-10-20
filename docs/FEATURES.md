@@ -14,10 +14,18 @@ so the model can never invent a location.
 
 **How it works.**
 1. **Too vague?** "Abuja" or "my house" gets `needs_detail` without calling any provider.
-2. **NIPOST postcode?**
-   - The new 5-segment format gets a NIPOST L1 validity check and the LGA name from NIPOST's reference
-     data. A postcode alone means area-level only, so `needs_detail`: ask for a landmark.
-   - A legacy 6-digit code is recognised but cannot be verified.
+2. **NIPOST postcode?** (e.g. `FC-02-A09-DB-09`, any spacing or case; legacy 6-digit codes are recognised
+   but unverifiable).
+   - NIPOST gives an L1 validity check and the LGA name. A test key gets no coordinates, and the sandbox
+     answers `not_found` for every code (FIELD_NOTES #1, #15). The status is reported and never blocks.
+   - **The area's location:** FCT postcodes use a fixed table of the six area councils (Abaji, Abuja
+     Municipal, Bwari, Gwagwalada, Kuje, Kwali). Other states use the geocoder, but only a result that
+     names the LGA. Photon once returned the FCT Administration in Garki for "Abaji".
+   - **Postcode only:** an area-level place → `needs_detail` (ask for a landmark). Or `out_of_area`: NIPOST's
+     sandbox codes `FC-01-…` are in Abaji, ~89 km from the centre.
+   - **Postcode + words:** the words are geocoded, and matches more than 35 km from the postcode's area are
+     dropped ("Abaji General Hospital" used to offer Wuse's and one in Bauchi). If none is left, the
+     postcode's area is used.
 3. **Geocoder chain**, set by `GEOCODER_CHAIN` and `GEOCODER_MODE`:
    - `crosscheck` (default): the first two providers run in parallel.
      - **Agree** (within 400 m): `confirmed`, high confidence.

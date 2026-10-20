@@ -105,6 +105,27 @@ export async function nipostLgaName(
   return lgas.find((x) => x.code === lga)?.name ?? null;
 }
 
+/**
+ * Approximate centres of the six FCT area councils (NIPOST LGA codes 01–06). A postcode's area must
+ * not depend on which geocoder answers first: for "Abaji Area Council, Federal Capital Territory",
+ * Photon returns the FCT Administration building in Garki (1.4 km from the centre; Abaji is ~89 km away).
+ * NIPOST's sandbox codes (FC-01-…) are all in Abaji.
+ */
+export const FCT_AREA_COUNCILS: Record<string, { name: string; lat: number; lng: number }> = {
+  '01': { name: 'Abaji', lat: 8.4737, lng: 6.9445 },
+  '02': { name: 'Abuja Municipal', lat: 9.0579, lng: 7.4951 },
+  '03': { name: 'Bwari', lat: 9.2833, lng: 7.3833 },
+  '04': { name: 'Gwagwalada', lat: 8.9428, lng: 7.0833 },
+  '05': { name: 'Kuje', lat: 8.8794, lng: 7.2276 },
+  '06': { name: 'Kwali', lat: 8.8833, lng: 7.0167 },
+};
+
+/** A geocoder answer only counts as an LGA's location if its label names that LGA. */
+export function namesLga(label: string, lgaName: string): boolean {
+  const first = lgaName.toLowerCase().split(/[\s,]+/)[0] ?? '';
+  return first.length > 2 && label.toLowerCase().includes(first);
+}
+
 /** Text to geocode for an LGA, phrased the way OSM names it. */
 export function lgaQuery(state: string, lgaName: string): string {
   return state === 'FC' ? `${lgaName} Area Council, Federal Capital Territory` : `${lgaName}, ${STATES[state]} State`;
