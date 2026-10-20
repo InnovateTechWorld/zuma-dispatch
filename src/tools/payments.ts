@@ -256,7 +256,10 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
         payment_status: 'paid',
         handover_code: check.job.handover_code,
         pickup_timing: afterPaymentTiming(now),
-        what_to_do: `Payment confirmed. Tell the customer: job ${job.id} is paid, the handover code is ${check.job.handover_code} (the recipient gives it to the rider), and the pickup timing below.`,
+        // Ready-to-send text: in a live test the model once dropped the confirmation and the timing
+        // and replied only "keep the envelope ready" (FIELD_NOTES #13). A full sentence to pass on is harder to drop.
+        message_for_customer: `Payment received: ${formatNaira(job.amount_kobo)} for ${job.id}. ${afterPaymentTiming(now)} The recipient gives the rider code ${check.job.handover_code}.`,
+        what_to_do: 'Payment confirmed. Send message_for_customer (you may adjust the wording, but keep the payment confirmation, the pickup timing and the code), then answer anything else they asked.',
       };
     case 'in_progress':
       if (openTransfer) {
