@@ -489,7 +489,7 @@ async function boardAction(request: Request, url: URL, env: Env, execCtx: Execut
     // "Send again" on the job page: retries a skipped or failed chat notice, synchronously so the
     // dispatcher sees the result. A notice that was already queued is never sent twice.
     const r = await notifyPaymentReceived(env, id, { manual: true, origin: url.origin });
-    const text = r.state === 'sent' ? `${id}: "Payment received" delivered to the customer's chat.` : r.state === 'queued' ? `${id}: payment notice queued for the customer's chat.` : `${id}: notice not sent. Reason: ${NOTICE_REASONS[r.reason ?? ''] ?? r.reason ?? r.state}.`;
+    const text = r.state === 'sent' ? `${id}: Chord reports "Payment received" delivered to the customer's chat.` : r.state === 'queued' ? `${id}: payment notice queued for the customer's chat.` : `${id}: notice not sent. Reason: ${NOTICE_REASONS[r.reason ?? ''] ?? r.reason ?? r.state}.`;
     return backTo(url, env, `/board/jobs/${id}`, text, !(r.state === 'queued' || r.state === 'sent') || Boolean(r.reason));
   }
   const action = Object.hasOwn(ACTIONS, actionKey) ? ACTIONS[actionKey] : undefined;
@@ -708,7 +708,7 @@ function chatNoticeSection(
     : !n
       ? 'No notice sent. One goes out when Paystack\'s notification, the checkout return page or a dispatcher approval confirms the payment; when the customer asked in the chat, the agent confirmed it there itself.'
       : n.state === 'sent'
-        ? `Delivered to the customer's chat ${time(n.updated_at)} (conversation <code>${h(n.thread_id ?? '')}</code>).${n.reason ? ` <b>Warning:</b> ${h(reason)}.` : ''}`
+        ? `Chord reports it delivered to the customer's chat ${time(n.updated_at)} (conversation <code>${h(n.thread_id ?? '')}</code>).${n.reason ? ` <b>Warning:</b> ${h(reason)}.` : ''}`
         : n.state === 'queued'
         ? `Queued in Chord ${time(n.updated_at)} (conversation <code>${h(n.thread_id ?? '')}</code>, task <code>${h(n.task_id ?? '')}</code>).${n.reason ? ` Note: ${h(reason)}.` : ''}`
         : n.state === 'pending'
