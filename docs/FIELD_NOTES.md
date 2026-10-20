@@ -445,6 +445,34 @@ calls carry no conversation id.
 - Live check: ZD-2RWZ9 picked its booking chat, found it handed to a human, and sent nothing
   (`human_handling`).
 
+**Live run (ZD-H01G4, 17:47 WAT).**
+- The owner paid. The webhook marked it paid at 17:47:06, and the notice picked the right conversation and
+  was queued at 17:47:08. Chord's task was `COMPLETED` at 17:47:32, and the turn appeared in the
+  conversation.
+- **But the simulator never showed it.** `DIRECT_LINE` writes into Chord's record. It does not go out
+  through the external-chat bridge the simulator uses.
+- Chord's docs say an operator message "dispatches it back down the channel the conversation is happening
+  on". So we tried take over → message → hand back. The message was `delivery_status: sent`, the chat was
+  back to `agent_active`, and the escalation webhook carried our marker (hidden on the board).
+- Two surprises:
+  1. The take-over made Chord itself send the customer "One moment — connecting you with a teammate."
+  2. The simulator page still did not display it. It shows replies to the customer's own messages, plus
+     operator replies only while it is waiting for one.
+- The customer's next message ("ok so what happens now?") got "Your payment is confirmed and the booking
+  is with the dispatcher". So the agent saw the notice and behaved per skill v5. It also re-checked with
+  `verify_payment`.
+
+**Decision.**
+- The default (`auto`) uses a scheduled MESSAGE through the chat's own connector (WhatsApp / Telegram /
+  Slack): no take-over, so no "connecting you" message.
+- On other surfaces it writes into the record and says `record_only` on the board.
+- The take-over route stays opt-in (`operator`), with its side effects documented.
+- **Not verified:** the WhatsApp connector route. This workspace has no WhatsApp number connected, only the
+  simulator. Go-live check: connect the number and pay one test job.
+
 **What would help (Chord).**
 - A `thread:read` toggle in the key form.
 - Better: pass the conversation id to MCP tools (`params._meta`), so no search is needed.
+- Operator messages without the "connecting you with a teammate" system message, or a way to post a
+  business message without a take-over.
+- Let the simulator show messages pushed into the conversation.

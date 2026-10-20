@@ -30,7 +30,7 @@ export interface Env {
   CHORD_API_BASE?: string;
   CHORD_WORKSPACE_ID?: string;
   CHORD_TEAMMATE_ID?: string;
-  /** "direct_line" (default: write into the Chord thread by id) or "channel" (send via the WhatsApp connector). */
+  /** "auto" (default: scheduled MESSAGE via the chat's connector) or "operator" (take over → post → hand back; see notices.ts). */
   CHORD_NOTICE_ROUTE?: string;
   /** Leave unset. "1" lets a LOCAL dev server send chat notices (it would post into real conversations). */
   CHORD_NOTICES_ALLOW_LOCAL?: string;

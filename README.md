@@ -138,7 +138,9 @@ See [docs/FEATURES.md](docs/FEATURES.md) §5 and §9.
 
 **"Payment received" in the chat, without the customer writing (optional).**
 - After Paystack's webhook confirms a payment, the server finds the customer's Chord conversation (the
-  agent message that contains the job id) and queues a Chord `MESSAGE` into it.
+  agent message that contains the job id) and queues a Chord `MESSAGE` into it through the chat's
+  WhatsApp / Telegram / Slack connector. The simulator cannot display pushed messages: there it lands in
+  Chord's record, so the agent knows the job is paid.
 - Set `CHORD_API_KEY`. It needs `thread:read` and `teammate:update`, which the dashboard offers only under
   Full access.
 - Safety rules (privacy, human takeover, customer typing, 24-hour window, once per job) are in

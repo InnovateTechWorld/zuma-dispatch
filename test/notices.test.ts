@@ -52,10 +52,9 @@ describe('finding the conversation for a job', () => {
     expect(pickThread([m(thread({ last_turn_at: NOW - SERVICE_WINDOW_MS - 1 }))], NOW)).toMatchObject({ ok: false, reason: 'outside_24h_window' });
   });
 
-  it('routes through the Chord thread by default, or the channel connector when configured', () => {
-    expect(platformFor(thread(), 'direct_line')).toBe('DIRECT_LINE');
-    expect(platformFor(thread(), 'channel')).toBe('WHATSAPP');
-    expect(platformFor(thread({ channel_id: 'partner-chat' }), 'channel')).toBe('DIRECT_LINE');
+  it('scheduled route uses the channel connector where Chord has one', () => {
+    expect(platformFor(thread())).toBe('WHATSAPP');
+    expect(platformFor(thread({ channel_id: 'external_chat' }))).toBe('DIRECT_LINE');
   });
 
   it('a local dev server never posts into real chats unless explicitly allowed', async () => {
@@ -106,7 +105,10 @@ function fakeDb(opts: { job?: typeof JOB | null; claimed?: boolean } = {}) {
   } as unknown as D1Database & { writes: string[] };
 }
 
-function chordApi(handlers: { threads?: ThreadRow[]; turns?: Record<string, unknown[]>; task?: () => Response; list?: () => Response }) {
+function chordApi(handlers: {
+  threads?: ThreadRow[]; turns?: Record<string, unknown[]>; task?: () => Response; list?: () => Response;
+  takeOver?: () => Response; message?: () => Response; handBack?: () => Response;
+}) {
   const calls: { method: string; url: string; body?: Record<string, unknown> }[] = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input);
@@ -115,32 +117,71 @@ function chordApi(handlers: { threads?: ThreadRow[]; turns?: Record<string, unkn
     const m = /\/v1\/threads\/([0-9a-f]{24})\/turns/.exec(url);
     if (m) return Response.json({ turns: handlers.turns?.[m[1]!] ?? [] });
     if (url.endsWith('/v1/scheduled-tasks')) return handlers.task?.() ?? Response.json({ id: 'task_abc123' }, { status: 201 });
+    if (url.endsWith('/take-over')) return handlers.takeOver?.() ?? Response.json({ id: T1, control_state: 'human_active' });
+    if (url.endsWith('/messages')) return handlers.message?.() ?? Response.json({ id: 'turn_1', delivery_status: 'sent' }, { status: 201 });
+    if (url.endsWith('/hand-back')) return handlers.handBack?.() ?? Response.json({ id: T1, control_state: 'agent_active' });
     return new Response('not found', { status: 404 });
   });
   return calls;
 }
 
 const env = (db: D1Database): Env => ({ DB: db, CHORD_API_KEY: KEY, CHORD_WORKSPACE_ID: 'ws-1', CHORD_TEAMMATE_ID: 'tm-1', PROVIDER_TIMEOUT_MS: '4000' }) as Env;
+const opEnv = (db: D1Database): Env => ({ ...env(db), CHORD_NOTICE_ROUTE: 'operator' }) as Env;
 
 describe('notifyPaymentReceived', () => {
-  it('finds the conversation by the job id the agent sent and queues one MESSAGE into it', async () => {
+  it('default route: finds the booking conversation and queues one MESSAGE via its WhatsApp connector, no take-over', async () => {
     const db = fakeDb();
     const calls = chordApi({
       threads: [thread({ id: T2, channel_participant_id: '+2348099999999' }), thread()],
       // T2 (another customer) asked about the job later; T1 is where it was booked.
       turns: { [T1]: [agentSays('Booked, Tolu. Your job id is ZD-H01G4.')], [T2]: [agentSays('Your job ZD-H01G4 is paid.', NOW - 2 * 60_000)] },
     });
-    const r = await notifyPaymentReceived(env(db), 'ZD-H01G4', { now: NOW });
-    expect(r).toEqual({ state: 'queued', thread_id: T1, task_id: 'task_abc123' });
-    const task = calls.find((c) => c.method === 'POST')!;
-    expect(task.body).toMatchObject({
-      task_type: 'MESSAGE', workspace_id: 'ws-1', teammate_id: 'tm-1',
-      payload: { platform: 'DIRECT_LINE', conversation_id: T1, body: paymentReceivedMessage(JOB, NOW) },
-    });
+    expect(await notifyPaymentReceived(env(db), 'ZD-H01G4', { now: NOW })).toEqual({ state: 'queued', thread_id: T1, task_id: 'task_abc123' });
+    const task = calls.find((c) => c.url.endsWith('/v1/scheduled-tasks'))!;
+    expect(task.body).toMatchObject({ task_type: 'MESSAGE', workspace_id: 'ws-1', teammate_id: 'tm-1', payload: { platform: 'WHATSAPP', conversation_id: T1, body: paymentReceivedMessage(JOB, NOW) } });
     expect(Date.parse(String(task.body!.scheduled_at))).toBeGreaterThan(NOW); // Chord rejects past instants
+    expect(calls.some((c) => c.url.endsWith('/take-over'))).toBe(false);
     expect(calls[0]!.url).toContain('workspace_id=ws-1');
     expect(db.writes.some((w) => w.startsWith('UPDATE chat_notices'))).toBe(true);
     expect(db.writes.some((w) => w.startsWith('INSERT INTO job_events'))).toBe(true);
+  });
+
+  it('on a channel without a connector (simulator) it says the message is in the record only', async () => {
+    chordApi({ threads: [thread({ channel_id: 'external_chat' })], turns: { [T1]: [agentSays('job ZD-H01G4')] } });
+    expect(await notifyPaymentReceived(env(fakeDb()), 'ZD-H01G4', { now: NOW })).toMatchObject({ state: 'queued', reason: 'record_only' });
+  });
+
+  it('operator route (opt-in): take over, post, hand back', async () => {
+    const db = fakeDb();
+    const calls = chordApi({
+      threads: [thread({ id: T2, channel_participant_id: '+2348099999999' }), thread()],
+      // T2 (another customer) asked about the job later; T1 is where it was booked.
+      turns: { [T1]: [agentSays('Booked, Tolu. Your job id is ZD-H01G4.')], [T2]: [agentSays('Your job ZD-H01G4 is paid.', NOW - 2 * 60_000)] },
+    });
+    const r = await notifyPaymentReceived(opEnv(db), 'ZD-H01G4', { now: NOW });
+    expect(r).toEqual({ state: 'sent', thread_id: T1, task_id: 'turn_1' });
+    const posts = calls.filter((c) => c.method === 'POST').map((c) => c.url.replace(/.*\/v1\//, ''));
+    expect(posts).toEqual([`threads/${T1}/take-over`, `threads/${T1}/messages`, `threads/${T1}/hand-back`]);
+    expect(calls.find((c) => c.url.endsWith('/messages'))!.body).toEqual({ text: paymentReceivedMessage(JOB, NOW) });
+    expect(String(calls.find((c) => c.url.endsWith('/take-over'))!.body!.reason)).toMatch(/^zuma-dispatch automated notice/);
+  });
+
+  it('a person grabbed the chat a moment ago (take-over 409): nothing posted', async () => {
+    const calls = chordApi({ threads: [thread()], turns: { [T1]: [agentSays('job ZD-H01G4')] }, takeOver: () => Response.json({ error: { code: 'INVALID_STATE', message: 'already human_active' } }, { status: 409 }) });
+    expect(await notifyPaymentReceived(opEnv(fakeDb()), 'ZD-H01G4', { now: NOW })).toMatchObject({ state: 'skipped', reason: 'human_handling' });
+    expect(calls.some((c) => c.url.endsWith('/messages'))).toBe(false);
+  });
+
+  it('channel refused the message: failed, and the chat is still handed back', async () => {
+    const calls = chordApi({ threads: [thread()], turns: { [T1]: [agentSays('job ZD-H01G4')] }, message: () => Response.json({ id: 'turn_2', delivery_status: 'failed', delivery_error: 'outside 24h window' }, { status: 201 }) });
+    expect(await notifyPaymentReceived(opEnv(fakeDb()), 'ZD-H01G4', { now: NOW })).toMatchObject({ state: 'failed', reason: 'undelivered: outside 24h window' });
+    expect(calls.some((c) => c.url.endsWith('/hand-back'))).toBe(true);
+  });
+
+  it('hand-back keeps failing: retried 3 times, then flagged so a dispatcher hands it back', async () => {
+    const calls = chordApi({ threads: [thread()], turns: { [T1]: [agentSays('job ZD-H01G4')] }, handBack: () => new Response('{}', { status: 503 }) });
+    expect(await notifyPaymentReceived(opEnv(fakeDb()), 'ZD-H01G4', { now: NOW })).toMatchObject({ state: 'sent', reason: 'hand_back_failed' });
+    expect(calls.filter((c) => c.url.endsWith('/hand-back'))).toHaveLength(3);
   });
 
   it('sends at most once: a second trigger (Paystack retry, return page) does nothing', async () => {
@@ -165,6 +206,11 @@ describe('notifyPaymentReceived', () => {
   it('fails safe when queuing the message fails', async () => {
     chordApi({ threads: [thread()], turns: { [T1]: [agentSays('job ZD-H01G4')] }, task: () => new Response('{}', { status: 502 }) });
     expect(await notifyPaymentReceived(env(fakeDb()), 'ZD-H01G4', { now: NOW })).toMatchObject({ state: 'failed', reason: 'chord_http_502', thread_id: T1 });
+  });
+
+  it('operator route fails safe when Chord is down at take-over', async () => {
+    chordApi({ threads: [thread()], turns: { [T1]: [agentSays('job ZD-H01G4')] }, takeOver: () => new Response('{}', { status: 502 }) });
+    expect(await notifyPaymentReceived(opEnv(fakeDb()), 'ZD-H01G4', { now: NOW })).toMatchObject({ state: 'failed', reason: 'take_over: chord_http_502', thread_id: T1 });
   });
 
   it('does nothing for unpaid jobs or when switched off', async () => {

@@ -185,21 +185,34 @@ event shapes), `scripts/e2e.py` (forged-but-signed event leaves the job unpaid).
    | The customer wrote in the last 90 s and the agent has not answered | Not sent (`customer_mid_conversation`); the agent is about to confirm |
    | Customer's last message older than 23 h | Not sent (`outside_24h_window`); WhatsApp's free-text window |
 
-4. **Send.** `POST /v1/scheduled-tasks` with a `MESSAGE` task.
-   - Delivery: `scheduled_at` = now + 5 s. Chord's queue picks it up within about 30 s, so the message
-     arrives about 30–60 s after payment.
-   - Route: `DIRECT_LINE` with the thread id; `CHORD_NOTICE_ROUTE=channel` sends through the WhatsApp connector instead.
-   - Text: the same sentence `verify_payment` gives the agent (`src/business/messages.ts`). For example:
-     *"Payment received: ₦1,950 for ZD-H01G4. A dispatcher is assigning a rider now; pickup is usually
-     within 45 minutes. The recipient gives the rider code 8960."*
-   - Fixed text, no agent run, so it should not consume model credits.
+4. **Send** (route `auto`, the default). `POST /v1/scheduled-tasks` with a `MESSAGE` task, picked up by
+   Chord's queue within about 30 s.
+
+   | Chat lives on | Platform | What the customer sees |
+   |---|---|---|
+   | WhatsApp / Telegram / Slack | that connector (`WHATSAPP` …) | the message, from the business number. Nothing changes hands |
+   | Anything else (e.g. the simulator's `external_chat`) | `DIRECT_LINE` | nothing on that surface. It lands in Chord's conversation record, so the agent knows the job is paid; recorded as `queued` + `record_only` |
+
+   - **Opt-in route `operator`** (`CHORD_NOTICE_ROUTE=operator`): take over → `POST /v1/threads/{id}/messages`
+     → hand back. Chord sends it down the chat's own channel and reports `delivery_status` at once.
+   - **Cost of the operator route:** the take-over makes Chord send the customer "One moment — connecting
+     you with a teammate." first (seen live), and it fires `conversation.escalated`. So it is not the default.
+   - The board hides those escalations: the take-over reason starts with `zuma-dispatch automated notice`,
+     and a chat notice exists on that thread at that moment.
+   - The hand-back is retried 3 times. If it still fails, the job page and the board's "waiting on you"
+     strip say to press "Hand back to AI" in Chord.
+   - Text: the same sentence `verify_payment` gives the agent (`src/business/messages.ts`), matching the job's
+     status. For example: *"Payment received: ₦1,950 for ZD-H01G4. A dispatcher is assigning a rider now;
+     pickup is usually within 45 minutes. The recipient gives the rider code 8960."*
+   - Fixed text, no agent run, so no model credits.
 5. **Once only.** A row in `chat_notices` (migration 0008) is claimed with an atomic UPSERT before
    anything is sent. Paystack retries, the return page and the webhook together, or two Workers at once
    send one message.
    - A claim stuck in `pending` for 5 minutes (Worker evicted) may be retaken.
    - A dispatcher's **Send again** retries only `failed` or `skipped`, never `queued`.
 6. **Record.**
-   - Every outcome lands in `chat_notices` and the job timeline (`customer_notified` /
+   - Every outcome lands in `chat_notices` (migrations 0008–0009; states `queued`, `sent`, `skipped`,
+     `failed`) and the job timeline (`customer_notified` /
      `customer_notice_not_sent` with the reason).
    - The job page shows it in plain words with a Send again / Send now button.
    - The board shows totals.
@@ -222,7 +235,7 @@ event shapes), `scripts/e2e.py` (forged-but-signed event leaves the job unpaid).
 | `CHORD_API_KEY` | secret | A Chord API key with `thread:read` + `teammate:update`. The dashboard offers `thread:read` only under **Full access** |
 | `CHORD_WORKSPACE_ID`, `CHORD_TEAMMATE_ID` | `wrangler.jsonc` vars | This workspace and teammate |
 | `CHORD_API_BASE` | var | `https://api.chordhq.xyz` |
-| `CHORD_NOTICE_ROUTE` | var | `direct_line` (default) or `channel` |
+| `CHORD_NOTICE_ROUTE` | var | `auto` (default: connector, else record-only) or `operator` (take over → post → hand back) |
 | `CHORD_NOTICES_ALLOW_LOCAL` | `.env` | unset |
 
 **The agent's side (skill v5).** A "Payment received: …" message in the conversation comes from Zuma's

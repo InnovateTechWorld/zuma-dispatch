@@ -9,8 +9,13 @@ import { log } from '../lib/log';
  *
  * Chord sends no conversation id with MCP tool calls (FIELD_NOTES #9), so we find the conversation
  * the way a person would: the agent always sends the job id ("ZD-H01G4") when it books, so we look
- * through this workspace's recent conversations for the agent turn that contains it. Then we queue
- * a Chord scheduled MESSAGE task into that conversation (delivered within about 30–60 s).
+ * through this workspace's recent conversations for the agent turn that contains it. Then we deliver it
+ * (route "auto", the default) as a Chord scheduled MESSAGE: through the WhatsApp / Telegram / Slack
+ * connector when the chat is on one of those, so nothing changes hands; on any other channel (e.g. the
+ * simulator's external chat) as DIRECT_LINE, which lands in Chord's conversation record (the agent then
+ * knows it is paid) but is not shown to the customer there. Route "operator" (opt-in) takes the chat
+ * over, posts and hands back: it reaches every channel, but Chord also sends the customer
+ * "One moment — connecting you with a teammate." on the take-over (FIELD_NOTES #14).
  *
  * Every step fails safe. If anything is unclear (no match, two different customers mention the id,
  * a human holds the chat, the customer is typing right now, outside WhatsApp's 24-hour window, Chord
@@ -34,7 +39,14 @@ export const SERVICE_WINDOW_MS = 23 * 60 * 60_000;
 /** A claim stuck in "pending" this long (Worker evicted mid-send) may be taken again. */
 const STALE_PENDING_MS = 5 * 60_000;
 
-export type NoticeConfig = { base: string; key: string; workspaceId: string; teammateId: string | null; route: 'direct_line' | 'channel' };
+export type NoticeRoute = 'auto' | 'operator';
+export type NoticeConfig = { base: string; key: string; workspaceId: string; teammateId: string | null; route: NoticeRoute };
+
+/** Marks our own take-overs, so the board does not show them as "handed to a human" (Chord fires
+ *  conversation.escalated on every agent→human take-over). Matched by prefix in src/web/pages.ts. */
+export const TAKEOVER_REASON = 'zuma-dispatch automated notice: payment received (handed back at once)';
+/** Hand-back is retried this many times: a chat left human-held would leave the agent silent. */
+const HAND_BACK_TRIES = 3;
 export type NoticeStatus = 'enabled' | 'not_configured' | 'invalid_config';
 
 export function noticeConfig(env: Env): NoticeConfig | null {
@@ -43,7 +55,7 @@ export function noticeConfig(env: Env): NoticeConfig | null {
   if (!key || !/^chord_[A-Za-z0-9_-]{20,}$/.test(key) || !workspaceId) return null;
   const base = (env.CHORD_API_BASE?.trim() || 'https://api.chordhq.xyz').replace(/\/+$/, '');
   if (!/^https:\/\/[a-z0-9.-]+$/i.test(base)) return null;
-  return { base, key, workspaceId, teammateId: env.CHORD_TEAMMATE_ID?.trim() || null, route: env.CHORD_NOTICE_ROUTE === 'channel' ? 'channel' : 'direct_line' };
+  return { base, key, workspaceId, teammateId: env.CHORD_TEAMMATE_ID?.trim() || null, route: env.CHORD_NOTICE_ROUTE === 'operator' ? 'operator' : 'auto' };
 }
 
 /** A local dev server must not post into real customers' chats (it shares the Chord workspace). */
@@ -120,10 +132,8 @@ export function pickThread(matches: Match[], now: number): Pick {
   return { ok: true, thread };
 }
 
-/** Which Chord delivery route to use. DIRECT_LINE writes into the Chord thread by id (works for the
- *  simulator); "channel" sends through the workspace's WhatsApp/Telegram/Slack connector. */
-export function platformFor(thread: ThreadRow, route: NoticeConfig['route']): string {
-  if (route === 'direct_line') return 'DIRECT_LINE';
+/** Platform for a scheduled MESSAGE: the channel's own connector where Chord has one, else DIRECT_LINE. */
+export function platformFor(thread: ThreadRow): string {
   const c = (thread.channel_id ?? '').toLowerCase();
   return c === 'whatsapp' ? 'WHATSAPP' : c === 'telegram' ? 'TELEGRAM' : c === 'slack' ? 'SLACK' : 'DIRECT_LINE';
 }
@@ -142,6 +152,7 @@ function chordError(r: HttpResult<unknown>): string {
 }
 
 async function chord<T>(cfg: NoticeConfig, path: string, timeoutMs: number, body?: unknown): Promise<HttpResult<T>> {
+  // POSTs here always carry a JSON body (Chord's transition endpoints accept {} as "no options").
   return fetchJson<T>(`${cfg.base}${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: { Authorization: `Bearer ${cfg.key}` },
@@ -169,15 +180,69 @@ async function findThread(cfg: NoticeConfig, jobId: string, since: number, now: 
   return pickThread(matches, now);
 }
 
+// ------------------------------------------------------------------ delivery
+export type NoticeResult = { state: 'queued' | 'sent' | 'skipped' | 'failed' | 'not_sent'; reason?: string; thread_id?: string; task_id?: string };
+
+interface OperatorTurn { id?: string; delivery_status?: string; delivery_error?: string | null }
+
+/**
+ * Operator route: take over → post → hand back. The message goes down the conversation's own channel
+ * (WhatsApp, Telegram, the simulator's external chat) and Chord reports delivery in the response.
+ * - Take-over refused with 409 (a person grabbed the chat a moment ago): skipped, nothing posted.
+ * - Hand-back is attempted whatever happened to the message, and retried; if it still fails the
+ *   result says so loudly, because the agent stays silent in that chat until someone hands it back.
+ */
+async function sendAsOperator(cfg: NoticeConfig, thread: ThreadRow, body: string, timeoutMs: number): Promise<NoticeResult> {
+  const base = { thread_id: thread.id };
+  const take = await chord<ThreadRow>(cfg, `/v1/threads/${thread.id}/take-over`, timeoutMs, { reason: TAKEOVER_REASON });
+  if (!take.ok) {
+    return take.failure === 'http' && take.status === 409 ? { ...base, state: 'skipped', reason: 'human_handling' } : { ...base, state: 'failed', reason: `take_over: ${chordError(take)}` };
+  }
+  let result: NoticeResult;
+  const msg = await chord<OperatorTurn>(cfg, `/v1/threads/${thread.id}/messages`, timeoutMs, { text: body });
+  if (!msg.ok) result = { ...base, state: 'failed', reason: `message: ${chordError(msg)}` };
+  else if (msg.data.delivery_status === 'failed') result = { ...base, state: 'failed', reason: `undelivered: ${(msg.data.delivery_error ?? 'channel refused').slice(0, 120)}`, task_id: msg.data.id };
+  else result = { ...base, state: 'sent', task_id: msg.data.id ?? '' };
+
+  let handedBack = false;
+  for (let i = 0; i < HAND_BACK_TRIES && !handedBack; i++) {
+    const back = await chord<ThreadRow>(cfg, `/v1/threads/${thread.id}/hand-back`, timeoutMs, { reason: TAKEOVER_REASON });
+    // 409 means it is no longer human-held (someone handed it back already): fine.
+    handedBack = back.ok || (back.failure === 'http' && back.status === 409);
+  }
+  if (!handedBack) {
+    log('error', 'chat_notice_hand_back_failed', { thread_id: thread.id });
+    return { ...result, state: result.state === 'sent' ? 'sent' : 'failed', reason: 'hand_back_failed' };
+  }
+  return result;
+}
+
+/** Default route: a scheduled MESSAGE, no control change, delivered by Chord's queue in about 30 s. */
+async function sendScheduled(cfg: NoticeConfig, thread: ThreadRow, body: string, now: number, timeoutMs: number): Promise<NoticeResult> {
+  const platform = platformFor(thread);
+  const task = await chord<{ id?: string }>(cfg, '/v1/scheduled-tasks', timeoutMs, {
+    task_type: 'MESSAGE',
+    scheduled_at: new Date(now + 5_000).toISOString(), // must be in the future
+    workspace_id: cfg.workspaceId,
+    ...(cfg.teammateId ? { teammate_id: cfg.teammateId } : {}),
+    max_retries: 2,
+    payload: { platform, conversation_id: thread.id, body },
+  });
+  if (!task.ok) return { state: 'failed', reason: chordError(task), thread_id: thread.id };
+  // DIRECT_LINE into a chat that lives on another surface (e.g. external_chat) is recorded in Chord's
+  // conversation but not shown to the customer there: say so instead of claiming it was delivered.
+  const recordOnly = platform === 'DIRECT_LINE' && (thread.channel_id ?? 'direct_line') !== 'direct_line';
+  return { state: 'queued', thread_id: thread.id, task_id: task.data.id ?? '', ...(recordOnly ? { reason: 'record_only' } : {}) };
+}
+
 // ------------------------------------------------------------------ the notice
-export type NoticeResult = { state: 'queued' | 'skipped' | 'failed' | 'not_sent'; reason?: string; thread_id?: string; task_id?: string };
 
 /**
  * Takes the one-per-job claim. Automatic triggers only claim a fresh row (or a stale "pending" one);
  * a dispatcher's "Send again" may also retry a failed or skipped notice, never a queued one.
  */
 async function claim(db: D1Database, jobId: string, now: number, manual: boolean): Promise<boolean> {
-  const retryable = manual ? "state IN ('failed', 'skipped') OR " : '';
+  const retryable = manual ? "state IN ('failed', 'skipped') OR " : ''; // never 'queued' / 'sent'
   const row = await db
     .prepare(
       `INSERT INTO chat_notices (job_id, kind, state, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, ?3)
@@ -197,9 +262,9 @@ async function finish(db: D1Database, jobId: string, r: NoticeResult, now: numbe
       .bind(r.state, r.reason ?? null, r.thread_id ?? null, r.task_id ?? null, now, jobId, NOTICE_KIND),
     eventStmt(db, {
       jobId,
-      type: r.state === 'queued' ? 'customer_notified' : 'customer_notice_not_sent',
+      type: r.state === 'queued' || r.state === 'sent' ? 'customer_notified' : 'customer_notice_not_sent',
       actor: 'system',
-      detail: r.state === 'queued' ? { thread_id: r.thread_id, task_id: r.task_id } : { reason: r.reason },
+      detail: r.state === 'queued' || r.state === 'sent' ? { thread_id: r.thread_id, id: r.task_id, ...(r.reason ? { warning: r.reason } : {}) } : { reason: r.reason },
       at: now,
     }),
   ]);
@@ -225,18 +290,8 @@ export async function notifyPaymentReceived(env: Env, jobId: string, opts: { man
     if (!pick.ok) {
       result = { state: pick.reason.startsWith('chord_') ? 'failed' : 'skipped', reason: pick.reason, thread_id: pick.thread?.id };
     } else {
-      const task = await chord<{ id?: string }>(cfg, '/v1/scheduled-tasks', timeoutMs, {
-        task_type: 'MESSAGE',
-        // Must be in the future; Chord's queue picks it up within about 30 s.
-        scheduled_at: new Date(now + 5_000).toISOString(),
-        workspace_id: cfg.workspaceId,
-        ...(cfg.teammateId ? { teammate_id: cfg.teammateId } : {}),
-        max_retries: 2,
-        payload: { platform: platformFor(pick.thread, cfg.route), conversation_id: pick.thread.id, body: paymentReceivedMessage(job, now) },
-      });
-      result = task.ok
-        ? { state: 'queued', thread_id: pick.thread.id, task_id: task.data.id ?? '' }
-        : { state: 'failed', reason: chordError(task), thread_id: pick.thread.id };
+      const body = paymentReceivedMessage(job, now);
+      result = cfg.route === 'operator' ? await sendAsOperator(cfg, pick.thread, body, timeoutMs) : await sendScheduled(cfg, pick.thread, body, now, timeoutMs);
     }
     await finish(env.DB, jobId, result, Date.now());
     log(result.state === 'failed' ? 'warn' : 'info', 'chat_notice', { job_id: jobId, state: result.state, reason: result.reason ?? null, thread_id: result.thread_id ?? null });

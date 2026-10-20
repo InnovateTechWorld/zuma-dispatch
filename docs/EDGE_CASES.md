@@ -126,7 +126,11 @@ Every row names the code that handles the case and the evidence that it works.
 | N11 | Worker evicted mid-send | A `pending` claim older than 5 min can be retaken | Code (`claim`) |
 | N12 | Dispatcher wants to retry | "Send again" on the job page retries failed / skipped only; a queued notice is never resent | Code; local run (blocked as `local_server`) |
 | N13 | Local test server with the real key in `.env` | Sends nothing unless `CHORD_NOTICES_ALLOW_LOCAL=1` | U; local e2e (42 checks, no Chord calls made) |
-| N14 | The agent sees a message it did not write | Skill v5: a "Payment received: …" message is from our system; treat it as true and don't ask for "paid" | Simulator run (FIELD_NOTES #14) |
+| N15 | Chat is on a surface Chord cannot push to (the simulator) | `DIRECT_LINE` writes it into the conversation record (the agent knows); board says `record_only` instead of "delivered" | Live: ZD-H01G4 task COMPLETED, turn in Chord's record, not shown in the simulator |
+| N16 | Operator route side effects | Chord sends "connecting you with a teammate" and fires `conversation.escalated` on take-over; opt-in only; board filters our own escalations | Live: both observed; board showed no false handover |
+| N17 | Hand-back fails | Retried 3 times; then flagged on the job page and the "waiting on you" strip (agent would stay silent otherwise) | U |
+| N18 | A person takes the chat between our check and our take-over | Take-over 409 means skipped, nothing posted | U |
+| N14 | The agent sees a message it did not write | Skill v5: a "Payment received: …" message is from our system; treat it as true and don't ask for "paid" | Live: after the notice, "what happens now?" got "Your payment is confirmed and the booking is with the dispatcher" (it also re-checked with `verify_payment`) |
 
 ## Status without a job id
 
