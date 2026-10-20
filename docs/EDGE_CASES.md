@@ -116,10 +116,10 @@ Every row names the code that handles the case and the evidence that it works.
 | N1 | Paid by webhook / return page / dispatcher approval, customer silent | Conversation found by the agent message that contains the job id; one MESSAGE task queued | U (whole send against a fake Chord API) |
 | N2 | Paid because the customer asked in the chat | Nothing pushed; the agent confirms in its reply (no duplicate) | Code path (`via: verify` does not trigger) |
 | N3 | Paystack retries, or webhook + return page together | Atomic claim in `chat_notices`: one notice per job | U "sends at most once" |
-| N4 | Job id appears in chats with two different customers | Not sent, never guessed (privacy) | U `pickThread` |
+| N4 | Job id appears in chats with two different customers | Sent only to the booker (the chat where the agent first sent the id); a tie is never guessed | U `pickThread`; live: ZD-2RWZ9, mentioned in two simulator chats, picked the booking chat |
 | N5 | A customer typed someone else's job id | Only agent turns count | U `agentMentioned` |
 | N6 | Same customer, two conversations | The most recently active one | U |
-| N7 | A human holds or paused the chat | Not sent (Chord would deliver over the operator) | U |
+| N7 | A human holds or paused the chat | Not sent (Chord would deliver over the operator) | U; live: ZD-2RWZ9's booking chat was handed to a human, so `skipped: human_handling`, nothing sent |
 | N8 | Customer writing right now | Not sent if their message is under 90 s old and unanswered; the agent will confirm | U |
 | N9 | Outside WhatsApp's 24-hour window | Not sent | U |
 | N10 | Key missing a scope / Chord down / timeout | Recorded as `failed` with Chord's reason; never throws; webhook unaffected | U; live: `chord_http_403: Missing required permission: thread:read` with the narrow key |

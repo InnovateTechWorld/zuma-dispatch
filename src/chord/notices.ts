@@ -76,28 +76,47 @@ export interface Turn { direction?: string; sender?: { kind?: string }; content?
 
 export type Pick =
   | { ok: true; thread: ThreadRow }
-  | { ok: false; reason: 'thread_not_found' | 'ambiguous_thread' | 'human_handling' | 'customer_mid_conversation' | 'outside_24h_window' };
+  | { ok: false; reason: 'thread_not_found' | 'ambiguous_thread' | 'human_handling' | 'customer_mid_conversation' | 'outside_24h_window'; thread?: ThreadRow };
 
 /** Did the agent itself send this job id in this conversation? (Customer text does not count.) */
 export function agentMentioned(turns: Turn[], jobId: string): boolean {
-  const re = new RegExp(`\\b${jobId}\\b`);
-  return turns.some((t) => t.direction === 'outbound' && t.sender?.kind === 'agent' && re.test(t.content?.text ?? ''));
+  return firstAgentMention(turns, jobId) !== null;
 }
 
+/** When the agent first sent this job id here (ms), or null. Turns without a timestamp count as 0. */
+export function firstAgentMention(turns: Turn[], jobId: string): number | null {
+  const re = new RegExp(`\\b${jobId}\\b`);
+  const times = turns
+    .filter((t) => t.direction === 'outbound' && t.sender?.kind === 'agent' && re.test(t.content?.text ?? ''))
+    .map((t) => t.timestamp ?? 0);
+  return times.length ? Math.min(...times) : null;
+}
+
+export interface Match { thread: ThreadRow; firstMentionAt: number }
+
 /**
- * Picks the one conversation to notify. Several matches are fine when they are the same customer
- * (they opened a new chat to ask about it): the most recently active wins. Matches from different
- * customers are never guessed between: someone else may have quoted the id.
+ * Picks the one conversation to notify.
+ * - The person who booked is the one in the conversation where the agent FIRST sent the job id
+ *   (the booking message). The notice goes to them, never to someone who only asked about the job later.
+ * - If that customer has several conversations mentioning it (same channel identity: on WhatsApp, the
+ *   same phone), the most recently active one wins, since that is where they are now.
+ * - If two different customers' conversations share the earliest mention, nothing is guessed.
  */
-export function pickThread(matches: ThreadRow[], now: number): Pick {
+export function pickThread(matches: Match[], now: number): Pick {
   if (matches.length === 0) return { ok: false, reason: 'thread_not_found' };
-  const people = new Set(matches.map((t) => t.channel_participant_id ?? `?${t.id}`));
-  if (people.size > 1) return { ok: false, reason: 'ambiguous_thread' };
-  const thread = [...matches].sort((a, b) => (b.last_turn_at ?? 0) - (a.last_turn_at ?? 0))[0]!;
-  if (thread.control_state && thread.control_state !== 'agent_active') return { ok: false, reason: 'human_handling' };
+  const who = (t: ThreadRow) => t.channel_participant_id ?? `?${t.id}`;
+  const earliest = Math.min(...matches.map((m) => m.firstMentionAt));
+  const bookers = new Set(matches.filter((m) => m.firstMentionAt === earliest).map((m) => who(m.thread)));
+  if (bookers.size > 1) return { ok: false, reason: 'ambiguous_thread' };
+  const booker = [...bookers][0]!;
+  const thread = matches
+    .filter((m) => who(m.thread) === booker)
+    .map((m) => m.thread)
+    .sort((a, b) => (b.last_turn_at ?? 0) - (a.last_turn_at ?? 0))[0]!;
+  if (thread.control_state && thread.control_state !== 'agent_active') return { ok: false, reason: 'human_handling', thread };
   const last = thread.last_turn_at ?? 0;
-  if (thread.last_turn_direction === 'inbound' && now - last < CUSTOMER_ACTIVE_MS) return { ok: false, reason: 'customer_mid_conversation' };
-  if (now - last > SERVICE_WINDOW_MS) return { ok: false, reason: 'outside_24h_window' };
+  if (thread.last_turn_direction === 'inbound' && now - last < CUSTOMER_ACTIVE_MS) return { ok: false, reason: 'customer_mid_conversation', thread };
+  if (now - last > SERVICE_WINDOW_MS) return { ok: false, reason: 'outside_24h_window', thread };
   return { ok: true, thread };
 }
 
@@ -131,20 +150,21 @@ async function chord<T>(cfg: NoticeConfig, path: string, timeoutMs: number, body
   });
 }
 
-async function findThread(cfg: NoticeConfig, jobId: string, since: number, now: number, timeoutMs: number): Promise<Pick | { ok: false; reason: string }> {
+async function findThread(cfg: NoticeConfig, jobId: string, since: number, now: number, timeoutMs: number): Promise<Pick | { ok: false; reason: string; thread?: ThreadRow }> {
   // Workspace-wide on purpose: the job-id match below is what selects the conversation, and filtering
   // by teammate would silently find nothing if Chord's agent id format differs from the dashboard id.
   const q = new URLSearchParams({ workspace_id: cfg.workspaceId, from: String(since), limit: '20' });
   const list = await chord<{ threads?: ThreadRow[] }>(cfg, `/v1/threads?${q}`, timeoutMs);
   if (!list.ok) return { ok: false, reason: chordError(list) };
   const threads = (list.data.threads ?? []).filter((t) => /^[0-9a-f]{24}$/.test(t.id)).slice(0, MAX_THREADS_SCANNED);
-  const matches: ThreadRow[] = [];
+  const matches: Match[] = [];
   // Sequential on purpose: usually the first (newest) conversation is the one, and it keeps us far
   // below Chord's rate limit and the Worker's subrequest budget.
   for (const t of threads) {
     const turns = await chord<{ turns?: Turn[] }>(cfg, `/v1/threads/${t.id}/turns?limit=50`, timeoutMs);
     if (!turns.ok) return { ok: false, reason: chordError(turns) };
-    if (agentMentioned(turns.data.turns ?? [], jobId)) matches.push(t);
+    const first = firstAgentMention(turns.data.turns ?? [], jobId);
+    if (first !== null) matches.push({ thread: t, firstMentionAt: first });
   }
   return pickThread(matches, now);
 }
@@ -203,7 +223,7 @@ export async function notifyPaymentReceived(env: Env, jobId: string, opts: { man
     let result: NoticeResult;
     const pick = await findThread(cfg, jobId, job.created_at - LOOKBACK_MS, now, timeoutMs);
     if (!pick.ok) {
-      result = { state: pick.reason.startsWith('chord_') ? 'failed' : 'skipped', reason: pick.reason };
+      result = { state: pick.reason.startsWith('chord_') ? 'failed' : 'skipped', reason: pick.reason, thread_id: pick.thread?.id };
     } else {
       const task = await chord<{ id?: string }>(cfg, '/v1/scheduled-tasks', timeoutMs, {
         task_type: 'MESSAGE',

@@ -12,7 +12,13 @@ export function afterPaymentTiming(now: number): string {
   return w.now ? 'A dispatcher is assigning a rider now; pickup is usually within 45 minutes.' : w.note;
 }
 
-/** "Payment received: ₦1,950 for ZD-H01G4. <timing> The recipient gives the rider code 8960." */
-export function paymentReceivedMessage(job: { id: string; amount_kobo: number; handover_code: string }, now: number): string {
-  return `Payment received: ${formatNaira(job.amount_kobo)} for ${job.id}. ${afterPaymentTiming(now)} The recipient gives the rider code ${job.handover_code}.`;
+/**
+ * "Payment received: ₦1,950 for ZD-H01G4. <what happens next> The recipient gives the rider code 8960."
+ * "What happens next" follows the job's status, so a notice re-sent after dispatch is still true.
+ */
+export function paymentReceivedMessage(job: { id: string; amount_kobo: number; handover_code: string; status?: string }, now: number): string {
+  const head = `Payment received: ${formatNaira(job.amount_kobo)} for ${job.id}.`;
+  if (job.status === 'delivered') return `${head} It has been delivered.`;
+  if (job.status === 'dispatched') return `${head} A rider already has the package. The recipient gives the rider code ${job.handover_code}.`;
+  return `${head} ${afterPaymentTiming(now)} The recipient gives the rider code ${job.handover_code}.`;
 }

@@ -434,6 +434,17 @@ calls carry no conversation id.
   feature records `failed: chord_http_403 … thread:read` and the old flow (the customer writes, the agent
   verifies) still works.
 
+**Then (owner's go-ahead) a Full access key.**
+- Created with rate limit 30/min and "Trusted context" off. It went from the clipboard straight to `.env`
+  and the Worker secret, and never appeared in a chat or log.
+- First real read: simulator conversations are `channel_id: external_chat`, and **each "new conversation"
+  gets a new `channel_participant_id`**. So "same customer" across simulator chats is not provable, and
+  the first rule ("several customers mention it → send nothing") would have silenced ZD-2RWZ9 for good.
+- *Rule refined:* the notice goes to the person who booked (the chat where the agent first sent the id).
+  Later chats count only if they are the same channel identity (on WhatsApp, the same phone).
+- Live check: ZD-2RWZ9 picked its booking chat, found it handed to a human, and sent nothing
+  (`human_handling`).
+
 **What would help (Chord).**
 - A `thread:read` toggle in the key form.
 - Better: pass the conversation id to MCP tools (`params._meta`), so no search is needed.

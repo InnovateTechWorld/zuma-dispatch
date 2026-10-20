@@ -459,7 +459,7 @@ const NOTICE_REASONS: Record<string, string> = {
   job_not_paid: 'the job is not paid',
   already_handled: 'a notice was already sent or is being sent',
   thread_not_found: "no recent conversation where the agent sent this job id",
-  ambiguous_thread: 'the job id appears in conversations with different customers, so none was guessed',
+  ambiguous_thread: 'two different customers were sent this job id at the same moment, so none was guessed',
   human_handling: 'a person has taken over that conversation',
   customer_mid_conversation: 'the customer was writing at that moment; the agent confirms in its reply',
   outside_24h_window: "the customer's last message is older than WhatsApp's 24-hour window",

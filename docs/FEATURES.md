@@ -178,7 +178,8 @@ event shapes), `scripts/e2e.py` (forged-but-signed event leaves the job unpaid).
    | Situation | Result |
    |---|---|
    | One conversation, or several with the **same** customer | The most recently active one |
-   | The id appears in chats with **different** customers | Not sent (`ambiguous_thread`); never guessed |
+   | The id also appears in another customer's chat (they asked about it later) | Sent to the **person who booked**: the chat where the agent first sent the id. Nobody else is notified |
+   | Two different customers were sent the id at the same moment | Not sent (`ambiguous_thread`); never guessed |
    | No agent message with the id | Not sent (`thread_not_found`) |
    | A human has taken over or paused the chat | Not sent (`human_handling`); Chord would deliver over the operator |
    | The customer wrote in the last 90 s and the agent has not answered | Not sent (`customer_mid_conversation`); the agent is about to confirm |

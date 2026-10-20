@@ -15,7 +15,8 @@ const thread = (over: Partial<ThreadRow> = {}): ThreadRow => ({
   id: T1, channel_id: 'whatsapp', channel_participant_id: '+2348030000001', control_state: 'agent_active',
   last_turn_at: NOW - 10 * 60_000, last_turn_direction: 'outbound', ...over,
 });
-const agentSays = (text: string) => ({ direction: 'outbound', sender: { kind: 'agent' }, content: { text } });
+const agentSays = (text: string, timestamp = NOW - 15 * 60_000) => ({ direction: 'outbound', sender: { kind: 'agent' }, content: { text }, timestamp });
+const m = (t: ThreadRow, firstMentionAt = NOW - 15 * 60_000) => ({ thread: t, firstMentionAt });
 const customerSays = (text: string) => ({ direction: 'inbound', sender: { kind: 'remote' }, content: { text } });
 
 describe('finding the conversation for a job', () => {
@@ -27,22 +28,28 @@ describe('finding the conversation for a job', () => {
   });
 
   it('sends to the one matching conversation; the newest when the same customer has several', () => {
-    expect(pickThread([thread()], NOW)).toEqual({ ok: true, thread: thread() });
+    expect(pickThread([m(thread())], NOW)).toEqual({ ok: true, thread: thread() });
     const newer = thread({ id: T2, last_turn_at: NOW - 60_000 });
-    expect(pickThread([thread(), newer], NOW)).toEqual({ ok: true, thread: newer });
+    expect(pickThread([m(thread()), m(newer, NOW - 2 * 60_000)], NOW)).toEqual({ ok: true, thread: newer });
   });
 
-  it('never guesses between different customers, and sends nothing when there is no match', () => {
-    expect(pickThread([thread(), thread({ id: T2, channel_participant_id: '+2348099999999' })], NOW)).toEqual({ ok: false, reason: 'ambiguous_thread' });
+  it('goes to the person who booked (first agent mention), never to someone who only asked later', () => {
+    const booker = thread();
+    const asker = thread({ id: T2, channel_participant_id: '+2348099999999', last_turn_at: NOW - 60_000 });
+    expect(pickThread([m(asker, NOW - 2 * 60_000), m(booker, NOW - 15 * 60_000)], NOW)).toEqual({ ok: true, thread: booker });
+  });
+
+  it('never guesses when two customers were sent the id at the same moment, and sends nothing with no match', () => {
+    expect(pickThread([m(thread()), m(thread({ id: T2, channel_participant_id: '+2348099999999' }))], NOW)).toEqual({ ok: false, reason: 'ambiguous_thread' });
     expect(pickThread([], NOW)).toEqual({ ok: false, reason: 'thread_not_found' });
   });
 
   it('stays quiet while a human holds the chat, while the customer is mid-message, and outside the 24 h window', () => {
-    expect(pickThread([thread({ control_state: 'human_active' })], NOW)).toEqual({ ok: false, reason: 'human_handling' });
-    expect(pickThread([thread({ control_state: 'paused' })], NOW)).toEqual({ ok: false, reason: 'human_handling' });
-    expect(pickThread([thread({ last_turn_direction: 'inbound', last_turn_at: NOW - CUSTOMER_ACTIVE_MS + 1000 })], NOW)).toEqual({ ok: false, reason: 'customer_mid_conversation' });
-    expect(pickThread([thread({ last_turn_direction: 'inbound', last_turn_at: NOW - CUSTOMER_ACTIVE_MS - 1000 })], NOW).ok).toBe(true);
-    expect(pickThread([thread({ last_turn_at: NOW - SERVICE_WINDOW_MS - 1 })], NOW)).toEqual({ ok: false, reason: 'outside_24h_window' });
+    expect(pickThread([m(thread({ control_state: 'human_active' }))], NOW)).toMatchObject({ ok: false, reason: 'human_handling', thread: { id: T1 } });
+    expect(pickThread([m(thread({ control_state: 'paused' }))], NOW)).toMatchObject({ ok: false, reason: 'human_handling' });
+    expect(pickThread([m(thread({ last_turn_direction: 'inbound', last_turn_at: NOW - CUSTOMER_ACTIVE_MS + 1000 }))], NOW)).toMatchObject({ ok: false, reason: 'customer_mid_conversation' });
+    expect(pickThread([m(thread({ last_turn_direction: 'inbound', last_turn_at: NOW - CUSTOMER_ACTIVE_MS - 1000 }))], NOW).ok).toBe(true);
+    expect(pickThread([m(thread({ last_turn_at: NOW - SERVICE_WINDOW_MS - 1 }))], NOW)).toMatchObject({ ok: false, reason: 'outside_24h_window' });
   });
 
   it('routes through the Chord thread by default, or the channel connector when configured', () => {
@@ -120,7 +127,8 @@ describe('notifyPaymentReceived', () => {
     const db = fakeDb();
     const calls = chordApi({
       threads: [thread({ id: T2, channel_participant_id: '+2348099999999' }), thread()],
-      turns: { [T1]: [agentSays('Booked, Tolu. Your job id is ZD-H01G4.')], [T2]: [agentSays('Your job ZD-AAAAA is on the way.')] },
+      // T2 (another customer) asked about the job later; T1 is where it was booked.
+      turns: { [T1]: [agentSays('Booked, Tolu. Your job id is ZD-H01G4.')], [T2]: [agentSays('Your job ZD-H01G4 is paid.', NOW - 2 * 60_000)] },
     });
     const r = await notifyPaymentReceived(env(db), 'ZD-H01G4', { now: NOW });
     expect(r).toEqual({ state: 'queued', thread_id: T1, task_id: 'task_abc123' });
@@ -143,7 +151,7 @@ describe('notifyPaymentReceived', () => {
 
   it('records a skip (no message) when no conversation matches', async () => {
     const calls = chordApi({ threads: [thread()], turns: { [T1]: [agentSays('job ZD-OTHER')] } });
-    expect(await notifyPaymentReceived(env(fakeDb()), 'ZD-H01G4', { now: NOW })).toEqual({ state: 'skipped', reason: 'thread_not_found' });
+    expect(await notifyPaymentReceived(env(fakeDb()), 'ZD-H01G4', { now: NOW })).toMatchObject({ state: 'skipped', reason: 'thread_not_found' });
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
 
@@ -168,6 +176,10 @@ describe('notifyPaymentReceived', () => {
 });
 
 describe('the message itself', () => {
+  it('stays true when re-sent after dispatch or delivery', () => {
+    expect(paymentReceivedMessage({ ...JOB, status: 'dispatched' }, NOW)).toBe('Payment received: ₦1,950 for ZD-H01G4. A rider already has the package. The recipient gives the rider code 8960.');
+    expect(paymentReceivedMessage({ ...JOB, status: 'delivered' }, NOW)).toBe('Payment received: ₦1,950 for ZD-H01G4. It has been delivered.');
+  });
   it('confirms the amount and job, gives the pickup timing and the handover code', () => {
     expect(paymentReceivedMessage(JOB, NOW)).toBe(
       'Payment received: ₦1,950 for ZD-H01G4. A dispatcher is assigning a rider now; pickup is usually within 45 minutes. The recipient gives the rider code 8960.',
