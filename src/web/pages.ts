@@ -1,5 +1,5 @@
 import type { Config } from '../config';
-import { getJob, getPayment, transitionJob, type JobRow, type JobStatus } from '../db/repo';
+import { getJob, getPayment, transitionJob, type JobRow, type JobStatus, type PaymentRow } from '../db/repo';
 import type { Env } from '../env';
 import { normalizeNigerianPhone } from '../lib/phone';
 import { formatNaira } from '../lib/money';
@@ -103,15 +103,54 @@ interface BoardRow extends JobRow {
   approximate: number | null;
 }
 
+const STATUSES: JobStatus[] = ['awaiting_payment', 'paid', 'dispatched', 'delivered', 'payment_failed', 'amount_mismatch', 'cancelled'];
+const time = (ms: number) => new Date(ms + 3_600_000).toISOString().slice(5, 16).replace('T', ' ') + ' WAT';
+
+/** Turns the search box into SQL conditions: a job id, a phone number, or part of a name or address. */
+export function searchFilter(raw: string): { sql: string; binds: unknown[] } | null {
+  const q = raw.trim().slice(0, 80);
+  if (!q) return null;
+  const id = /^zd-?[0-9a-z]{5}$/i.test(q) ? `ZD-${q.replace(/^zd-?/i, '').toUpperCase()}` : null;
+  if (id) return { sql: 'j.id = ?', binds: [id] };
+  const phone = normalizeNigerianPhone(q);
+  if (phone.ok) return { sql: 'j.recipient_phone = ?', binds: [phone.e164] };
+  const like = `%${q.toLowerCase().replace(/[%_\\]/g, '')}%`;
+  return {
+    sql: '(lower(j.sender_name) LIKE ? OR lower(j.recipient_name) LIKE ? OR lower(pu.label) LIKE ? OR lower(dr.label) LIKE ?)',
+    binds: [like, like, like, like],
+  };
+}
+
 export async function board(request: Request, url: URL, env: Env, config: Config): Promise<Response> {
   if (request.method === 'POST') return boardAction(request, url, env);
+  const detail = /^\/board\/jobs\/(ZD-[0-9A-Z]{5})$/.exec(url.pathname)?.[1];
+  if (detail) return jobDetail(detail, url, env, config);
+  if (url.pathname !== '/board') return page('Not found', '<h1>Not found</h1><p><a href="/board">Back to the board</a></p>', 404);
+
+  const statusFilter = url.searchParams.get('status') ?? '';
+  const search = url.searchParams.get('q') ?? '';
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  if ((STATUSES as string[]).includes(statusFilter)) {
+    where.push('j.status = ?');
+    binds.push(statusFilter);
+  }
+  const sf = searchFilter(search);
+  if (sf) {
+    where.push(sf.sql);
+    binds.push(...sf.binds);
+  }
   const jobs = await env.DB.prepare(
     `SELECT j.*, pu.label AS pickup_label, dr.label AS dropoff_label, q.package_size, q.approximate,
             (SELECT json_extract(e.detail_json, '$.via') FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'paid' ORDER BY e.id DESC LIMIT 1) AS paid_via
        FROM jobs j JOIN quotes q ON q.id = j.quote_id
        LEFT JOIN places pu ON pu.id = q.pickup_place_id LEFT JOIN places dr ON dr.id = q.dropoff_place_id
-      ORDER BY j.created_at DESC LIMIT 50`,
-  ).all<BoardRow>();
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY j.created_at DESC LIMIT 100`,
+  )
+    .bind(...binds)
+    .all<BoardRow>();
+  const counts = await env.DB.prepare('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status').all<{ status: string; n: number }>();
   const reviews = await env.DB.prepare(
     `SELECT job_id, detail_json, created_at FROM job_events WHERE type = 'needs_review' ORDER BY id DESC LIMIT 10`,
   ).all<{ job_id: string; detail_json: string | null; created_at: number }>();
@@ -124,7 +163,6 @@ export async function board(request: Request, url: URL, env: Env, config: Config
   const calls = await env.DB.prepare('SELECT tool, ok, error_code, latency_ms, detail, created_at FROM tool_calls ORDER BY id DESC LIMIT 15').all<{
     tool: string; ok: number; error_code: string | null; latency_ms: number; detail: string | null; created_at: number;
   }>();
-  const time = (ms: number) => new Date(ms + 3_600_000).toISOString().slice(5, 16).replace('T', ' ') + ' WAT';
   const flash = url.searchParams.get('msg');
 
   const rows = jobs.results
@@ -134,7 +172,7 @@ export async function board(request: Request, url: URL, env: Env, config: Config
         .filter(([, a]) => a.from.includes(j.status))
         .map(([key, a]) => `<form method="post" action="/board/jobs/${h(j.id)}"><input type="hidden" name="action" value="${key}"><input type="hidden" name="version" value="${j.version}"><button>${a.label}</button></form>`)
         .join(' ');
-      return `<tr><td><code>${h(j.id)}</code><div class="muted">${time(j.created_at)}</div></td>
+      return `<tr><td><a href="/board/jobs/${h(j.id)}"><code>${h(j.id)}</code></a><div class="muted">${time(j.created_at)}</div></td>
 <td><span class="pill s-${h(j.status)}">${h(j.status.replace('_', ' '))}</span>${j.paid_via ? `<div class="muted">paid via ${h(PAID_VIA[j.paid_via] ?? j.paid_via)}</div>` : ''}</td>
 <td>${h(j.pickup_label ?? '?')}<div class="muted">→ ${h(j.dropoff_label ?? '?')}</div></td>
 <td>${h(j.package_size ?? '')}${j.approximate ? ' <span class="muted">(est. distance)</span>' : ''}</td>
@@ -170,7 +208,12 @@ export async function board(request: Request, url: URL, env: Env, config: Config
     `${config.businessName} board`,
     `<h1>${h(config.businessName)} dispatcher board</h1><p class="muted">Test mode · refreshes every 30 s · statuses here are what the WhatsApp agent reports to customers.</p>
 ${flash ? `<div class="card">${h(flash)}</div>` : ''}${escalationHtml}${reviewHtml}
-<div class="card"><table><tr><th>Job</th><th>Status</th><th>Route</th><th>Size</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th></tr>${rows || '<tr><td colspan="7" class="muted">No jobs yet.</td></tr>'}</table></div>
+<div class="card"><form method="get" action="/board" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+<input name="q" value="${h(search)}" placeholder="Job id, phone, name or address" style="flex:1;min-width:220px;font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)">
+<select name="status" style="font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)"><option value="">All statuses</option>${STATUSES.map((st) => `<option value="${st}"${st === statusFilter ? ' selected' : ''}>${st.replace('_', ' ')} (${counts.results.find((c) => c.status === st)?.n ?? 0})</option>`).join('')}</select>
+<button>Filter</button>${search || statusFilter ? ' <a href="/board">Clear</a>' : ''}</form>
+<p class="muted">${jobs.results.length} job(s)${jobs.results.length === 100 ? ' (latest 100; narrow the search to see older ones)' : ''}. Click a job id for everything about it.</p>
+<table><tr><th>Job</th><th>Status</th><th>Route</th><th>Size</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th></tr>${rows || `<tr><td colspan="7" class="muted">${search || statusFilter ? 'No jobs match this filter.' : 'No jobs yet.'}</td></tr>`}</table></div>
 ${noticeHtml}
 <div class="card"><h2>Recent tool calls</h2><table><tr><th>When</th><th>Tool</th><th>Result</th><th>Latency</th><th>Provider path</th></tr>${callHtml || '<tr><td colspan="5" class="muted">None yet.</td></tr>'}</table></div>`,
     200,
@@ -186,6 +229,7 @@ async function boardAction(request: Request, url: URL, env: Env): Promise<Respon
     return page('Forbidden', '<h1>Forbidden</h1><p>Cross-site request blocked.</p>', 403);
   }
   const id = /^\/board\/jobs\/(ZD-[0-9A-Z]{5})$/.exec(url.pathname)?.[1];
+  const back = url.searchParams.get('from') === 'detail' && id ? `/board/jobs/${id}` : '/board';
   const form = await request.formData();
   const action = ACTIONS[String(form.get('action'))];
   const version = Number(form.get('version'));
@@ -197,5 +241,89 @@ async function boardAction(request: Request, url: URL, env: Env): Promise<Respon
   }
   const ok = await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', Date.now(), { action: String(form.get('action')) });
   const msg = ok ? `${id}: ${action.label.toLowerCase()} ✓` : `${id} could not change from ${job.status}.`;
-  return Response.redirect(`${url.origin}/board?msg=${encodeURIComponent(msg)}`, 303);
+  return Response.redirect(`${url.origin}${back}?msg=${encodeURIComponent(msg)}`, 303);
+}
+
+// ------------------------------------------------------------------ /board/jobs/:id
+interface PlaceDetail {
+  label: string; lat: number; lng: number; precision: string; provider: string; confidence: string;
+  postcode: string | null; postcode_status: string | null; in_service_area: number; query_text: string;
+}
+
+async function jobDetail(id: string, url: URL, env: Env, config: Config): Promise<Response> {
+  const job = await getJob(env.DB, id);
+  if (!job) return page('Not found', `<h1>No job ${h(id)}</h1><p><a href="/board">Back to the board</a></p>`, 404);
+  const quote = await env.DB.prepare('SELECT * FROM quotes WHERE id = ?').bind(job.quote_id).first<{
+    package_size: string; distance_m: number; duration_s: number | null; distance_source: string; approximate: number;
+    amount_kobo: number; breakdown_json: string; rate_card_version: string; created_at: number; expires_at: number;
+    pickup_place_id: string; dropoff_place_id: string;
+  }>();
+  const place = (pid?: string) => (pid ? env.DB.prepare('SELECT * FROM places WHERE id = ?').bind(pid).first<PlaceDetail>() : Promise.resolve(null));
+  const [pickup, dropoff, payments, events, notices] = await Promise.all([
+    place(quote?.pickup_place_id),
+    place(quote?.dropoff_place_id),
+    env.DB.prepare('SELECT * FROM payments WHERE job_id = ? ORDER BY attempt').bind(id).all<PaymentRow>(),
+    env.DB.prepare('SELECT type, from_status, to_status, actor, detail_json, created_at FROM job_events WHERE job_id = ? ORDER BY id').bind(id).all<{
+      type: string; from_status: string | null; to_status: string | null; actor: string; detail_json: string | null; created_at: number;
+    }>(),
+    env.DB.prepare('SELECT event, reference, outcome, ip_trusted, received_at FROM paystack_events WHERE job_id = ? ORDER BY received_at').bind(id).all<{
+      event: string; reference: string | null; outcome: string; ip_trusted: number; received_at: number;
+    }>(),
+  ]);
+  const phone = normalizeNigerianPhone(job.recipient_phone);
+  const flash = url.searchParams.get('msg');
+  const placeCard = (title: string, p: PlaceDetail | null) =>
+    p
+      ? `<h3>${title}</h3><p><b>${h(p.label)}</b><br><span class="muted">Customer typed: "${h(p.query_text)}"</span></p>
+<table><tr><th>Precision</th><td>${h(p.precision)}</td><th>Found by</th><td>${h(p.provider)} (${h(p.confidence)} confidence)</td></tr>
+<tr><th>Postcode</th><td>${p.postcode ? `${h(p.postcode)} · NIPOST: ${h(p.postcode_status ?? '?')}` : '—'}</td><th>Service area</th><td>${p.in_service_area ? 'inside' : 'outside'}</td></tr>
+<tr><th>Map</th><td colspan="3"><a href="https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lng}#map=17/${p.lat}/${p.lng}" rel="noopener noreferrer" target="_blank">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</a></td></tr></table>`
+      : `<h3>${title}</h3><p class="muted">Not found.</p>`;
+  const buttons = Object.entries(ACTIONS)
+    .filter(([, a]) => a.from.includes(job.status))
+    .map(([key, a]) => `<form method="post" action="/board/jobs/${h(job.id)}?from=detail"><input type="hidden" name="action" value="${key}"><input type="hidden" name="version" value="${job.version}"><button>${a.label}</button></form>`)
+    .join(' ');
+  const lines = quote ? (JSON.parse(quote.breakdown_json) as { label: string; amount: string }[]) : [];
+  const payRows = payments.results
+    .map((p) => {
+      const where = p.method === 'bank_transfer'
+        ? `${h(p.transfer_bank ?? '')} ${h(p.transfer_account_number ?? '')}${p.transfer_expires_at ? `<div class="muted">expires ${time(p.transfer_expires_at)}</div>` : ''}`
+        : p.authorization_url ? `<a href="${h(p.authorization_url)}" rel="noopener noreferrer" target="_blank">checkout link</a>` : '<span class="muted">no link (initialize did not finish)</span>';
+      return `<tr><td>#${p.attempt}</td><td>${p.method === 'bank_transfer' ? 'bank transfer' : 'link'}</td><td><code>${h(p.reference)}</code></td><td>${formatNaira(p.amount_kobo)}</td><td><b>${h(p.status)}</b>${p.gateway_response ? `<div class="muted">${h(p.gateway_response)}</div>` : ''}</td><td>${h(p.channel ?? '')}</td><td>${where}</td><td>${time(p.created_at)}${p.paid_at ? `<div class="muted">paid ${time(p.paid_at)}</div>` : ''}</td></tr>`;
+    })
+    .join('');
+  const eventRows = events.results
+    .map((e) => {
+      let detail = '';
+      try {
+        const d = e.detail_json ? (JSON.parse(e.detail_json) as Record<string, unknown>) : {};
+        detail = Object.entries(d).map(([k, v]) => `${k}: ${String(v)}`).join(' · ');
+      } catch {
+        detail = e.detail_json ?? '';
+      }
+      return `<tr><td>${time(e.created_at)}</td><td>${h(e.type.replace('_', ' '))}</td><td>${e.from_status || e.to_status ? `${h(e.from_status ?? '')} → ${h(e.to_status ?? '')}` : ''}</td><td>${h(e.actor)}</td><td class="muted">${h(detail)}</td></tr>`;
+    })
+    .join('');
+  const noticeRows = notices.results
+    .map((n) => `<tr><td>${time(n.received_at)}</td><td><code>${h(n.event)}</code></td><td><code>${h(n.reference ?? '')}</code></td><td>${h(n.outcome)}</td><td>${n.ip_trusted ? 'yes' : 'no'}</td></tr>`)
+    .join('');
+
+  return page(
+    `${job.id} · ${config.businessName}`,
+    `<p><a href="/board">← All jobs</a></p>
+<h1>${h(job.id)} <span class="pill s-${h(job.status)}">${h(job.status.replace('_', ' '))}</span></h1>
+<p class="muted">Booked ${time(job.created_at)} · last change ${time(job.updated_at)}${job.paid_at ? ` · paid ${time(job.paid_at)}` : ''}${job.cancel_reason ? ` · cancelled: "${h(job.cancel_reason)}"` : ''}</p>
+${flash ? `<div class="card">${h(flash)}</div>` : ''}
+<div class="card"><table>
+<tr><th>Sender</th><td>${h(job.sender_name)}</td><th>Recipient</th><td>${h(job.recipient_name)} · ${h(phone.ok ? phone.display : job.recipient_phone)}</td></tr>
+<tr><th>Amount</th><td><b>${formatNaira(job.amount_kobo)}</b></td><th>Handover code</th><td><code>${h(job.handover_code)}</code></td></tr>
+<tr><th>Package</th><td>${h(quote?.package_size ?? '?')}${job.package_note ? ` · "${h(job.package_note)}"` : ''}</td><th>Actions</th><td>${buttons || '<span class="muted">none for this status</span>'}</td></tr>
+</table></div>
+<div class="card">${placeCard('Pickup', pickup)}${placeCard('Drop-off', dropoff)}</div>
+<div class="card"><h3>Quote <code>${h(job.quote_id)}</code></h3>${quote ? `<p>${(quote.distance_m / 1000).toFixed(1)} km by ${h(quote.distance_source)}${quote.approximate ? ' (estimated: route service unavailable)' : ''}${quote.duration_s ? ` · about ${Math.round(quote.duration_s / 60)} min` : ''} · rate card ${h(quote.rate_card_version)} · quoted ${time(quote.created_at)}</p>
+<table>${lines.map((l) => `<tr><td>${h(l.label)}</td><td>${h(l.amount)}</td></tr>`).join('')}<tr><th>Total</th><th>${formatNaira(quote.amount_kobo)}</th></tr></table>` : '<p class="muted">Quote missing.</p>'}</div>
+<div class="card"><h3>Payment attempts</h3><table><tr><th>#</th><th>Method</th><th>Reference</th><th>Amount</th><th>Paystack status</th><th>Channel</th><th>Link / account</th><th>When</th></tr>${payRows || '<tr><td colspan="8" class="muted">No payment requested yet.</td></tr>'}</table></div>
+${noticeRows ? `<div class="card"><h3>Paystack notifications</h3><table><tr><th>When</th><th>Event</th><th>Reference</th><th>Result</th><th>From Paystack IP</th></tr>${noticeRows}</table></div>` : ''}
+<div class="card"><h3>Timeline</h3><table><tr><th>When</th><th>What</th><th>Status</th><th>By</th><th>Detail</th></tr>${eventRows}</table></div>`,
+  );
 }

@@ -179,20 +179,45 @@ Only unpaid jobs can be cancelled. Paystack is checked first, so a payment that 
 - **Paid jobs** go to a human, who handles refunds.
 - The call is idempotent.
 
-## 8. Dispatcher board (`/board`)
+## 8. Admin / dispatcher board (`/board`)
 
-Basic auth, password `BOARD_TOKEN`. It shows:
-- **Jobs**, with route, size, amount, sender → recipient, handover code, status, and how each was paid
-  (Paystack notification, return page, customer check).
-- **Actions:** dispatch, deliver, approve a reviewed payment, cancel.
-- **Needs review**, with the reason.
-- **Handed to a human**, from Chord's `conversation.escalated` webhook.
-- **Payment notifications**, from Paystack webhooks.
-- **Recent tool calls**, with latency and the provider path.
+The brief does not prescribe an admin tool. Our plan chose a server-rendered board over Google Sheets
+(no extra integration, and the same database the tools use), so this is where the business sees
+everything. Log in with HTTP Basic auth (any username, password `BOARD_TOKEN`).
+
+**`/board`: all deliveries.**
+- **Search** by job id (`zd-k45v7` works), recipient phone (any format), or part of a name or address.
+- **Filter** by status, with a count per status. The latest 100 matches are shown.
+- **Each row:** route, size, amount, sender → recipient, handover code, status, and how the job was paid
+  (Paystack notification / checkout return page / customer check), with action buttons.
+- **Panels:**
+  - *Handed to a human*: from Chord's `conversation.escalated` webhook.
+  - *Needs review*: amount mismatch, double payment, paid after cancel, refunds, disputes.
+  - *Payment notifications*: Paystack webhooks, with the source-IP check.
+  - *Recent tool calls*: tool, result, latency, provider path.
+- Refreshes every 30 s.
+
+**`/board/jobs/ZD-XXXXX`: everything about one delivery.**
+- Sender, recipient (full phone), amount, handover code, package note, actions.
+- **Pickup and drop-off:** what the customer typed, the resolved label, precision, which geocoder found
+  it and with what confidence, postcode + NIPOST result, service-area check, and a map link.
+- **Quote:** distance and its source (OSRM / ORS / estimated), ETA, rate card version, line-by-line breakdown.
+- **Every payment attempt:** method (link / bank transfer), reference, Paystack status and gateway
+  message, channel, the checkout link or transfer account (with expiry), and when it was paid.
+- **Paystack notifications** for this job.
+- **Full timeline:** every event, who did it (agent / system / dispatcher), and the detail
+  (e.g. `via: paystack_webhook`).
+
+**Actions:** mark dispatched → delivered, approve a reviewed payment, cancel.
 
 **Protections:**
-- Cross-site POSTs are blocked (CSRF), and a stale page is caught by a version check.
-- Every value is HTML-escaped, and the page sends a strict CSP.
+- A cross-site POST is refused (CSRF), and a stale page (version check) is refused with "changed since
+  you loaded the page".
+- Every value is HTML-escaped and a strict CSP is set. LIKE wildcards in the search are stripped.
+- Unknown job or path: 404.
+
+**Code:** `src/web/pages.ts` · **Tests:** `test/units.test.ts` (search parsing), smoke (login, CSRF),
+manual run in `docs/EDGE_CASES.md` B1–B6.
 
 ## 9. Human handover and alerts
 

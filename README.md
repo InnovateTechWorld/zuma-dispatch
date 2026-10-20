@@ -9,7 +9,7 @@ A Chord teammate for a made-up Abuja courier, **Zuma Dispatch**.
 |---|---|
 | Tool server (MCP) | `https://zuma-dispatch.obimz123.workers.dev/mcp` (bearer token) |
 | Health | https://zuma-dispatch.obimz123.workers.dev/health |
-| Dispatcher board | https://zuma-dispatch.obimz123.workers.dev/board (Basic auth, password = `BOARD_TOKEN`) |
+| Admin / dispatcher board | https://zuma-dispatch.obimz123.workers.dev/board: every delivery, search and filters, job detail pages (Basic auth, password = `BOARD_TOKEN`) |
 | Skill | [`skill/zuma-dispatch/`](skill/zuma-dispatch/SKILL.md) |
 | Docs | [Features](docs/FEATURES.md) · [Architecture](docs/ARCHITECTURE.md) · [Edge cases](docs/EDGE_CASES.md) · [Field notes](docs/FIELD_NOTES.md) · [Research](notes/) |
 
@@ -93,7 +93,7 @@ npm run dev             # http://127.0.0.1:8787
 Test it, no Chord credits needed:
 
 ```bash
-npm test                              # 71 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config
+npm test                              # 73 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config
 ```
 ```bash
 scripts/mcp-smoke.sh                  # protocol, auth, CSRF, webhook checks (18)

@@ -120,6 +120,17 @@ Every row names the code that handles the case and the evidence that it works.
 | S5 | Several bookings match | Listed (drop-off, when booked) for the customer to choose | Code |
 | S6 | Neither id nor details | `NEED_JOB_REFERENCE`: check memory, else ask | E |
 
+## Admin board
+
+| # | Case | Handling | Evidence |
+|---|---|---|---|
+| B1 | Find one delivery among many | Search by job id (any case), phone (any format), name or address; status filter with counts | U `searchFilter`; local run: id → 1, phone → 7, name → 7, status=paid → 1 |
+| B2 | Bogus filter values | Unknown status is ignored; LIKE wildcards stripped; values are bound parameters | U, local run (`status=hacked` → all jobs) |
+| B3 | See everything about a job | Detail page: places (+ how each was found), quote breakdown, all payment attempts, Paystack notifications, timeline | Local run (ZD-K45V7, ZD-FHMY8) |
+| B4 | Unknown job / path | 404 page | Local run |
+| B5 | Two dispatchers click at once / stale page | Version check + compare-and-set | Earlier manual run (FIELD_NOTES, EDGE_CASES #51) |
+| B6 | Payment arrived without the customer writing | Row shows "paid via Paystack notification" | Local run: ZD-FHMY8 paid only by the webhook |
+
 ## Conversation memory (Chord-specific)
 
 | # | Case | Handling | Evidence |

@@ -197,3 +197,16 @@ describe('secret comparison', async () => {
     expect(basicPassword(req('Basic !!!'))).toBeNull();
   });
 });
+
+describe('board search', async () => {
+  const { searchFilter } = await import('../src/web/pages');
+  it('recognises a job id, a phone number, or free text', () => {
+    expect(searchFilter('zd-k45v7')).toEqual({ sql: 'j.id = ?', binds: ['ZD-K45V7'] });
+    expect(searchFilter('0803 123 4567')).toEqual({ sql: 'j.recipient_phone = ?', binds: ['+2348031234567'] });
+    expect(searchFilter('Wuse')?.binds).toEqual(['%wuse%', '%wuse%', '%wuse%', '%wuse%']);
+    expect(searchFilter('   ')).toBeNull();
+  });
+  it('strips LIKE wildcards so a search cannot match everything', () => {
+    expect(searchFilter('%_%')?.binds[0]).toBe('%%');
+  });
+});
