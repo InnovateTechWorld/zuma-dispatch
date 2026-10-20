@@ -12,7 +12,7 @@ A Chord teammate for a made-up Abuja courier, **Zuma Dispatch**.
 | Health | https://zuma-dispatch.obimz123.workers.dev/health |
 | Admin / dispatcher board | https://zuma-dispatch.obimz123.workers.dev/board: sign-in page, overview charts, every delivery with status tabs and search, job pages with progress (password = `BOARD_TOKEN`; see `design.md`) |
 | Skill | [`skill/zuma-dispatch/`](skill/zuma-dispatch/SKILL.md) |
-| Docs | [Features](docs/FEATURES.md) · [Architecture](docs/ARCHITECTURE.md) · [Edge cases](docs/EDGE_CASES.md) · [Field notes](docs/FIELD_NOTES.md) · [Research](notes/) |
+| Docs | [Features](docs/FEATURES.md) · [Architecture](docs/ARCHITECTURE.md) · [Edge cases](docs/EDGE_CASES.md) · [What was tested](docs/TESTING.md) · [Go-live + WhatsApp](docs/GO_LIVE.md) · [Field notes](docs/FIELD_NOTES.md) · [Design](design.md) · [Research](notes/) |
 
 Test keys and made-up data only. The server refuses to run with live Paystack or NIPOST keys.
 
