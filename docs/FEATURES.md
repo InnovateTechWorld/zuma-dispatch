@@ -266,3 +266,54 @@ tools no conversation or customer id. The server is built so this cannot cause w
 | `MCP_BEARER_TOKEN`, `BOARD_TOKEN` | secrets | required |
 | `CHORD_WEBHOOK_SECRET` | secret | optional (escalation alerts) |
 | `OPENROUTE_BASIC_KEY`, `GOOGLE_MAPS_API_KEY` | secrets | optional (provider skipped if unset) |
+
+## 12. Google Sheet mirror (owner's view on the phone)
+
+**What it does.** Keeps a "Deliveries" tab in a Google Sheet up to date: one row per job, refreshed
+after every change (booked, payment link, paid, dispatched, delivered, cancelled, needs review). The
+owner sees the business from the Google Sheets app with no new login.
+
+**Columns:** Job ID · Status · Booked (WAT) · Sender · Recipient · Recipient phone (masked) · Pickup ·
+Drop-off · Size · Distance (km) · Amount · Payment method · Paid via · Paid at · Last update · Board link.
+
+**Why a mirror and not the main store:**
+- The money logic needs compare-and-set updates, so that the webhook, the return page and the agent
+  confirming the same payment at the same moment cannot double-apply. Sheets has no equivalent.
+- The Sheets API adds 0.3–1 s and per-minute write quotas to every call.
+- Anyone with edit access can sort, delete or retype cells.
+
+So D1 stays the source of truth, the sheet is a **read-only copy**, and actions stay on the board.
+
+**How it works and fails safely:**
+
+| Concern | Handling |
+|---|---|
+| Sync must never break a booking or payment | Runs in the background (`waitUntil`) after the response; every error is caught |
+| Google down, quota hit, or key revoked | Failure recorded and shown on the board ("Last sync … failed (reason)"); the next change or **Resync all** repairs it |
+| Two changes to a new job at once | The row is claimed in D1 before appending, so the second sync waits for the next change; no duplicate rows |
+| Tab deleted or renamed by hand | Detected ("Unable to parse range"), the tab and header are recreated, then the append is retried once |
+| First ever row | Tab created if missing, header written |
+| Someone edits or sorts the sheet | Edits are never read back. **Resync all** rebuilds the tab and row map from D1 (newest 2,000 jobs) |
+| Formula injection (a name like `=HYPERLINK(...)`) | Values written with `valueInputOption=RAW`, so text is never evaluated |
+| Personal data in a shareable file | Recipient phone masked (`+234 803 *** 4567`); the full number only on the authenticated board |
+| Mirror not configured or misconfigured | `/health` shows `sheet_mirror: not_configured / invalid_config`; nothing else changes |
+| Token expiry | Access token cached per isolate and refreshed a minute before its 1-hour expiry |
+
+**Setup (about 10 minutes, in your Google account):**
+1. Google Cloud console:
+   1. Create (or pick) a project and enable the **Google Sheets API**.
+   2. IAM & Admin → Service accounts → **Create service account** (no roles needed).
+   3. Keys → Add key → **JSON**, and download it.
+2. Create a Google Sheet (any name). **Share** it with the service account's `client_email` as **Editor**.
+3. Copy the spreadsheet id from its URL (`https://docs.google.com/spreadsheets/d/<THIS PART>/edit`).
+4. Add to `.env`:
+   - `GOOGLE_SHEET_ID=<id>`
+   - `GOOGLE_SERVICE_ACCOUNT_JSON=<the whole JSON on one line>`
+5. Upload both as Worker secrets, then on the board press **Resync all** once to fill the sheet with existing jobs.
+
+**Code:** `src/sheets/google.ts` (service-account JWT with WebCrypto, Sheets client), `src/sheets/mirror.ts`
+(rows, sync, resync), `src/sheets/queue.ts` (hook used by the tools, payments and board) ·
+**Tests:** `test/sheets.test.ts`:
+- the RS256 JWT is verified with Node's crypto
+- claims, a malformed key, row parsing, phone masking, RAW writes
+- first sync (header + append + row map), update in place, concurrent claim, Google failing, mirror off

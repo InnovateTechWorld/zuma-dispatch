@@ -5,6 +5,7 @@ import { log } from './lib/log';
 import { handleMcp, SERVER_VERSION } from './mcp/server';
 import { chordWebhook } from './web/chordWebhook';
 import { paystackWebhook } from './web/paystackWebhook';
+import { mirrorStatus } from './sheets/mirror';
 import { board, payReturn } from './web/pages';
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -69,6 +70,9 @@ async function route(request: Request, url: URL, env: Env, ctx: ExecutionContext
         geocoder_chain: cfg.ok ? cfg.config.geocoderChain : undefined,
         geocoder_mode: cfg.ok ? cfg.config.geocoderMode : undefined,
         router_chain: cfg.ok ? cfg.config.routerChain : undefined,
+        sheet_mirror: mirrorStatus(env),
+        paystack_webhook: '/hooks/paystack',
+        chord_webhook: env.CHORD_WEBHOOK_SECRET ? 'configured' : 'not_configured',
       },
       healthy ? 200 : 503,
     );
@@ -108,7 +112,7 @@ async function route(request: Request, url: URL, env: Env, ctx: ExecutionContext
         headers: { 'WWW-Authenticate': 'Basic realm="Zuma Dispatch board", charset="UTF-8"', ...SECURITY_HEADERS },
       });
     }
-    return board(request, url, env, cfg.config);
+    return board(request, url, env, cfg.config, ctx);
   }
 
   if (url.pathname === '/hooks/paystack' && request.method === 'POST') {

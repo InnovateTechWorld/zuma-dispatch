@@ -9,7 +9,7 @@ export type HttpResult<T> =
   | { ok: false; failure: HttpFailure; status: number | null; body: string | null; headers: Headers | null; ms: number };
 
 export interface HttpOptions {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT';
   headers?: Record<string, string>;
   body?: unknown;
   timeoutMs: number;

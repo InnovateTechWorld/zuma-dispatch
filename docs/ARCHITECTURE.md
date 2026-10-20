@@ -7,7 +7,9 @@
  (chat.tsglabs.dev)     skill: zuma-dispatch-booking                              │
                         model + Chord's human handover                            ├─ /mcp        7 tools (stateless JSON-RPC)
                                                                                   ├─ /pay/return Paystack redirect → verify → "payment received"
-                                                                                  ├─ /board      dispatcher board (Basic auth)
+                                                                                  ├─ /board      admin board: all jobs, search, job detail (Basic auth)
+                                                                                  ├─ /hooks/paystack  payment notifications (HMAC-SHA512)
+                                                                                  ├─ /hooks/chord     handover alerts (HMAC-SHA256)
                                                                                   └─ /health     config + DB check
                                                                                        │
           ┌──────────────────────┬─────────────────────┬──────────────────┬──────────┴─────────┐
@@ -85,6 +87,8 @@ Payment attempts have their own states: `initializing` (row written before calli
 | OSRM for distance, ORS second, straight line last | OSRM answered in 0.5 s; ORS took 18 s / timed out in tests | ORS only |
 | Verify on demand + return page, no webhook | Within scope and the 6-hour budget; the return page gives near-webhook freshness for customers who come back | Webhook (go-live item; needs HMAC verification and dedupe with verify) |
 | Payment attempt row written before initialize | A timed-out initialize can still be verified by reference; `duplicate_reference` is recoverable | Insert after success (a lost response orphans a real transaction) |
+| Google Sheet as a one-way mirror, not the store | The owner gets a familiar phone view; the money logic keeps compare-and-set safety; Sheets outages never block bookings | Sheets as the database (no atomic updates, quotas, human edits break it) |
+| Paystack webhook + re-verify, return page and `verify_payment` as fallbacks | Payments are noticed without the customer writing; the payload is never trusted | Trusting the webhook body (forgeable if the key leaks, no amount check) |
 | Placeholder Paystack email `zd-xxxxx@example.com` | Paystack requires an email; WhatsApp customers rarely give one; we never send their phone number to Paystack | Phone-derived email (Paystack's suggestion; leaks PII) |
 
 ## Data model
@@ -101,6 +105,9 @@ times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 | `job_events` | append-only audit trail (actor: agent / system / dispatcher) | n/a |
 | `geocode_cache` | provider answers keyed by provider + normalised query | n/a |
 | `tool_calls` | tool, ok/error code, latency, provider path; no PII | n/a |
+| `paystack_events` | each Paystack webhook delivery: event, reference, outcome, source-IP check | dedupe key |
+| `chord_events` | each Chord webhook delivery (e.g. `conversation.escalated`) | `delivery_id` |
+| `sheet_rows`, `sheet_state` | which sheet row holds which job; last sync result | `job_id` |
 
 ## Configuration
 

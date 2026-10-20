@@ -20,4 +20,7 @@ export interface Env {
   BOARD_TOKEN?: string;
   /** Signing secret of the Chord webhook registration (Admin -> Developer -> Webhooks). Optional. */
   CHORD_WEBHOOK_SECRET?: string;
+  /** Google Sheets mirror (optional): spreadsheet id and a service-account JSON key with access to it. */
+  GOOGLE_SHEET_ID?: string;
+  GOOGLE_SERVICE_ACCOUNT_JSON?: string;
 }

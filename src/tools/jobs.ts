@@ -7,6 +7,7 @@ import { normalizeNigerianPhone } from '../lib/phone';
 import { cleanPersonName, cleanText } from '../lib/text';
 import { ToolError, type ToolContext } from '../mcp/tooling';
 import { checkPayments, isAwaitingTransfer } from '../payments/service';
+import { queueSheetSync } from '../sheets/queue';
 
 export async function loadJob(ctx: ToolContext, raw: string): Promise<JobRow> {
   const id = normalizeId(raw, 'ZD', 5);
@@ -141,6 +142,7 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
     throw e;
   }
 
+  queueSheetSync(ctx.env, ctx.waitUntil, ctx.publicOrigin, job.id);
   const [pickup, dropoff] = await Promise.all([getPlace(ctx.db, quote.pickup_place_id), getPlace(ctx.db, quote.dropoff_place_id)]);
   return jobView(job, {
     pickup: pickup?.label,
@@ -316,6 +318,7 @@ export async function cancelJob(args: { job_id: string; reason: string }, ctx: T
   const reason = cleanText(args.reason, 200);
   const done = await transitionJob(ctx.db, job.id, ['awaiting_payment', 'payment_failed'], 'cancelled', 'agent', ctx.now(), { reason }, ', cancel_reason = ?', [reason]);
   const fresh = (await getJob(ctx.db, job.id)) ?? job;
+  if (done) queueSheetSync(ctx.env, ctx.waitUntil, ctx.publicOrigin, job.id);
   if (!done && fresh.status !== 'cancelled') {
     throw new ToolError('CANNOT_CANCEL', `Job ${job.id} changed to ${fresh.status} while cancelling.`, 'Call get_job_status and tell the customer the current status.');
   }

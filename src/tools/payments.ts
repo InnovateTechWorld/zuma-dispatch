@@ -7,6 +7,7 @@ import { ToolError, type ToolContext } from '../mcp/tooling';
 import { chargeBankTransfer, initializeTransaction } from '../payments/paystack';
 import { checkPayments, isAwaitingTransfer, type PaymentCheck } from '../payments/service';
 import { loadJob } from './jobs';
+import { queueSheetSync } from '../sheets/queue';
 
 export type PaymentMethod = 'link' | 'bank_transfer';
 
@@ -79,6 +80,7 @@ export async function createPaymentLink(args: { job_id: string; method?: Payment
     );
   }
   const payment = await newAttempt(ctx, job, nextAttempt, now, method);
+  queueSheetSync(ctx.env, ctx.waitUntil, ctx.publicOrigin, job.id);
   const view = method === 'link' ? linkView(job, payment, now, false) : transferView(job, payment, now, false);
 
   // The other method may still be open (e.g. they asked for a link, then for transfer details).

@@ -7,6 +7,8 @@ import { escapeHtml as h } from '../lib/text';
 import { log } from '../lib/log';
 import { ToolError, type ToolContext } from '../mcp/tooling';
 import { checkPayments } from '../payments/service';
+import { mirrorStatus, resyncAll } from '../sheets/mirror';
+import { queueSheetSync } from '../sheets/queue';
 
 const SECURITY = {
   'Content-Type': 'text/html; charset=utf-8',
@@ -121,8 +123,9 @@ export function searchFilter(raw: string): { sql: string; binds: unknown[] } | n
   };
 }
 
-export async function board(request: Request, url: URL, env: Env, config: Config): Promise<Response> {
-  if (request.method === 'POST') return boardAction(request, url, env);
+export async function board(request: Request, url: URL, env: Env, config: Config, execCtx: ExecutionContext): Promise<Response> {
+  if (request.method === 'POST' && url.pathname === '/board/sheet/resync') return sheetResync(request, url, env);
+  if (request.method === 'POST') return boardAction(request, url, env, execCtx);
   const detail = /^\/board\/jobs\/(ZD-[0-9A-Z]{5})$/.exec(url.pathname)?.[1];
   if (detail) return jobDetail(detail, url, env, config);
   if (url.pathname !== '/board') return page('Not found', '<h1>Not found</h1><p><a href="/board">Back to the board</a></p>', 404);
@@ -200,6 +203,20 @@ export async function board(request: Request, url: URL, env: Env, config: Config
         .join('')}</table></div>`
     : '';
 
+  const mirror = mirrorStatus(env);
+  const sheetState = mirror === 'enabled'
+    ? await env.DB.prepare("SELECT ok, detail, updated_at FROM sheet_state WHERE key = 'last'").first<{ ok: number; detail: string; updated_at: number }>().catch(() => null)
+    : null;
+  const sheetHtml = `<div class="card"><h2>Google Sheet mirror</h2>${
+    mirror === 'enabled'
+      ? `<p><a href="https://docs.google.com/spreadsheets/d/${h(env.GOOGLE_SHEET_ID!.trim())}" rel="noopener noreferrer" target="_blank">Open the sheet</a> · read-only copy, updated after every change.
+${sheetState ? ` Last sync ${time(sheetState.updated_at)}: ${sheetState.ok ? 'ok' : `<b>failed</b> (${h(sheetState.detail)})`}.` : ' No sync yet.'}</p>
+<form method="post" action="/board/sheet/resync"><button>Resync all</button></form>`
+      : mirror === 'invalid_config'
+        ? '<p><b>Misconfigured:</b> GOOGLE_SHEET_ID or GOOGLE_SERVICE_ACCOUNT_JSON is invalid. See docs/FEATURES.md §12.</p>'
+        : '<p class="muted">Not configured (optional). See docs/FEATURES.md §12.</p>'
+  }</div>`;
+
   const callHtml = calls.results
     .map((c) => `<tr><td>${time(c.created_at)}</td><td><code>${h(c.tool)}</code></td><td>${c.ok ? 'ok' : h(c.error_code ?? 'error')}</td><td>${c.latency_ms} ms</td><td class="muted"><code>${h(c.detail ?? '')}</code></td></tr>`)
     .join('');
@@ -214,18 +231,28 @@ ${flash ? `<div class="card">${h(flash)}</div>` : ''}${escalationHtml}${reviewHt
 <button>Filter</button>${search || statusFilter ? ' <a href="/board">Clear</a>' : ''}</form>
 <p class="muted">${jobs.results.length} job(s)${jobs.results.length === 100 ? ' (latest 100; narrow the search to see older ones)' : ''}. Click a job id for everything about it.</p>
 <table><tr><th>Job</th><th>Status</th><th>Route</th><th>Size</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th></tr>${rows || `<tr><td colspan="7" class="muted">${search || statusFilter ? 'No jobs match this filter.' : 'No jobs yet.'}</td></tr>`}</table></div>
-${noticeHtml}
+${noticeHtml}${sheetHtml}
 <div class="card"><h2>Recent tool calls</h2><table><tr><th>When</th><th>Tool</th><th>Result</th><th>Latency</th><th>Provider path</th></tr>${callHtml || '<tr><td colspan="5" class="muted">None yet.</td></tr>'}</table></div>`,
     200,
     30,
   );
 }
 
-async function boardAction(request: Request, url: URL, env: Env): Promise<Response> {
+function crossSite(request: Request, url: URL): boolean {
   // Basic-auth credentials are sent automatically by the browser, so block cross-site form posts (CSRF).
   const origin = request.headers.get('Origin');
   const site = request.headers.get('Sec-Fetch-Site');
-  if ((origin && origin !== url.origin) || (site && site !== 'same-origin')) {
+  return Boolean((origin && origin !== url.origin) || (site && site !== 'same-origin'));
+}
+
+async function sheetResync(request: Request, url: URL, env: Env): Promise<Response> {
+  if (crossSite(request, url)) return page('Forbidden', '<h1>Forbidden</h1><p>Cross-site request blocked.</p>', 403);
+  const r = await resyncAll(env, url.origin);
+  return Response.redirect(`${url.origin}/board?msg=${encodeURIComponent(r.detail)}`, 303);
+}
+
+async function boardAction(request: Request, url: URL, env: Env, execCtx: ExecutionContext): Promise<Response> {
+  if (crossSite(request, url)) {
     return page('Forbidden', '<h1>Forbidden</h1><p>Cross-site request blocked.</p>', 403);
   }
   const id = /^\/board\/jobs\/(ZD-[0-9A-Z]{5})$/.exec(url.pathname)?.[1];
@@ -240,6 +267,7 @@ async function boardAction(request: Request, url: URL, env: Env): Promise<Respon
     return Response.redirect(`${url.origin}/board?msg=${encodeURIComponent(`${id} changed since you loaded the page (now ${job.status}). Check and try again.`)}`, 303);
   }
   const ok = await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', Date.now(), { action: String(form.get('action')) });
+  if (ok) queueSheetSync(env, (p) => execCtx.waitUntil(p), url.origin, id);
   const msg = ok ? `${id}: ${action.label.toLowerCase()} ✓` : `${id} could not change from ${job.status}.`;
   return Response.redirect(`${url.origin}${back}?msg=${encodeURIComponent(msg)}`, 303);
 }

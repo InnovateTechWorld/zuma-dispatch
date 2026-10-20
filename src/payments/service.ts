@@ -3,6 +3,7 @@ import { log } from '../lib/log';
 import type { ToolContext } from '../mcp/tooling';
 import { combine, decideAttempt, type AttemptVerdict } from './decide';
 import { verifyTransaction } from './paystack';
+import { queueSheetSync } from '../sheets/queue';
 
 /** Don't ask Paystack about the same reference more than once per this interval (rate limits; no polling loops). */
 export const RECHECK_INTERVAL_MS = 10_000;
@@ -149,5 +150,6 @@ export async function checkPayments(ctx: ToolContext, job: JobRow, opts: CheckOp
   }
 
   const fresh = (await getJob(ctx.db, job.id)) ?? job;
+  if (fresh.status !== job.status || fresh.version !== job.version) queueSheetSync(ctx.env, ctx.waitUntil, ctx.publicOrigin, job.id);
   return { outcome, job: fresh, payments, paidAttempts, needsReview, throttled };
 }

@@ -93,7 +93,7 @@ npm run dev             # http://127.0.0.1:8787
 Test it, no Chord credits needed:
 
 ```bash
-npm test                              # 73 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config
+npm test                              # 83 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config
 ```
 ```bash
 scripts/mcp-smoke.sh                  # protocol, auth, CSRF, webhook checks (18)
@@ -134,6 +134,12 @@ npm run deploy && scripts/mcp-smoke.sh https://<your-worker>.workers.dev
 | Chord (customer handed to a human) | `/hooks/chord` | Chord → Admin → Channels & Tools → Developer → Webhooks → Add webhook ("Human takeover") | `CHORD_WEBHOOK_SECRET` |
 
 See [docs/FEATURES.md](docs/FEATURES.md) §5 and §9.
+
+## Google Sheet mirror (optional)
+
+A read-only "Deliveries" tab updated after every change, for the owner's phone. D1 stays the source of
+truth. Setup and failure handling are in [docs/FEATURES.md](docs/FEATURES.md) §12. Set
+`GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON`, then press **Resync all** on the board.
 
 ## Connect it to Chord
 

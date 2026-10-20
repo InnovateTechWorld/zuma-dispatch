@@ -131,6 +131,20 @@ Every row names the code that handles the case and the evidence that it works.
 | B5 | Two dispatchers click at once / stale page | Version check + compare-and-set | Earlier manual run (FIELD_NOTES, EDGE_CASES #51) |
 | B6 | Payment arrived without the customer writing | Row shows "paid via Paystack notification" | Local run: ZD-FHMY8 paid only by the webhook |
 
+## Google Sheet mirror
+
+| # | Case | Handling | Evidence |
+|---|---|---|---|
+| M1 | Google API down or quota exceeded | Background sync, error caught, shown on the board, repaired on the next change or by Resync | U "Google failing" |
+| M2 | Two quick changes on a new job | Row claimed in D1 first, so no duplicate rows | U "another sync is appending" |
+| M3 | Job changes later | Its own row updated in place | U "known job" |
+| M4 | Tab deleted or renamed | Recreated (with header) and append retried once | Code `syncJob` |
+| M5 | Owner edits or sorts the sheet | Never read back; Resync all rebuilds from D1 | Code `resyncAll` |
+| M6 | Formula injection via names or addresses | `valueInputOption=RAW` | U (asserts RAW + raw text kept) |
+| M7 | PII in a shareable sheet | Phone masked | U |
+| M8 | Mirror not configured or bad key | No Google calls; `/health` + board say so | U "mirror off", `mirrorStatus` |
+| M9 | Token signing | RS256 JWT built with WebCrypto, verified by Node's crypto in tests | U |
+
 ## Conversation memory (Chord-specific)
 
 | # | Case | Handling | Evidence |
