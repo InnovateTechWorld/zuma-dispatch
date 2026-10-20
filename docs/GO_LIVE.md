@@ -4,6 +4,11 @@ Everything below was read from Chord's dashboard and docs on 2026-10-20. Nothing
 
 ## 1. How WhatsApp connects in Chord
 
+> **Not part of the assessment.** The brief asks for a conversation "in the WhatsApp simulator" and an
+> agent left live "so we can talk to it in the simulator", and says *"Don't connect … anyone's personal
+> number."* A connected number is a go-live prerequisite, so it belongs in this note. It is not something
+> to do for the submission.
+
 WhatsApp is a **channel** in Chord, set up in the dashboard, not in our code:
 **Admin → Channels & Tools → WhatsApp Business → Add number.** There are two ways.
 
