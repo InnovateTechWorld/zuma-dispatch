@@ -112,6 +112,8 @@ x, err, ms = call("resolve_address", text="Suleja", role="dropoff", state="abuja
 check("Suleja (Niger, next to Abuja) -> out_of_area", not err and x["status"] == "out_of_area", x, ms)
 x, err, ms = call("resolve_address", text="FC-01-A01-KP-27", role="pickup")
 check("NIPOST sandbox code (Abaji, FCT) -> in coverage, ask for a landmark", not err and x["status"] == "needs_detail" and (x.get("place") or {}).get("state") == "Abuja (FCT)", x, ms)
+x, err, ms = call("resolve_address", text="la11zdmps01", role="pickup")
+check("demo postcode (any format) -> exact place: Paystack office, Lagos", not err and x["status"] == "confirmed" and "Paystack" in x["place"]["label"] and x.get("postcode", {}).get("nipost_status") == "demo", x, ms)
 x, err, ms = call("resolve_address", text="Lagos", role="pickup")
 check("just 'Lagos' -> needs_detail", not err and x["status"] == "needs_detail", x, ms)
 

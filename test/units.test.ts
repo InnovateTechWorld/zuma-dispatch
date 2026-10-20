@@ -264,3 +264,20 @@ describe('service states: FCT and Lagos State, same-state deliveries only', asyn
     expect(preferState([shopriteJabi, shopriteLekki], undefined)).toHaveLength(2);
   });
 });
+
+describe('demo postcodes (NIPOST cannot locate anything with a test key)', async () => {
+  const { DEMO_POSTCODES, demoPostcode, findPostcode } = await import('../src/geocode/postcode');
+  const { stateOf } = await import('../src/business/states');
+  it.each(Object.entries(DEMO_POSTCODES))('%s parses, and sits in its own state', (code, place) => {
+    const parsed = findPostcode(code);
+    expect(parsed).toMatchObject({ kind: 'nipost', code });
+    expect(stateOf(place)).toBe(code.slice(0, 2));
+    expect(findPostcode(code.toLowerCase().replaceAll('-', ''))).toMatchObject({ code }); // typed compact / lower case
+  });
+  it('uses a letters-only district (real NIPOST districts are A01, A02 …) and only works with a test key', () => {
+    for (const code of Object.keys(DEMO_POSTCODES)) expect(code.split('-')[2]).toBe('ZDM');
+    expect(demoPostcode('LA-11-ZDM-PS-01', 'nipost_test_abc')).toMatchObject({ lga: 'Ikeja' });
+    expect(demoPostcode('LA-11-ZDM-PS-01', 'nipost_live_abc')).toBeNull();
+    expect(demoPostcode('LA-11-A01-PS-01', 'nipost_test_abc')).toBeNull();
+  });
+});

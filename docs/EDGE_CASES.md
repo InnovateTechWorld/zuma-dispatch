@@ -51,6 +51,7 @@ Every row names the code that handles the case and the evidence that it works.
 | A3 | Geocoder places an LGA in the wrong spot (Photon: "Abaji" → FCT Administration, Garki) | FCT uses the fixed area-council table; elsewhere a result must name the LGA | U `namesLga`; live: Abaji now 88.8 km every time |
 | A4 | Postcode + landmark matching places elsewhere ("Abaji General Hospital" → Wuse, Bauchi) | Matches more than 35 km from the postcode's area are dropped; if none remain, the postcode's area is used | U `withinKm`; live MCP run |
 | A5 | Lagos postcode (`LA-01-…`) | Area named (Agege, Lagos), in coverage, `needs_detail`; other states' postcodes → `out_of_area` | Live MCP run |
+| A7 | Tester wants a postcode that "just knows where I am" | Four demo postcodes (FCT 1, Lagos 3, incl. the Paystack office), test keys only, `nipost_status: "demo"` | U (parse, state, test-key gate); E (`la11zdmps01` → Paystack office); live quotes ₦3,000 / ₦2,850, interstate refused |
 | A6 | Cached answers computed by older logic | Stable-answer cache key versioned (`resolve:v2:`) | Code |
 | 17 | Landmark addresses ("Jabi Lake Mall") | Geocoder chain: Nominatim + Photon cross-check by default, Google if a key is set, ORS last. | E |
 | 18 | Same name, different places ("Shoprite") | Providers disagreeing by more than 400 m, or one provider returning places more than 3 km apart → `ambiguous` with up to 3 candidates for the customer to pick. | U "Shoprite Lugbe case", E (production returned Jabi, Wuse II, Wuse branches) |

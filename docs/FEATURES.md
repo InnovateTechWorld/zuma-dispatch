@@ -16,6 +16,20 @@ so the model can never invent a location.
 1. **Too vague?** "Abuja" or "my house" gets `needs_detail` without calling any provider.
 2. **NIPOST postcode?** (e.g. `FC-02-A09-DB-09`, any spacing or case; legacy 6-digit codes are recognised
    but unverifiable).
+   - **Demo postcodes** (test keys only) resolve straight to an exact place:
+
+     | Code | Place |
+     |---|---|
+     | `FC-02-ZDM-JB-01` | Jabi Lake Mall, Abuja |
+     | `LA-11-ZDM-PS-01` | Paystack office, 3A Ladoke Akintola St, Ikeja GRA |
+     | `LA-20-ZDM-NS-01` | Lagos National Stadium, Surulere |
+     | `LA-19-ZDM-UL-01` | UNILAG, Akoka |
+
+     - Why: NIPOST cannot locate any code with a test key (below, and FIELD_NOTES #17).
+     - Safety: the district `ZDM` is letters-only, while real districts are `A01`, `A02` …, so they never
+       shadow a real code. The state and LGA segments are the real ones. They are reported as
+       `nipost_status: "demo"`, never "valid". With a live NIPOST key they are ignored.
+     - Test script: [TEST_SCRIPT.md](TEST_SCRIPT.md).
    - NIPOST gives an L1 validity check and the LGA name. A test key gets no coordinates, and the sandbox
      answers `not_found` for every code (FIELD_NOTES #1, #15). The status is reported and never blocks.
    - **The area's location:** FCT postcodes use a fixed table of the six area councils (Abaji, Abuja

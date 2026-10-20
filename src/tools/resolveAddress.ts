@@ -2,7 +2,7 @@ import { COVERAGE, SERVICE_STATES, stateOf, type ServiceState } from '../busines
 import { insertPlaceStmt, type PlaceRow } from '../db/repo';
 import { geocode, type Confidence } from '../geocode/chain';
 import type { LatLng } from '../lib/geo';
-import { FCT_AREA_COUNCILS, findPostcode, lgaQuery, namesLga, nipostLgaName, nipostValidity, STATES, type NipostStatus } from '../geocode/postcode';
+import { demoPostcode, FCT_AREA_COUNCILS, findPostcode, lgaQuery, namesLga, nipostLgaName, nipostValidity, STATES, type NipostStatus } from '../geocode/postcode';
 import type { Candidate } from '../geocode/providers';
 import { haversineMeters } from '../lib/geo';
 import { newPlaceId } from '../lib/ids';
@@ -93,6 +93,24 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
   let query = text;
   let postcodeOnly = false;
   let areaPoint: Candidate | null = null;
+  // A demo postcode (test keys only) is an exact, known place: answer it directly (see DEMO_POSTCODES).
+  const demo = pc?.kind === 'nipost' ? demoPostcode(pc.code, ctx.config.nipostApiKey) : null;
+  if (pc?.kind === 'nipost' && demo) {
+    const demoPostcodeInfo = { code: pc.code, nipost_status: 'demo' as const, area: `${demo.lga}, ${STATES[pc.state]}` };
+    const row = toRow({ label: demo.label, lat: demo.lat, lng: demo.lng, precision: 'exact', provider: 'nipost' }, text, 'high', demoPostcodeInfo, false, now);
+    await ctx.db.batch([insertPlaceStmt(ctx.db, row)]);
+    ctx.trace.push('nipost:demo-postcode');
+    return {
+      status: 'confirmed',
+      role: args.role,
+      place: { place_id: row.id, label: row.label, precision: row.precision, state: stateName(row), in_service_area: row.in_service_area === 1, km_from_city_centre: kmFromCentre(row) },
+      confidence: 'high',
+      postcode: demoPostcodeInfo,
+      what_to_do: `Read the label back ("${row.label}") and ask the customer to confirm it is right before quoting.${
+        hint && stateOf(row) && stateOf(row) !== hint ? ` Note: this is in ${SERVICE_STATES[stateOf(row)!].name}, but the other address is in ${SERVICE_STATES[hint].name}. We only deliver within one state: tell the customer we cannot carry it between states and offer a human dispatcher.` : ''
+      }`,
+    };
+  }
   if (pc?.kind === 'nipost') {
     const [validity, lgaName] = await Promise.all([
       nipostValidity(pc.code, ctx.config, ctx.trace),

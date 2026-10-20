@@ -546,3 +546,44 @@ states: Abuja and Lagos."
   - "Yaba Market, Lagos" → "Yaba College of Technology, Ikeja" (wrong district in the label).
   - "Badagry" → the town and the LGA, both labelled "Badagry, Lagos State" (now merged).
   - The read-back-and-confirm rule (the agent must get a "yes") is what catches these.
+
+## 17. Demo postcodes: why we hard-code four, and why this route
+
+**The ask (from the user).** "Give me a specific code I can tell the AI so it just knows where I am:
+hard-code four, one in Abuja and three in Lagos, one can be the Paystack office."
+
+**Why NIPOST alone cannot do it today** (re-checked 2026-10-20 18:48, #1, #15):
+
+| NIPOST feature | Test key result |
+|---|---|
+| `/healthz` | 200 |
+| `/v1/reference/lgas` | Works (FCT 6 councils, Lagos 20 LGAs) |
+| `/v1/lookup` level 1 (validity) | `not_found` for every code, incl. the 5 "always resolve" sandbox codes |
+| level 2+ (names, coordinates) | `403 level_not_granted` |
+| autocomplete | empty |
+
+A test key can therefore recognise a code's state and LGA, but never a building. Exact coordinates
+need level 5: a live key with business verification (KYB).
+
+**Options considered.**
+1. *Use NIPOST's sandbox codes.* They don't resolve, all five are in Abaji, and the docs give no names or
+   coordinates.
+2. *Fake NIPOST's API* (a mock server answering `valid` with coordinates). This would hide the real
+   behaviour from the reviewer, and the code path would differ from production.
+3. *Wait for NIPOST.* It doesn't help the demo.
+4. **Chosen: four demo codes, clearly marked**, answered inside `resolve_address` before NIPOST is asked.
+   - The district segment `ZDM` is letters-only; real districts are a letter plus two digits (`A01`).
+   - State and LGA are real: `FC-02` Abuja Municipal, `LA-11` Ikeja, `LA-20` Surulere, `LA-19` Shomolu.
+   - Active only with a `nipost_test_` key.
+   - Reported as `nipost_status: "demo"`. Every other code still goes through the real NIPOST path.
+
+**Picking the places.**
+- Coordinates come from Nominatim, and each is checked by unit test to be inside its own state boundary
+  (#16).
+- Paystack's building number isn't on OSM, so the pin is on Ladoke Akintola Street (Ikeja GRA), with the
+  full address "3A Ladoke Akintola Street" in the label the rider sees.
+- The three Lagos codes span Ikeja, Surulere and Akoka, so quotes are realistic: ₦2,850–₦3,000 for small
+  packages, 11–13 km.
+
+**What would help (NIPOST).** Sandbox codes that resolve at L1, with coordinates, in each state, would make
+all of this unnecessary.

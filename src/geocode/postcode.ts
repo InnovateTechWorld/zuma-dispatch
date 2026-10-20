@@ -67,7 +67,34 @@ function tidy(s: string): string {
     .replace(/^[\s,.-]+|[\s,.-]+$/g, '');
 }
 
-export type NipostStatus = 'valid' | 'not_found' | 'invalid' | 'unavailable';
+export type NipostStatus = 'valid' | 'not_found' | 'invalid' | 'unavailable' | 'demo';
+
+/**
+ * Demo postcodes: four made-up NIPOST-format codes that resolve to exact places, so a tester can type one
+ * and the agent knows precisely where they are.
+ *
+ * Why they exist: with our test key NIPOST cannot locate anything. Its sandbox answers `not_found` for
+ * every code, including the five codes its docs say "always resolve" (all in Abaji). Coordinates need
+ * lookup level 5, which needs a live key and business verification (FIELD_NOTES #1, #15, #17).
+ *
+ * How they are kept safe:
+ * - The district segment is `ZDM` (Zuma Dispatch deMo): letters only. Real NIPOST districts are a letter
+ *   plus two digits (A01, A02 …), so these can never shadow a real code.
+ * - The state and LGA segments are the real ones for each place.
+ * - Active only with a NIPOST *test* key. A live deployment ignores them and asks NIPOST.
+ * - Answers say `nipost_status: "demo"`, never "valid".
+ */
+export const DEMO_POSTCODES: Record<string, { label: string; lat: number; lng: number; lga: string }> = {
+  'FC-02-ZDM-JB-01': { label: 'Jabi Lake Mall, Bala Sokoto Way, Jabi, Abuja', lat: 9.07628, lng: 7.42548, lga: 'Abuja Municipal' },
+  'LA-11-ZDM-PS-01': { label: 'Paystack office, 3A Ladoke Akintola Street, Ikeja GRA, Lagos', lat: 6.58346, lng: 3.35409, lga: 'Ikeja' },
+  'LA-20-ZDM-NS-01': { label: 'Lagos National Stadium, Iganmu, Surulere, Lagos', lat: 6.49714, lng: 3.36499, lga: 'Surulere' },
+  'LA-19-ZDM-UL-01': { label: 'University of Lagos (UNILAG), Akoka, Lagos', lat: 6.51203, lng: 3.39353, lga: 'Shomolu' },
+};
+
+/** The demo place for a parsed postcode, if any (test keys only). */
+export function demoPostcode(code: string, nipostApiKey: string): (typeof DEMO_POSTCODES)[string] | null {
+  return nipostApiKey.startsWith('nipost_test_') ? DEMO_POSTCODES[code] ?? null : null;
+}
 
 export async function nipostValidity(code: string, config: Config, trace: string[]): Promise<NipostStatus> {
   const r = await fetchJson<{ data?: { valid?: boolean; status?: string } }>(
