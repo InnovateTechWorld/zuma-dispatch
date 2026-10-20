@@ -95,6 +95,31 @@ Every row names the code that handles the case and the evidence that it works.
 | 53 | PII in logs | Logs carry ids, codes, latencies and provider paths only. The phone is masked in tool output; the full number is shown only on the authenticated board. | Code review |
 | 54 | Cloudflare blocks unusual clients | `Python-urllib` gets Cloudflare error 1010 before the Worker runs. Chord's Java client and curl are fine. Scripts set their own User-Agent. | FIELD_NOTES #4 |
 
+## Payment notifications (Paystack webhook)
+
+| # | Case | Handling | Evidence |
+|---|---|---|---|
+| W1 | Customer pays and never says "paid" | Paystack webhook → re-verify with the API → job paid, board shows "paid via Paystack notification" | Simulator run (see FIELD_NOTES #10) |
+| W2 | Forged or tampered webhook | HMAC-SHA512 signature over the raw body; missing, wrong or tampered → 401 | U (3 cases), E "bad signature -> 401" |
+| W3 | Correctly signed but false "success" (e.g. replayed or mis-sent) | The payload is never trusted: the server re-verifies with Paystack; unpaid stays unpaid | E "signed 'charge.success' for an unpaid link" |
+| W4 | Paystack's verify API down during the webhook | 503 so Paystack retries; return page and `verify_payment` still work | Code `paystackWebhook.ts` |
+| W5 | Duplicate deliveries / webhook + return page + agent at once | Compare-and-set transitions; one `status_changed` event; an audit row per delivery | Code, U (`combine`) |
+| W6 | Event for a reference that isn't ours | 200, logged as `unknown_reference` | U, E |
+| W7 | Refund or dispute | Job flagged `needs_review` with the reason | U (event shapes), code |
+| W8 | Request not from Paystack's IPs | Logged (`ip_trusted = no` on the board); the signature decides | Code |
+| W9 | Webhook URL not configured | Paths B (return page) and C (`verify_payment`) still confirm | E (all payment checks pass without it) |
+
+## Status without a job id
+
+| # | Case | Handling | Evidence |
+|---|---|---|---|
+| S1 | Same conversation | Job id is in the conversation text and Customer Memory | Simulator |
+| S2 | New conversation, same customer | Chord memory ("Booking ZD-…") is loaded into the prompt | Simulator (FIELD_NOTES #10) |
+| S3 | No id anywhere | `get_job_status(recipient_phone, sender_name)` with any phone format and first name | E "found by recipient phone (any format) + first name" |
+| S4 | Wrong name / someone guessing | `JOB_NOT_FOUND`; needs both factors; never returns the handover code | E "wrong sender name", "never reveals the handover code" |
+| S5 | Several bookings match | Listed (drop-off, when booked) for the customer to choose | Code |
+| S6 | Neither id nor details | `NEED_JOB_REFERENCE`: check memory, else ask | E |
+
 ## Conversation memory (Chord-specific)
 
 | # | Case | Handling | Evidence |

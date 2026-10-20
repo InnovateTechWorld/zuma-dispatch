@@ -179,3 +179,21 @@ describe('bank transfer attempts', async () => {
     expect(isAwaitingTransfer(row({ method: 'link' }), now)).toBe(false);
   });
 });
+
+describe('secret comparison', async () => {
+  const { secretsMatch, bearerToken, basicPassword } = await import('../src/lib/auth');
+  it('matches only identical secrets, whatever the lengths', async () => {
+    expect(await secretsMatch('abc', 'abc')).toBe(true);
+    expect(await secretsMatch('abc', 'abd')).toBe(false);
+    expect(await secretsMatch('', 'abc')).toBe(false);
+    expect(await secretsMatch('abc'.repeat(100), 'abc')).toBe(false);
+  });
+  it('parses Bearer and Basic headers strictly', () => {
+    const req = (v: string) => new Request('https://x', { headers: { Authorization: v } });
+    expect(bearerToken(req('Bearer tok123'))).toBe('tok123');
+    expect(bearerToken(req('Bearer'))).toBeNull();
+    expect(bearerToken(req('Basic dTpw'))).toBeNull();
+    expect(basicPassword(req(`Basic ${btoa('dispatcher:s3cret:x')}`))).toBe('s3cret:x');
+    expect(basicPassword(req('Basic !!!'))).toBeNull();
+  });
+});

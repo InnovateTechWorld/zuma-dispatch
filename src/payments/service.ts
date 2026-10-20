@@ -61,7 +61,16 @@ export interface PaymentCheck {
  * Re-verifies a job's open payment attempts with Paystack and applies the result to the
  * job with compare-and-set transitions, so concurrent checks (agent + return page) are safe.
  */
-export async function checkPayments(ctx: ToolContext, job: JobRow, opts: { allOpen?: boolean } = {}): Promise<PaymentCheck> {
+export interface CheckOptions {
+  /** Re-verify every open attempt, not just the most recent few (cancel, cancelled jobs, webhooks). */
+  allOpen?: boolean;
+  /** Ignore the 10 s re-check throttle (a webhook says something just changed). */
+  force?: boolean;
+  /** Recorded on the job's audit trail: who triggered this check. */
+  via?: 'verify' | 'paystack_webhook' | 'return_page' | 'link_request' | 'cancel';
+}
+
+export async function checkPayments(ctx: ToolContext, job: JobRow, opts: CheckOptions = {}): Promise<PaymentCheck> {
   const now = ctx.now();
   const payments = await listPayments(ctx.db, job.id);
   const verdicts: AttemptVerdict[] = [];
@@ -69,7 +78,7 @@ export async function checkPayments(ctx: ToolContext, job: JobRow, opts: { allOp
 
   for (const [i, p] of payments.entries()) {
     const open = !FINAL.includes(p.status);
-    const recent = p.last_checked_at !== null && now - p.last_checked_at < RECHECK_INTERVAL_MS;
+    const recent = !opts.force && p.last_checked_at !== null && now - p.last_checked_at < RECHECK_INTERVAL_MS;
     if (!open || (!opts.allOpen && i >= MAX_ATTEMPTS_CHECKED) || recent) {
       if (open && recent) throttled = true;
       const v = storedVerdict(p);
@@ -113,17 +122,17 @@ export async function checkPayments(ctx: ToolContext, job: JobRow, opts: { allOp
   let needsReview: string | null = null;
 
   if (outcome === 'paid') {
-    const won = await transitionJob(ctx.db, job.id, ['awaiting_payment', 'payment_failed'], 'paid', 'system', now, { via: 'verify' }, ', paid_at = ?', [now]);
-    if (won) log('info', 'job_paid', { job_id: job.id, request_id: ctx.requestId });
+    const won = await transitionJob(ctx.db, job.id, ['awaiting_payment', 'payment_failed'], 'paid', 'system', now, { via: opts.via ?? 'verify' }, ', paid_at = ?', [now]);
+    if (won) log('info', 'job_paid', { job_id: job.id, request_id: ctx.requestId, via: opts.via ?? 'verify' });
     if (job.status === 'cancelled') needsReview = 'The customer paid for a job that had been cancelled. A refund or reinstatement is needed.';
     if (paidAttempts > 1) needsReview = `The customer paid ${paidAttempts} times for this job. One payment needs refunding.`;
   } else if (outcome === 'mismatch') {
-    await transitionJob(ctx.db, job.id, ['awaiting_payment', 'payment_failed'], 'amount_mismatch', 'system', now, { via: 'verify' });
+    await transitionJob(ctx.db, job.id, ['awaiting_payment', 'payment_failed'], 'amount_mismatch', 'system', now, { via: opts.via ?? 'verify' });
     needsReview = 'Paystack reports a payment whose amount, currency or reference does not match the job. Do not dispatch.';
   } else if (outcome === 'reversed') {
     needsReview = 'A payment for this job was reversed (refund or chargeback).';
   } else if (outcome === 'failed') {
-    await transitionJob(ctx.db, job.id, ['awaiting_payment'], 'payment_failed', 'system', now, { via: 'verify' });
+    await transitionJob(ctx.db, job.id, ['awaiting_payment'], 'payment_failed', 'system', now, { via: opts.via ?? 'verify' });
   }
 
   if (needsReview) {

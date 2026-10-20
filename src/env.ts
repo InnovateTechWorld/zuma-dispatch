@@ -18,4 +18,6 @@ export interface Env {
   GOOGLE_MAPS_API_KEY?: string;
   MCP_BEARER_TOKEN?: string;
   BOARD_TOKEN?: string;
+  /** Signing secret of the Chord webhook registration (Admin -> Developer -> Webhooks). Optional. */
+  CHORD_WEBHOOK_SECRET?: string;
 }

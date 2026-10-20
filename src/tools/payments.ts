@@ -45,7 +45,7 @@ export async function createPaymentLink(args: { job_id: string; method?: Payment
   if (blocked) throw blocked;
 
   // The customer may already have paid an earlier link or transfer (double tap, or paid without saying).
-  const check = await checkPayments(ctx, job);
+  const check = await checkPayments(ctx, job, { via: 'link_request' });
   job = check.job;
   const afterCheck = blockedForPayment(job);
   if (afterCheck) throw afterCheck;

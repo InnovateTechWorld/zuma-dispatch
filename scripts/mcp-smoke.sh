@@ -34,6 +34,11 @@ done
 check "schema rejects unconfirmed booking" 'isError' \
   "$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_dispatch_job","arguments":{"quote_id":"Q-X","sender_name":"Ada","recipient_name":"Bola","recipient_phone":"08031234567","customer_confirmed":false}}}')"
 check "board requires login"      'HTTP 401'         "$(curl -sS -m 15 "$BASE/board" -w '\nHTTP %{http_code}')"
+if [[ -z "${BOARD_TOKEN:-}" && -f .env ]]; then BOARD_TOKEN="$(grep -E '^BOARD_TOKEN=' .env | head -1 | cut -d= -f2-)"; fi
+check "board blocks cross-site POST (CSRF)" 'HTTP 403'      "$(curl -sS -m 15 -u "dispatcher:${BOARD_TOKEN:-x}" -X POST "$BASE/board/jobs/ZD-00000" -H 'Origin: https://evil.example' -d 'action=dispatch&version=1' -w '\nHTTP %{http_code}')"
+check "pay/return with unknown reference -> 404" 'HTTP 404' "$(curl -sS -m 15 "$BASE/pay/return?reference=ZD-NOPE0-1" -w '\nHTTP %{http_code}')"
+WH="$(curl -sS -m 15 -X POST "$BASE/hooks/chord" -H 'Content-Type: application/json' -H 'X-Chord-Signature: sha256=00' -d '{}' -w '\nHTTP %{http_code}')"
+if [[ "$WH" == *"HTTP 503"* ]]; then echo "  SKIP  chord webhook (CHORD_WEBHOOK_SECRET not set)"; else check "chord webhook rejects a bad signature" 'HTTP 401' "$WH"; fi
 
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]

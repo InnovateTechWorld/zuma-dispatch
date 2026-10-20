@@ -193,8 +193,76 @@ const STATUS_TEXT: Record<JobRow['status'], string> = {
   amount_mismatch: 'Payment is under review by a human dispatcher.',
 };
 
-export async function getJobStatus(args: { job_id: string }, ctx: ToolContext): Promise<Record<string, unknown>> {
-  const job = await loadJob(ctx, args.job_id);
+export interface JobStatusArgs {
+  job_id?: string | undefined;
+  recipient_phone?: string | undefined;
+  sender_name?: string | undefined;
+}
+
+/** How far back a phone + name lookup searches. */
+const LOOKUP_WINDOW_MS = 14 * 24 * 60 * 60_000;
+
+/**
+ * Finds the customer's job without a job id. Chord passes the server no customer identity, so the
+ * customer proves it is theirs with two things they know together: the recipient's phone and the
+ * sender's name (first name is enough). Returns only status and route; never the handover code.
+ */
+async function lookupByDetails(ctx: ToolContext, phoneRaw: string, nameRaw: string): Promise<JobRow[]> {
+  const phone = normalizeNigerianPhone(phoneRaw);
+  const name = cleanPersonName(nameRaw);
+  if (!phone.ok || !name) {
+    throw new ToolError(
+      'INVALID_DETAILS',
+      'The phone number or name could not be used for a lookup.',
+      "Ask for the recipient's Nigerian mobile number (e.g. 0803 123 4567) and the sender's name, or the job id from the booking message.",
+    );
+  }
+  const rows = await ctx.db
+    .prepare('SELECT * FROM jobs WHERE recipient_phone = ? AND created_at > ? ORDER BY created_at DESC LIMIT 20')
+    .bind(phone.e164, ctx.now() - LOOKUP_WINDOW_MS)
+    .all<JobRow>();
+  const want = name.toLowerCase().split(' ');
+  // "Ada" matches "Ada Obi"; "Ada Obi" matches "ada obi"; "Ade" does not match "Ada".
+  return rows.results.filter((j) => {
+    const have = j.sender_name.toLowerCase().split(' ');
+    return want.every((w, i) => have[i] === w);
+  });
+}
+
+export async function getJobStatus(args: JobStatusArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
+  let job: JobRow;
+  if (args.job_id) {
+    job = await loadJob(ctx, args.job_id);
+  } else if (args.recipient_phone && args.sender_name) {
+    const matches = await lookupByDetails(ctx, args.recipient_phone, args.sender_name);
+    if (matches.length === 0) {
+      throw new ToolError(
+        'JOB_NOT_FOUND',
+        'No booking in the last 14 days matches that recipient phone and sender name.',
+        "Check the details with the customer (the recipient's number as given at booking, the sender's name), or ask for the job id from the booking message. Never guess.",
+      );
+    }
+    if (matches.length > 1) {
+      return {
+        multiple_matches: true,
+        jobs: await Promise.all(
+          matches.slice(0, 5).map(async (j) => {
+            const q = await getQuote(ctx.db, j.quote_id);
+            const d = q ? await getPlace(ctx.db, q.dropoff_place_id) : null;
+            return { job_id: j.id, status: j.status, dropoff: d?.label ?? null, booked_minutes_ago: Math.round((ctx.now() - j.created_at) / 60000) };
+          }),
+        ),
+        what_to_do: 'Several bookings match. List them briefly (drop-off and when booked) and ask which one, then call get_job_status with that job_id.',
+      };
+    }
+    job = matches[0]!;
+  } else {
+    throw new ToolError(
+      'NEED_JOB_REFERENCE',
+      'Need a job id, or the recipient phone and sender name.',
+      "Check your Customer Memory and earlier messages for a job id (ZD-...). If there is none, ask the customer for the recipient's phone number and the sender's name.",
+    );
+  }
   const quote = await getQuote(ctx.db, job.quote_id);
   const [pickup, dropoff] = quote ? await Promise.all([getPlace(ctx.db, quote.pickup_place_id), getPlace(ctx.db, quote.dropoff_place_id)]) : [null, null];
   const last = await ctx.db
@@ -223,7 +291,7 @@ export async function cancelJob(args: { job_id: string; reason: string }, ctx: T
 
   if (job.status === 'awaiting_payment' || job.status === 'payment_failed') {
     // A payment may have just landed: check every open attempt before cancelling.
-    const check = await checkPayments(ctx, job, { allOpen: true });
+    const check = await checkPayments(ctx, job, { allOpen: true, via: 'cancel' });
     job = check.job;
     // A card payment mid-OTP is real money in flight: don't cancel under it. An open bank-transfer
     // account that has received nothing is just an invitation to pay, so it does not block.

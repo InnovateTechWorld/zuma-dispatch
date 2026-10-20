@@ -125,9 +125,15 @@ export const verifyPayment = defineTool({
 export const getJobStatus = defineTool({
   name: 'get_job_status',
   title: 'Look up a job',
-  description:
-    'Read the current status of a delivery job, as set by the dispatcher: awaiting_payment, paid, dispatched, delivered, cancelled, payment_failed or amount_mismatch. Use it when the customer asks where their delivery is.',
-  inputSchema: { job_id: jobId },
+  description: [
+    'Read the current status of a delivery, as set by the dispatcher: awaiting_payment, paid, dispatched, delivered, cancelled, payment_failed or amount_mismatch. Use it when the customer asks where their delivery is.',
+    'Pass job_id if you have it (from Customer Memory or earlier messages). Otherwise pass recipient_phone and sender_name together; the customer does not need to remember the job id.',
+  ].join(' '),
+  inputSchema: {
+    job_id: jobId.optional(),
+    recipient_phone: z.string().min(3).max(20).optional().describe("Recipient's phone as the customer gives it. Use with sender_name when there is no job id."),
+    sender_name: z.string().min(2).max(80).optional().describe("Sender's name (first name is enough). Use with recipient_phone when there is no job id."),
+  },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   handler: getJobStatusHandler,
 });

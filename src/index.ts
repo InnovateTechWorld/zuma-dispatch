@@ -3,6 +3,8 @@ import type { Env } from './env';
 import { basicPassword, bearerToken, secretsMatch } from './lib/auth';
 import { log } from './lib/log';
 import { handleMcp, SERVER_VERSION } from './mcp/server';
+import { chordWebhook } from './web/chordWebhook';
+import { paystackWebhook } from './web/paystackWebhook';
 import { board, payReturn } from './web/pages';
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -107,6 +109,15 @@ async function route(request: Request, url: URL, env: Env, ctx: ExecutionContext
       });
     }
     return board(request, url, env, cfg.config);
+  }
+
+  if (url.pathname === '/hooks/paystack' && request.method === 'POST') {
+    if (!cfg.ok) return json({ error: 'server_misconfigured' }, 503); // Paystack retries
+    return paystackWebhook(request, env, cfg.config, ctx, requestId);
+  }
+
+  if (url.pathname === '/hooks/chord' && request.method === 'POST') {
+    return chordWebhook(request, env.DB, env.CHORD_WEBHOOK_SECRET?.trim() || null, requestId);
   }
 
   if (url.pathname === '/pay/return' && request.method === 'GET') {

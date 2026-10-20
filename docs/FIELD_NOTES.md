@@ -252,3 +252,51 @@ update. Chord made 12 tool calls in this stretch with 0 errors. The 11 customer 
 
 **Still open.** Cold requests to the Paystack-calling tools used up to 33 ms of CPU (free plan budget
 10 ms). Cloudflare served them, but a paid Workers plan ($5/month) removes this risk for go-live.
+
+---
+
+## 10. "Why does the customer have to say 'paid'?" What Chord can and cannot push
+
+**The question.** In the simulator test the customer paid and then had to type "paid" before Zuma
+confirmed. A real business wants the payment noticed the moment it lands.
+
+**What we built.** A Paystack webhook (`/hooks/paystack`).
+- Paystack calls us on `charge.success`. We check the HMAC-SHA512 signature and then **re-verify with
+  Paystack's API**, using the same checks as `verify_payment`.
+- The job flips to paid within seconds, and the dispatcher board shows "paid via Paystack notification"
+  without the customer doing anything.
+- This matters most for bank transfers, which have no checkout redirect.
+- If Paystack's API is down we return 503 so Paystack retries; the return page and `verify_payment`
+  remain as fallbacks.
+
+**What we could not build: telling the customer in the chat without them writing first.** We read
+every relevant Chord surface:
+
+| Chord surface | Why it does not fit |
+|---|---|
+| Event subscriptions | Run the agent from our events, but "there is no conversation, no thread" (docs) |
+| `POST /v1/threads/{id}/messages` | Operator messages, which need a human-held thread and a thread id |
+| Scheduled `MESSAGE` tasks | Can deliver into a WhatsApp conversation, but need its `conversation_id` and a Chord API key |
+| Partner chat (the simulator's connection) | "Synchronous text sends and paginated history" only, with no push |
+
+The blocker is the same each time: **MCP tool calls carry no conversation id** (we logged `_meta`
+and headers: nothing), so our server cannot know which conversation a payment belongs to.
+
+**What we'd ask Chord for.** Pass the conversation (thread) id and the customer identity to MCP tools,
+e.g. in `params._meta`. With that, a production build would queue a scheduled `MESSAGE` ("Payment
+received, rider on the way") inside WhatsApp's 24-hour service window.
+
+**Other Chord features we evaluated** (docs read 2026-10-20):
+
+| Feature | Decision |
+|---|---|
+| Customer memory (per sender, auto-loaded each turn, teammate writes its own) | **Used:** Zuma saves "Booking ZD-…" |
+| `handover_to_human` + `conversation.escalated` webhook | **Used:** board alert |
+| Escalation email | Go-live (needs API key) |
+| Budgets | Optional cap on review spending |
+| Customer identity linking | Go-live (memory across WhatsApp / Telegram / email) |
+| Built-in Paystack + Bookings connectors | Not used (the brief asks for our own tool); they handle Paystack webhooks themselves for appointment bookings |
+| Knowledge bundles | Not needed (small FAQ in skill references) |
+| Stored escalation rules | Off by default |
+| Procedures | Legacy path for teammates without skills |
+| Teammate collaboration and schedule panes | Out of scope |

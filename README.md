@@ -11,7 +11,7 @@ A Chord teammate for a made-up Abuja courier, **Zuma Dispatch**.
 | Health | https://zuma-dispatch.obimz123.workers.dev/health |
 | Dispatcher board | https://zuma-dispatch.obimz123.workers.dev/board (Basic auth, password = `BOARD_TOKEN`) |
 | Skill | [`skill/zuma-dispatch/`](skill/zuma-dispatch/SKILL.md) |
-| Docs | [Architecture](docs/ARCHITECTURE.md) · [Edge cases](docs/EDGE_CASES.md) · [Field notes](docs/FIELD_NOTES.md) · [Research](notes/) |
+| Docs | [Features](docs/FEATURES.md) · [Architecture](docs/ARCHITECTURE.md) · [Edge cases](docs/EDGE_CASES.md) · [Field notes](docs/FIELD_NOTES.md) · [Research](notes/) |
 
 Test keys and made-up data only. The server refuses to run with live Paystack or NIPOST keys.
 
@@ -93,13 +93,13 @@ npm run dev             # http://127.0.0.1:8787
 Test it, no Chord credits needed:
 
 ```bash
-npm test                              # 54 unit tests: pricing, payment decisions, geocoder judgement, parsing, config safety
+npm test                              # 71 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config
 ```
 ```bash
-scripts/mcp-smoke.sh                  # protocol + auth checks (15)
+scripts/mcp-smoke.sh                  # protocol, auth, CSRF, webhook checks (18)
 ```
 ```bash
-python3 scripts/e2e.py                # booking flow, bank transfer, lost-context guards and edge cases against real providers (35)
+python3 scripts/e2e.py                # booking, payment, webhooks, lookup, lost-context guards and edge cases against real providers (42)
 ```
 ```bash
 python3 scripts/check-skill.py        # skill package vs Chord's limits
@@ -125,6 +125,15 @@ npx wrangler secret bulk secrets.json   # JSON of the secrets in .env.example; d
 ```bash
 npm run deploy && scripts/mcp-smoke.sh https://<your-worker>.workers.dev
 ```
+
+## Webhooks (payment and escalation alerts)
+
+| From | Our URL | Set it in | Secret |
+|---|---|---|---|
+| Paystack (payment landed) | `/hooks/paystack` | Paystack Dashboard → Settings → API Keys & Webhooks → Test Webhook URL | none extra (signed with the secret key) |
+| Chord (customer handed to a human) | `/hooks/chord` | Chord → Admin → Channels & Tools → Developer → Webhooks → Add webhook ("Human takeover") | `CHORD_WEBHOOK_SECRET` |
+
+See [docs/FEATURES.md](docs/FEATURES.md) §5 and §9.
 
 ## Connect it to Chord
 

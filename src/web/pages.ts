@@ -54,7 +54,7 @@ export async function payReturn(url: URL, env: Env, config: Config, ctx: Executi
   let headline: string;
   let detail: string;
   try {
-    const check = await checkPayments(toolCtx(env, config, ctx, requestId, url.origin), job);
+    const check = await checkPayments(toolCtx(env, config, ctx, requestId, url.origin), job, { via: 'return_page' });
     if (check.needsReview) {
       headline = 'We are checking your payment';
       detail = 'A dispatcher will confirm shortly. Please go back to WhatsApp.';
@@ -80,6 +80,14 @@ export async function payReturn(url: URL, env: Env, config: Config, ctx: Executi
 }
 
 // ------------------------------------------------------------------ /board
+const PAID_VIA: Record<string, string> = {
+  paystack_webhook: 'Paystack notification',
+  return_page: 'checkout return page',
+  verify: 'customer check',
+  link_request: 'link request',
+  cancel: 'cancel check',
+};
+
 const ACTIONS: Record<string, { from: JobStatus[]; to: JobStatus; label: string }> = {
   dispatch: { from: ['paid'], to: 'dispatched', label: 'Mark dispatched' },
   deliver: { from: ['dispatched'], to: 'delivered', label: 'Mark delivered' },
@@ -88,6 +96,7 @@ const ACTIONS: Record<string, { from: JobStatus[]; to: JobStatus; label: string 
 };
 
 interface BoardRow extends JobRow {
+  paid_via: string | null;
   pickup_label: string | null;
   dropoff_label: string | null;
   package_size: string | null;
@@ -97,7 +106,8 @@ interface BoardRow extends JobRow {
 export async function board(request: Request, url: URL, env: Env, config: Config): Promise<Response> {
   if (request.method === 'POST') return boardAction(request, url, env);
   const jobs = await env.DB.prepare(
-    `SELECT j.*, pu.label AS pickup_label, dr.label AS dropoff_label, q.package_size, q.approximate
+    `SELECT j.*, pu.label AS pickup_label, dr.label AS dropoff_label, q.package_size, q.approximate,
+            (SELECT json_extract(e.detail_json, '$.via') FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'paid' ORDER BY e.id DESC LIMIT 1) AS paid_via
        FROM jobs j JOIN quotes q ON q.id = j.quote_id
        LEFT JOIN places pu ON pu.id = q.pickup_place_id LEFT JOIN places dr ON dr.id = q.dropoff_place_id
       ORDER BY j.created_at DESC LIMIT 50`,
@@ -105,6 +115,12 @@ export async function board(request: Request, url: URL, env: Env, config: Config
   const reviews = await env.DB.prepare(
     `SELECT job_id, detail_json, created_at FROM job_events WHERE type = 'needs_review' ORDER BY id DESC LIMIT 10`,
   ).all<{ job_id: string; detail_json: string | null; created_at: number }>();
+  const notices = await env.DB.prepare(
+    'SELECT event, reference, job_id, outcome, ip_trusted, received_at FROM paystack_events ORDER BY received_at DESC LIMIT 8',
+  ).all<{ event: string; reference: string | null; job_id: string | null; outcome: string; ip_trusted: number; received_at: number }>();
+  const escalations = await env.DB.prepare(
+    `SELECT thread_id, initiator, reason, received_at FROM chord_events WHERE type = 'conversation.escalated' ORDER BY received_at DESC LIMIT 10`,
+  ).all<{ thread_id: string | null; initiator: string | null; reason: string | null; received_at: number }>();
   const calls = await env.DB.prepare('SELECT tool, ok, error_code, latency_ms, detail, created_at FROM tool_calls ORDER BY id DESC LIMIT 15').all<{
     tool: string; ok: number; error_code: string | null; latency_ms: number; detail: string | null; created_at: number;
   }>();
@@ -119,7 +135,7 @@ export async function board(request: Request, url: URL, env: Env, config: Config
         .map(([key, a]) => `<form method="post" action="/board/jobs/${h(j.id)}"><input type="hidden" name="action" value="${key}"><input type="hidden" name="version" value="${j.version}"><button>${a.label}</button></form>`)
         .join(' ');
       return `<tr><td><code>${h(j.id)}</code><div class="muted">${time(j.created_at)}</div></td>
-<td><span class="pill s-${h(j.status)}">${h(j.status.replace('_', ' '))}</span></td>
+<td><span class="pill s-${h(j.status)}">${h(j.status.replace('_', ' '))}</span>${j.paid_via ? `<div class="muted">paid via ${h(PAID_VIA[j.paid_via] ?? j.paid_via)}</div>` : ''}</td>
 <td>${h(j.pickup_label ?? '?')}<div class="muted">→ ${h(j.dropoff_label ?? '?')}</div></td>
 <td>${h(j.package_size ?? '')}${j.approximate ? ' <span class="muted">(est. distance)</span>' : ''}</td>
 <td><b>${formatNaira(j.amount_kobo)}</b></td>
@@ -134,6 +150,18 @@ export async function board(request: Request, url: URL, env: Env, config: Config
         .join('')}</table></div>`
     : '';
 
+  const escalationHtml = escalations.results.length
+    ? `<div class="card"><h2>Handed to a human (from Chord)</h2><p class="muted">Open these in Chord → Teammates → Zuma → Escalated and reply as the operator.</p><table><tr><th>When</th><th>Thread</th><th>By</th><th>Reason</th></tr>${escalations.results
+        .map((e) => `<tr><td>${time(e.received_at)}</td><td><code>${h(e.thread_id ?? '?')}</code></td><td>${h(e.initiator ?? '')}</td><td>${h(e.reason ?? '')}</td></tr>`)
+        .join('')}</table></div>`
+    : '';
+
+  const noticeHtml = notices.results.length
+    ? `<div class="card"><h2>Payment notifications (Paystack webhook)</h2><table><tr><th>When</th><th>Event</th><th>Reference</th><th>Job</th><th>Result</th><th>From Paystack IP</th></tr>${notices.results
+        .map((n) => `<tr><td>${time(n.received_at)}</td><td><code>${h(n.event)}</code></td><td><code>${h(n.reference ?? '')}</code></td><td><code>${h(n.job_id ?? '')}</code></td><td>${h(n.outcome)}</td><td>${n.ip_trusted ? 'yes' : 'no'}</td></tr>`)
+        .join('')}</table></div>`
+    : '';
+
   const callHtml = calls.results
     .map((c) => `<tr><td>${time(c.created_at)}</td><td><code>${h(c.tool)}</code></td><td>${c.ok ? 'ok' : h(c.error_code ?? 'error')}</td><td>${c.latency_ms} ms</td><td class="muted"><code>${h(c.detail ?? '')}</code></td></tr>`)
     .join('');
@@ -141,8 +169,9 @@ export async function board(request: Request, url: URL, env: Env, config: Config
   return page(
     `${config.businessName} board`,
     `<h1>${h(config.businessName)} dispatcher board</h1><p class="muted">Test mode · refreshes every 30 s · statuses here are what the WhatsApp agent reports to customers.</p>
-${flash ? `<div class="card">${h(flash)}</div>` : ''}${reviewHtml}
+${flash ? `<div class="card">${h(flash)}</div>` : ''}${escalationHtml}${reviewHtml}
 <div class="card"><table><tr><th>Job</th><th>Status</th><th>Route</th><th>Size</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th></tr>${rows || '<tr><td colspan="7" class="muted">No jobs yet.</td></tr>'}</table></div>
+${noticeHtml}
 <div class="card"><h2>Recent tool calls</h2><table><tr><th>When</th><th>Tool</th><th>Result</th><th>Latency</th><th>Provider path</th></tr>${callHtml || '<tr><td colspan="5" class="muted">None yet.</td></tr>'}</table></div>`,
     200,
     30,

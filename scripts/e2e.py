@@ -7,7 +7,7 @@ Costs no Chord credits.
 Usage:  python3 scripts/e2e.py [base_url]        (default http://127.0.0.1:8787)
 Reads MCP_BEARER_TOKEN from the environment or .env. Never prints it.
 """
-import json, os, sys, time, urllib.request, urllib.error
+import hashlib, hmac, json, os, sys, time, urllib.request, urllib.error
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8787").rstrip("/")
 TOKEN = os.environ.get("MCP_BEARER_TOKEN")
@@ -16,6 +16,24 @@ if not TOKEN and os.path.exists(".env"):
         if line.startswith("MCP_BEARER_TOKEN="):
             TOKEN = line.split("=", 1)[1].strip()
 assert TOKEN, "MCP_BEARER_TOKEN not set"
+PAYSTACK_KEY = os.environ.get("PAYSTACK_TEST_SECRET_KEY")
+if not PAYSTACK_KEY and os.path.exists(".env"):
+    for line in open(".env", encoding="utf-8"):
+        if line.startswith("PAYSTACK_TEST_SECRET_KEY="):
+            PAYSTACK_KEY = line.split("=", 1)[1].strip()
+
+
+def paystack_hook(event, reference, signature=None):
+    """POSTs a Paystack-style webhook signed with our test key (as Paystack would)."""
+    body = json.dumps({"event": event, "data": {"id": int(time.time() * 1000), "reference": reference, "amount": 1, "currency": "NGN", "status": "success"}}).encode()
+    sig = signature or hmac.new(PAYSTACK_KEY.encode(), body, hashlib.sha512).hexdigest()
+    req = urllib.request.Request(f"{BASE}/hooks/paystack", data=body, method="POST", headers={
+        "Content-Type": "application/json", "x-paystack-signature": sig, "User-Agent": "zuma-dispatch-e2e/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
 
 results = []
 _id = 0
@@ -117,10 +135,28 @@ l2, err, ms = call("create_payment_link", job_id=job.lower().replace("-", ""))
 check("second request (typed 'zd...' lower case) reuses the same link", not err and l2["reference"] == l1["reference"] and l2["reused_existing_link"], l2, ms)
 v, err, ms = call("verify_payment", job_id=job)
 check("unpaid -> not_paid_yet (never 'paid')", not err and v["payment_status"] == "not_paid_yet", v, ms)
+section("Paystack webhook (server learns about payment without the customer saying 'paid')")
+st = paystack_hook("charge.success", l1["reference"], signature="00" * 64)
+check("webhook with a bad signature -> 401", st == 401, {"status": st}, 0)
+st = paystack_hook("charge.success", l1["reference"])
+v_after, err, ms = call("verify_payment", job_id=job)
+check("signed 'charge.success' for an unpaid link -> 200, job stays unpaid (server re-verifies with Paystack)", st == 200 and not err and v_after["payment_status"] == "not_paid_yet", {"status": st, **v_after}, ms)
+st = paystack_hook("charge.success", "SOMEONE-ELSES-REF-1")
+check("event for a reference that isn't ours -> 200 (acknowledged, ignored)", st == 200, {"status": st}, 0)
+
 s, err, ms = call("get_job_status", job_id=job)
 check("status readable", not err and s["status"] == "awaiting_payment", s, ms)
 x, err, ms = call("get_job_status", job_id="ZD-ZZZZZ")
 check("unknown job -> JOB_NOT_FOUND", err and x["error"]["code"] == "JOB_NOT_FOUND", x, ms)
+
+section("Status without a job id (recipient phone + sender name)")
+s1, err, ms = call("get_job_status", recipient_phone=PHONE_A.replace("0", "+234", 1), sender_name=SENDER.split()[0])
+check("found by recipient phone (any format) + first name", not err and s1.get("job_id") == job, s1, ms)
+check("phone lookup never reveals the handover code", "handover_code" not in s1, s1, ms)
+x, err, ms = call("get_job_status", recipient_phone=PHONE_A, sender_name="Somebody Else")
+check("wrong sender name -> JOB_NOT_FOUND", err and x["error"]["code"] == "JOB_NOT_FOUND", x, ms)
+x, err, ms = call("get_job_status")
+check("no id and no details -> asks for them (NEED_JOB_REFERENCE)", err and x["error"]["code"] == "NEED_JOB_REFERENCE", x, ms)
 
 section("Cancel")
 c, err, ms = call("cancel_job", job_id=job, reason="changed my mind")
