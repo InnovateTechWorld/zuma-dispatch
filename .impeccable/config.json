@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "space grotesk",
+        "createdAt": "2026-10-20T15:38:31.459Z",
+        "reason": "Agent decision: the user asked for the Hallmark skill; its Cobalt theme prescribes Space Grotesk display, recorded in design.md and .hallmark/log.json"
+      }
+    ]
+  }
+}
