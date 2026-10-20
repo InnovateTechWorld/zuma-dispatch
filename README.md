@@ -133,9 +133,15 @@ npm run deploy && scripts/mcp-smoke.sh https://<your-worker>.workers.dev
    - ⚠ **Chrome autofills this form with your Chord login** (email into URL, password into token). Clear both fields before pasting (FIELD_NOTES #3).
 2. Use the row's **⋯ → Health**, then **⋯ → Tools**. You should see `Health: ok` and 7 tools.
    - Saving alone does not contact the server.
-3. **Teammates → Create a teammate**, then upload the `skill/zuma-dispatch` folder.
-4. Review and publish the skill, and turn the tools on for the teammate. New teammates start **paused**, so activate it.
-5. Test in the in-app chat, then create a chat link at https://chat.tsglabs.dev ("Create chat link", business name "Zuma Dispatch").
+3. **Teammates → Create a teammate**, then upload a ZIP of the skill folder's **contents**
+   (`cd skill/zuma-dispatch && zip -r ../../dist/zuma-dispatch-skill.zip SKILL.md references`).
+   Zipping the folder itself would prefix every path and break the `references/...` links.
+4. On the review screen set **Autonomy → Act independently**. The default, "Suggest, I approve", queues every reply for approval.
+5. Create the teammate. It starts **paused**, so go to Settings → Lifecycle → **Resume**.
+   - The MCP tools are available automatically because the server is enabled in the workspace.
+   - Settings → Tools does not list them, so check with one test message: its "How I did this" panel should show `mcp__Zuma_Dispatch_tools__…` calls.
+   - One turn with two tool calls cost 0.08 credits.
+6. Test in the in-app chat, then create a chat link at https://chat.tsglabs.dev ("Create chat link", business name "Zuma Dispatch").
 
 ## Security
 

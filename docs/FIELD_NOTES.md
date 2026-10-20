@@ -171,3 +171,34 @@ The in-chat path is proven up to "awaiting transfer", plus the unit-tested decis
 
 **What would help (Paystack).** A test-mode endpoint, or a dashboard button, to simulate a credit to a
 Charge-API transfer account, the way checkout already does.
+
+---
+
+## 8. Creating the teammate: three settings that would silently break a WhatsApp agent
+
+**What happened (2026-10-20 ~14:00 WAT).** Creating "Zuma" from the skill ZIP in the Chord app worked,
+but three defaults would each have broken the demo without any error:
+
+1. **ZIP paths are kept exactly.** Our first ZIP had a top-level folder, so Chord stored
+   `zuma-dispatch/SKILL.md` and `zuma-dispatch/references/faq.md`. The skill refers to
+   `references/faq.md`, and the docs say "the path in the instructions must match the uploaded file".
+   *Fix:* zip the folder's contents, not the folder. The review dialog then lists `SKILL.md`,
+   `references/faq.md`, `references/rate-card.md`.
+2. **Autonomy defaults to "Suggest, I approve".** Every reply would wait in the approval queue
+   ("Replies your teammates draft will wait here for your approval") and never reach a WhatsApp customer.
+   *Fix:* choose **Act independently** on the review screen.
+3. **The teammate is created paused.** "Activate after setup" could not be switched on ("We couldn't
+   confirm activation access") even though we are the workspace owner. *Fix:* Settings → Lifecycle → **Resume**.
+
+Also: **Settings → Tools lists only Chord's own connectors** (Notion, Paystack, …), not our MCP server,
+so nothing on screen confirms the teammate can use it. It can: an empty `mcp_server_ids` means "all
+enabled workspace servers". The first test message proved it: the reply's "How I did this" panel shows
+two `mcp__Zuma_Dispatch_tools__resolve_address` calls, and our logs show them arriving from Chord.
+
+**Cost observed.** One customer turn with two tool calls: **0.08 credits** (balance 10.00 → 9.92).
+
+**What we'd change in Chord.**
+- Warn when an uploaded ZIP has a single top folder, or strip it.
+- Default customer-facing teammates to autonomous, or show "replies need approval" prominently.
+- Explain why activation is unavailable to an owner.
+- List assigned MCP servers and their tools under Settings → Tools.

@@ -91,3 +91,7 @@ Everything below was read in the docs or reproduced with a live call on 2026-10-
   - Headers: `Accept: application/json, text/event-stream`. No `MCP-Protocol-Version` header and no `Mcp-Session-Id`.
 - Because the Worker runs near the caller (IAD), the D1 database was moved from WEUR to **ENAM** (`zuma_dispatch_v2`) to avoid a transatlantic round trip (about 80–90 ms) on every query.
 - CPU for Chord's calls was 1–11 ms.
+
+## Chord teammate (created 2026-10-20 14:00 WAT)
+- Name "Zuma", id `668480f8-a26a-43b6-9a32-ea9156f2fb4a`, autonomy autonomous, skill v1 published (3 files), status Active.
+- First in-app test: 1 turn, 2 MCP tool calls (113 ms cached + 1,965 ms fresh), 0.08 credits. Balance 9.92.
