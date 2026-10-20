@@ -183,41 +183,85 @@ Only unpaid jobs can be cancelled. Paystack is checked first, so a payment that 
 
 The brief does not prescribe an admin tool. Our plan chose a server-rendered board over Google Sheets
 (no extra integration, and the same database the tools use), so this is where the business sees
-everything. Log in with HTTP Basic auth (any username, password `BOARD_TOKEN`).
+everything. The owner also gets a read-only Google Sheet copy (§12). The visual system (tokens, type,
+components) is written down in [`design.md`](../design.md).
+
+**Sign-in (`/board/login`).**
+- A real sign-in page, not the browser's Basic-auth popup. The password is the `BOARD_TOKEN` secret.
+- A session lasts 12 hours. The cookie is `__Host-zd_board`: HttpOnly, Secure, SameSite=Strict, 32 random
+  bytes. D1 stores only its SHA-256 (`board_sessions`, migration 0007).
+- **Sign out** deletes the session row, so a copied cookie stops working at once.
+- **Rotating `BOARD_TOKEN` signs everyone out.** Each session stores a fingerprint of the password it was
+  created under.
+- **Ten wrong passwords in 15 minutes from one IP** lock that IP out for the rest of the window (429 with
+  `Retry-After`). Only a hash of the IP is stored (`board_login_failures`).
+- **Deep links survive sign-in:** `/board/jobs/ZD-K45V7` → sign in → back on that job. The `next` target
+  must be a `/board` path (no open redirect).
+- **Scripts and curl** may still send HTTP Basic credentials (any username). Browsers are never challenged
+  for them, and wrong Basic passwords count against the same lockout.
 
 **`/board`: all deliveries.**
-- **Search** by job id (`zd-k45v7` works), recipient phone (any format), or part of a name or address.
-- **Filter** by status, with a count per status. The latest 100 matches are shown.
-- **Each row:** route, size, amount, sender → recipient, handover code, status, and how the job was paid
-  (Paystack notification / checkout return page / customer check), with action buttons.
+- **Waiting on you:** chips for paid jobs ready to dispatch, jobs out for delivery, amount mismatches, and
+  handovers from Chord in the last 24 h. Each chip is a link to that filter.
+- **Overview** (the dark band). Every number is a live D1 count; nothing is estimated.
+  - Four figures: booked today, paid today (₦), waiting for payment (₦ and jobs), and agent tool calls
+    (% ok, median and p95 latency over the last 200).
+  - *Where every job is now:* a stacked bar of all jobs by status, with a legend of counts and shares.
+    Each segment and legend entry filters the list.
+  - *Bookings, last 7 days:* one column per WAT day, split paid vs not paid, with totals and paid value.
+  - *How payments were confirmed:* which path noticed the payment (Paystack notification, checkout return
+    page, customer asked, dispatcher approval) and the method used (checkout link vs bank transfer). Only
+    jobs currently paid, dispatched or delivered are counted.
+  - Charts are plain HTML/CSS (no script, no images). Each is hidden from screen readers and paired with
+    a screen-reader table or the legend text.
+- **Filters:**
+  - Status tabs with counts (plain links, so they work with scripts off).
+  - A search box for job id (`zd-k45v7` works), recipient phone (any format), or part of a name or address.
+  - Status and search combine; "Clear filters" resets both. The latest 100 matches are shown.
+- **Each row:** job id and time, status (and how it was paid), route, package and distance, amount,
+  sender → recipient with phone and handover code, and the actions allowed for that status.
+- **After an action** you return to the same filtered view, with a one-line confirmation or problem.
+- **Auto-refresh is off by default.** A 30 s refresh used to wipe whatever you were typing into the search
+  box. "Turn on auto-refresh" adds `live=1`, which filters and actions keep.
 - **Panels:**
   - *Handed to a human*: from Chord's `conversation.escalated` webhook.
-  - *Needs review*: amount mismatch, double payment, paid after cancel, refunds, disputes.
-  - *Payment notifications*: Paystack webhooks, with the source-IP check.
-  - *Recent tool calls*: tool, result, latency, provider path.
-- Refreshes every 30 s.
+  - *Payments needing review*: amount mismatch, double payment, paid after cancel, refunds, disputes.
+  - *Paystack notifications*: with the source-IP check.
+  - *Google Sheet mirror*: last sync, Open, Resync.
+  - *Recent tool calls*: collapsed; tool, result, latency, provider path.
 
 **`/board/jobs/ZD-XXXXX`: everything about one delivery.**
-- Sender, recipient (full phone), amount, handover code, package note, actions.
+- **Progress:** Booked → Paid → Dispatched → Delivered with times. Shows where a job stopped (payment
+  failed, amount mismatch, cancelled).
+- **Booking:** sender, recipient (full phone), package and note, amount, handover code, and the actions.
 - **Pickup and drop-off:** what the customer typed, the resolved label, precision, which geocoder found
   it and with what confidence, postcode + NIPOST result, service-area check, and a map link.
 - **Quote:** distance and its source (OSRM / ORS / estimated), ETA, rate card version, line-by-line breakdown.
-- **Every payment attempt:** method (link / bank transfer), reference, Paystack status and gateway
-  message, channel, the checkout link or transfer account (with expiry), and when it was paid.
-- **Paystack notifications** for this job.
-- **Full timeline:** every event, who did it (agent / system / dispatcher), and the detail
-  (e.g. `via: paystack_webhook`).
+- **Every payment attempt:** method, reference, Paystack status and gateway message, channel, the checkout
+  link or transfer account (with expiry), and when it was paid.
+- **Paystack notifications** for this job, and the **full timeline** (every event, who did it, the detail).
 
 **Actions:** mark dispatched → delivered, approve a reviewed payment, cancel.
 
+**Layout:**
+- Light and dark (follows the device setting).
+- Phones: rows become two-column cards and the progress steps stack vertically. Checked at 320, 375,
+  414 and 768 px, with no sideways scroll.
+
 **Protections:**
-- A cross-site POST is refused (CSRF), and a stale page (version check) is refused with "changed since
-  you loaded the page".
-- Every value is HTML-escaped and a strict CSP is set. LIKE wildcards in the search are stripped.
+- A cross-site POST is refused (CSRF). `Sec-Fetch-Site` is checked first, then `Origin`.
+  `Referrer-Policy: same-origin`, so our own forms carry a real Origin (FIELD_NOTES #12) and outside links
+  get no referrer.
+- A stale page (version check) is refused with "changed since you loaded the page".
+- Every value is HTML-escaped. The CSP allows no scripts at all; styles and fonts come only from inline
+  CSS and Google Fonts. LIKE wildcards in the search are stripped. `noindex`.
 - Unknown job or path: 404.
 
-**Code:** `src/web/pages.ts` · **Tests:** `test/units.test.ts` (search parsing), smoke (login, CSRF),
-manual run in `docs/EDGE_CASES.md` B1–B6.
+**Code:** `src/web/login.ts` (gate, sign-in), `src/web/session.ts` (sessions, lockout, CSRF),
+`src/web/pages.ts` (board, job page), `src/web/charts.ts`, `src/web/layout.ts`.
+**Tests:** `test/board.test.ts` (redirect safety, cookie flags, CSRF, lockout window, filters, charts, progress),
+`test/units.test.ts` (search parsing), smoke (sign-in redirect, wrong password, CSRF, Basic for scripts),
+and the browser runs in `docs/EDGE_CASES.md` B1–B16.
 
 ## 9. Human handover and alerts
 

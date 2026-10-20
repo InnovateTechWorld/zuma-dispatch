@@ -7,7 +7,7 @@
  (chat.tsglabs.dev)     skill: zuma-dispatch-booking                              │
                         model + Chord's human handover                            ├─ /mcp        7 tools (stateless JSON-RPC)
                                                                                   ├─ /pay/return Paystack redirect → verify → "payment received"
-                                                                                  ├─ /board      admin board: all jobs, search, job detail (Basic auth)
+                                                                                  ├─ /board      admin board: sign-in, overview charts, jobs, job pages
                                                                                   ├─ /hooks/paystack  payment notifications (HMAC-SHA512)
                                                                                   ├─ /hooks/chord     handover alerts (HMAC-SHA256)
                                                                                   └─ /health     config + DB check
@@ -87,13 +87,14 @@ Payment attempts have their own states: `initializing` (row written before calli
 | OSRM for distance, ORS second, straight line last | OSRM answered in 0.5 s; ORS took 18 s / timed out in tests | ORS only |
 | Verify on demand + return page, no webhook | Within scope and the 6-hour budget; the return page gives near-webhook freshness for customers who come back | Webhook (go-live item; needs HMAC verification and dedupe with verify) |
 | Payment attempt row written before initialize | A timed-out initialize can still be verified by reference; `duplicate_reference` is recoverable | Insert after success (a lost response orphans a real transaction) |
+| Board sign-in page + D1 sessions, not HTTP Basic | Basic auth puts credentials in URLs people share, which broke the board's forms in Chromium, and it cannot sign out; sessions can be revoked and the lockout slows guessing | Signed stateless cookies (no real sign-out), keep Basic (no lockout, browser popup) |
 | Google Sheet as a one-way mirror, not the store | The owner gets a familiar phone view; the money logic keeps compare-and-set safety; Sheets outages never block bookings | Sheets as the database (no atomic updates, quotas, human edits break it) |
 | Paystack webhook + re-verify, return page and `verify_payment` as fallbacks | Payments are noticed without the customer writing; the payload is never trusted | Trusting the webhook body (forgeable if the key leaks, no amount check) |
 | Placeholder Paystack email `zd-xxxxx@example.com` | Paystack requires an email; WhatsApp customers rarely give one; we never send their phone number to Paystack | Phone-derived email (Paystack's suggestion; leaks PII) |
 
 ## Data model
 
-See `migrations/0001_init.sql` and `0002_payments_and_cancellation.sql`. Money is integer kobo,
+See `migrations/0001_init.sql` … `0007_board_sessions.sql`. Money is integer kobo,
 times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 
 | Table | Holds | Key constraints |
@@ -108,6 +109,8 @@ times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 | `paystack_events` | each Paystack webhook delivery: event, reference, outcome, source-IP check | dedupe key |
 | `chord_events` | each Chord webhook delivery (e.g. `conversation.escalated`) | `delivery_id` |
 | `sheet_rows`, `sheet_state` | which sheet row holds which job; last sync result | `job_id` |
+| `board_sessions` | dispatcher sign-ins: SHA-256 of the cookie, password fingerprint, expiry | `token_hash` |
+| `board_login_failures` | failed sign-ins per hashed IP in a 15-minute window | `ip_hash` |
 
 ## Configuration
 

@@ -9,7 +9,7 @@ A Chord teammate for a made-up Abuja courier, **Zuma Dispatch**.
 |---|---|
 | Tool server (MCP) | `https://zuma-dispatch.obimz123.workers.dev/mcp` (bearer token) |
 | Health | https://zuma-dispatch.obimz123.workers.dev/health |
-| Admin / dispatcher board | https://zuma-dispatch.obimz123.workers.dev/board: every delivery, search and filters, job detail pages (Basic auth, password = `BOARD_TOKEN`) |
+| Admin / dispatcher board | https://zuma-dispatch.obimz123.workers.dev/board: sign-in page, overview charts, every delivery with status tabs and search, job pages with progress (password = `BOARD_TOKEN`; see `design.md`) |
 | Skill | [`skill/zuma-dispatch/`](skill/zuma-dispatch/SKILL.md) |
 | Docs | [Features](docs/FEATURES.md) · [Architecture](docs/ARCHITECTURE.md) · [Edge cases](docs/EDGE_CASES.md) · [Field notes](docs/FIELD_NOTES.md) · [Research](notes/) |
 
@@ -20,14 +20,14 @@ Test keys and made-up data only. The server refuses to run with live Paystack or
 ```
 skill/zuma-dispatch/        SKILL.md + references/ (faq, rate-card) — uploaded to Chord
 src/
-  index.ts                  routing, auth (bearer / Basic), Origin check, /health
+  index.ts                  routing, bearer auth + Origin check on /mcp, /health
   mcp/                      stateless MCP server, tool wrapper (validation, errors, logging)
   tools/                    the 7 tools: index.ts (schemas + descriptions) and handlers
   geocode/                  NIPOST postcodes, provider adapters, chain + cross-check, D1 cache
   routing/                  OSRM → ORS → straight-line distance
   payments/                 Paystack client, pure payment decision, verification service
   business/                 business profile (service area, hours) and the rate card
-  web/                      /pay/return and /board pages
+  web/                      /board sign-in + sessions, board and job pages, charts, /pay/return
   db/, lib/                 data access; ids, phone, money, text, geo, http helpers
 migrations/                 D1 schema
 test/                       unit tests (vitest, plain Node)
@@ -163,7 +163,7 @@ A local dev server never writes to the sheet (it would overwrite production rows
 ## Security
 
 - Bearer token on `/mcp`, checked in constant time. Any `Origin` header is refused (DNS-rebinding guard; Chord sends none).
-- `/board` uses Basic auth, has a same-origin check on POSTs (CSRF), escapes all output and sets a strict CSP.
+- `/board` has a sign-in page with server-side sessions (HttpOnly, Secure, SameSite=Strict cookie; 10-tries-per-15-min lockout), a same-origin check on POSTs (CSRF), escapes all output, and a CSP that allows no scripts.
 - Secrets live only in Worker secrets and `.env` (gitignored). Live keys are refused at runtime.
 - No PII in logs. Phones are masked in tool output, and the full number appears only on the board.
 - Paystack never receives the customer's phone or email (placeholder `zd-xxxxx@example.com`).

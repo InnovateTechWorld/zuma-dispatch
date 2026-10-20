@@ -325,3 +325,32 @@ received, rider on the way") inside WhatsApp's 24-hour service window.
 **What would help.**
 - *Google:* show where the key file was saved (or that a save is pending) in the "key created" dialog.
 - *Our own docs:* say up front that each environment needs its own sheet.
+
+## 12. The board's Filter button "did nothing": credentials in the URL, then `Origin: null`
+
+**What happened (2026-10-20, ~16:20 WAT).** The dispatcher reported that Filter on `/board` did nothing.
+`curl` with the same query string worked, so the server was fine.
+1. **Reproduced in Chromium.** The board was opened as `http://user:password@127.0.0.1:8787/board`, the
+   usual way to share a Basic-auth page. Clicking Filter sent **no request at all**: no console error, no
+   CSP report, the URL unchanged.
+   - The form's action is relative (`/board`), so it resolves against the page URL and inherits the
+     `user:password@`.
+   - Chromium silently refuses to navigate to a URL with embedded credentials from inside a page.
+   - Opening the same page without credentials in the URL, the same form worked.
+2. **The fix exposed a second bug.** The new sign-in form was refused by our own CSRF check.
+   - The pages sent `Referrer-Policy: no-referrer`. Under that policy, browsers send `Origin: null` on
+     form posts (Fetch spec, "serializing a request origin").
+   - `Origin: null` ≠ our origin, so every same-site post looked cross-site. The old board's action buttons
+     had the same latent problem in browsers; only `curl` (no Origin) had been exercising them.
+
+**Fix.**
+- A sign-in page with a server-side session cookie replaces Basic auth for browsers, so no URL ever
+  carries the password.
+- Status filters are now plain links as well as a form.
+- The CSRF check reads `Sec-Fetch-Site` first and never trusts `Origin: null`.
+- The referrer policy is `same-origin`: our forms carry a real Origin, and outside links still get nothing.
+
+**Lessons.**
+- Test admin pages in a real browser, not only with curl. Both bugs were invisible to curl.
+- Basic auth is fine for scripts and wrong for people: it ends up in shared URLs and cannot sign out.
+- When you tighten one security header (referrer policy), re-test every check that reads a related one (Origin).

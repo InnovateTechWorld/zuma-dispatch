@@ -9,49 +9,38 @@ import { ToolError, type ToolContext } from '../mcp/tooling';
 import { checkPayments } from '../payments/service';
 import { mirrorStatus, resyncAll } from '../sheets/mirror';
 import { queueSheetSync } from '../sheets/queue';
-
-const SECURITY = {
-  'Content-Type': 'text/html; charset=utf-8',
-  'Cache-Control': 'no-store',
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
-  'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-};
-
-function page(title: string, body: string, status = 200, refreshSeconds?: number): Response {
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-${refreshSeconds ? `<meta http-equiv="refresh" content="${refreshSeconds}">` : ''}<title>${h(title)}</title>
-<style>
-:root{--bg:#f7f6f2;--fg:#1c1b17;--muted:#6b6960;--card:#fff;--line:#e4e1d8;--ok:#1f7a4d;--warn:#a15c00;--bad:#b42318;--accent:#0f5fd7}
-@media (prefers-color-scheme:dark){:root{--bg:#141310;--fg:#ecebe6;--muted:#a3a093;--card:#1d1c18;--line:#34322b;--ok:#4cc38a;--warn:#f0a43a;--bad:#ff7b72;--accent:#6ea8ff}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-main{max-width:1100px;margin:0 auto;padding:24px 16px}h1{font-size:22px;margin:0 0 4px}.muted{color:var(--muted)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0;overflow-x:auto}
-table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-th{font-weight:600;color:var(--muted);white-space:nowrap}.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid currentColor}
-.s-paid,.s-delivered{color:var(--ok)}.s-dispatched{color:var(--accent)}.s-awaiting_payment{color:var(--muted)}.s-payment_failed,.s-cancelled{color:var(--warn)}.s-amount_mismatch{color:var(--bad)}
-button{font:inherit;padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}button:hover{border-color:var(--fg)}
-form{display:inline}.big{font-size:18px}code{font-family:ui-monospace,Menlo,monospace;font-size:13px}
-</style></head><body><main>${body}</main></body></html>`;
-  return new Response(html, { status, headers: SECURITY });
-}
+import {
+  breakdown, CHART_CSS, lastSevenDays, pct, percentiles, pipelineChart, STATUS_ORDER, watDayStart, weekChart,
+  type DayRow,
+} from './charts';
+import { footLine, notice, page, statusPill, time, topBar } from './layout';
+import { crossSite, safeNext } from './session';
 
 function toolCtx(env: Env, config: Config, ctx: ExecutionContext, requestId: string, origin: string): ToolContext {
   return { env, config, db: env.DB, requestId, now: () => Date.now(), waitUntil: (p) => ctx.waitUntil(p), publicOrigin: origin, trace: [] };
 }
 
 // ------------------------------------------------------------------ /pay/return
+const PAY_CSS = `.pay{max-width:40rem;padding-block:clamp(2.5rem,10vh,6rem) clamp(3.5rem,14vh,8rem)}.pay h1{margin-top:var(--space-2xs)}.pay__detail{margin-top:var(--space-sm);font-size:var(--text-md);color:var(--color-ink-2);max-width:56ch}`;
+
 /**
  * Paystack redirects the customer here after checkout (?reference=...). The redirect itself
  * proves nothing, so we verify server-side (same code path as verify_payment) and show the result.
  */
 export async function payReturn(url: URL, env: Env, config: Config, ctx: ExecutionContext, requestId: string): Promise<Response> {
+  const shell = (title: string, headline: string, detail: string, status = 200) =>
+    page({
+      title,
+      status,
+      css: PAY_CSS,
+      body: `<header class="bar"><div class="wrap bar__in"><span class="brand"><span class="brand__mark" aria-hidden="true"></span>${h(config.businessName)}</span><span class="chip">Test mode</span></div></header>
+<main class="wrap pay"><p class="label">Payment</p><h1>${headline}</h1><p class="pay__detail">${detail}</p></main>`,
+    });
   const reference = (url.searchParams.get('reference') ?? url.searchParams.get('trxref') ?? '').slice(0, 40);
   const payment = /^[A-Za-z0-9.=-]+$/.test(reference) ? await getPayment(env.DB, reference) : null;
-  if (!payment) return page('Payment', `<h1>We couldn't find that payment</h1><p class="muted">Please go back to WhatsApp and message us.</p>`, 404);
+  if (!payment) return shell('Payment', "We couldn't find that payment", 'Please go back to WhatsApp and message us.', 404);
   const job = await getJob(env.DB, payment.job_id);
-  if (!job) return page('Payment', `<h1>We couldn't find that booking</h1>`, 404);
+  if (!job) return shell('Payment', "We couldn't find that booking", 'Please go back to WhatsApp and message us.', 404);
 
   let headline: string;
   let detail: string;
@@ -78,23 +67,24 @@ export async function payReturn(url: URL, env: Env, config: Config, ctx: Executi
     headline = 'Thanks!';
     detail = 'Go back to WhatsApp and reply <b>paid</b>. We will confirm your payment there.';
   }
-  return page(`${config.businessName} payment`, `<p class="muted">${h(config.businessName)} · test mode</p><h1>${headline}</h1><p class="big">${detail}</p>`);
+  return shell(`${config.businessName} payment`, headline, detail);
 }
 
 // ------------------------------------------------------------------ /board
 const PAID_VIA: Record<string, string> = {
   paystack_webhook: 'Paystack notification',
-  return_page: 'checkout return page',
-  verify: 'customer check',
-  link_request: 'link request',
-  cancel: 'cancel check',
+  return_page: 'Checkout return page',
+  verify: 'Customer asked',
+  link_request: 'New link request',
+  cancel: 'Cancel check',
+  dispatcher: 'Dispatcher approval',
 };
 
-const ACTIONS: Record<string, { from: JobStatus[]; to: JobStatus; label: string }> = {
-  dispatch: { from: ['paid'], to: 'dispatched', label: 'Mark dispatched' },
-  deliver: { from: ['dispatched'], to: 'delivered', label: 'Mark delivered' },
+const ACTIONS: Record<string, { from: JobStatus[]; to: JobStatus; label: string; tone?: 'danger' | 'primary' }> = {
+  dispatch: { from: ['paid'], to: 'dispatched', label: 'Mark dispatched', tone: 'primary' },
+  deliver: { from: ['dispatched'], to: 'delivered', label: 'Mark delivered', tone: 'primary' },
   approve: { from: ['amount_mismatch'], to: 'paid', label: 'Approve payment' },
-  cancel: { from: ['awaiting_payment', 'payment_failed', 'amount_mismatch'], to: 'cancelled', label: 'Cancel' },
+  cancel: { from: ['awaiting_payment', 'payment_failed', 'amount_mismatch'], to: 'cancelled', label: 'Cancel', tone: 'danger' },
 };
 
 interface BoardRow extends JobRow {
@@ -103,10 +93,11 @@ interface BoardRow extends JobRow {
   dropoff_label: string | null;
   package_size: string | null;
   approximate: number | null;
+  distance_m: number | null;
 }
 
-const STATUSES: JobStatus[] = ['awaiting_payment', 'paid', 'dispatched', 'delivered', 'payment_failed', 'amount_mismatch', 'cancelled'];
-const time = (ms: number) => new Date(ms + 3_600_000).toISOString().slice(5, 16).replace('T', ' ') + ' WAT';
+const STATUSES: JobStatus[] = [...STATUS_ORDER];
+const LIST_LIMIT = 100;
 
 /** Turns the search box into SQL conditions: a job id, a phone number, or part of a name or address. */
 export function searchFilter(raw: string): { sql: string; binds: unknown[] } | null {
@@ -123,153 +114,333 @@ export function searchFilter(raw: string): { sql: string; binds: unknown[] } | n
   };
 }
 
-export async function board(request: Request, url: URL, env: Env, config: Config, execCtx: ExecutionContext): Promise<Response> {
+export interface ListQuery { status: string; q: string; live: boolean }
+
+/** Reads the list filters from the URL; an unknown status is ignored rather than matching nothing. */
+export function listQuery(url: URL): ListQuery {
+  const status = url.searchParams.get('status') ?? '';
+  return {
+    status: (STATUSES as string[]).includes(status) ? status : '',
+    q: (url.searchParams.get('q') ?? '').trim().slice(0, 80),
+    live: url.searchParams.get('live') === '1',
+  };
+}
+
+/** A board URL for these filters; empty values are left out so links stay short and shareable. */
+export function listHref(f: Partial<ListQuery>): string {
+  const p = new URLSearchParams();
+  if (f.q) p.set('q', f.q);
+  if (f.status) p.set('status', f.status);
+  if (f.live) p.set('live', '1');
+  const s = p.toString();
+  return s ? `/board?${s}` : '/board';
+}
+
+function actionForms(job: { id: string; status: JobStatus; version: number }, back: string, small: boolean): string {
+  return Object.entries(ACTIONS)
+    .filter(([, a]) => a.from.includes(job.status))
+    .map(
+      ([key, a]) =>
+        `<form class="inline" method="post" action="/board/jobs/${h(job.id)}"><input type="hidden" name="action" value="${key}"><input type="hidden" name="version" value="${job.version}"><input type="hidden" name="back" value="${h(back)}"><button class="btn${small ? ' btn--sm' : ''}${a.tone === 'danger' || (a.tone && !small) ? ` btn--${a.tone}` : ''}" type="submit">${a.label}</button></form>`,
+    )
+    .join('');
+}
+
+const BOARD_CSS = `
+.head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:var(--space-sm);padding-block:var(--space-lg) var(--space-md)}
+.head__meta{display:flex;flex-wrap:wrap;gap:var(--space-3xs) var(--space-sm);align-items:center;font-size:var(--text-sm);color:var(--color-muted)}
+.head__meta a{white-space:nowrap}
+.flash{margin-bottom:var(--space-md)}
+.attn{list-style:none;margin:0 0 var(--space-lg);padding:0;display:flex;flex-wrap:wrap;gap:var(--space-xs)}
+.attn a{display:inline-flex;align-items:center;gap:var(--space-2xs);min-height:var(--control);padding:0 var(--space-sm);border:1px solid var(--color-rule-2);border-radius:var(--radius);background:var(--color-surface);color:var(--color-ink);text-decoration:none;font-size:var(--text-sm);white-space:nowrap}
+.attn a:hover{border-color:var(--color-ink-2)}
+.attn__n{font:600 var(--text-md)/1 var(--font-display)}
+.attn a.is-urgent{border-color:var(--color-bad);background:var(--color-bad-wash)}
+.attn__none{color:var(--color-muted);font-size:var(--text-sm);margin-bottom:var(--space-lg)}
+.list{padding-block:var(--space-lg)}
+.tabs{display:flex;flex-wrap:wrap;gap:var(--space-3xs) var(--space-2xs);margin:0 0 var(--space-sm);padding:0;list-style:none}
+.tabs a{display:inline-flex;align-items:center;gap:var(--space-2xs);height:var(--control-sm);padding:0 var(--space-xs);border:1px solid transparent;border-radius:var(--radius);color:var(--color-ink-2);text-decoration:none;font-size:var(--text-sm);white-space:nowrap}
+.tabs a:hover{border-color:var(--color-rule-2);color:var(--color-ink)}
+.tabs a[aria-current="page"]{border-color:var(--color-ink);color:var(--color-ink);font-weight:600}
+.tabs .num{color:var(--color-muted);font-size:var(--text-xs)}
+.search{display:flex;gap:var(--space-2xs);align-items:center;margin-bottom:var(--space-xs)}
+.search .input{flex:1}
+.search label{flex:none}
+.result{display:flex;flex-wrap:wrap;gap:var(--space-3xs) var(--space-sm);font-size:var(--text-sm);color:var(--color-muted);margin-bottom:var(--space-sm);min-height:1lh}
+.jobs td:first-child{white-space:nowrap}.jobs td:first-child a{font-family:var(--font-mono);font-weight:500}
+.jobs .amt{font-weight:600;color:var(--color-ink);white-space:nowrap}
+.jobs .route{min-width:14rem}
+.jobs td.act{white-space:nowrap}
+.panels .section:first-child{border-top:0}
+@media (max-width:48rem){
+  .head{align-items:flex-start}
+  .search{flex-wrap:wrap}.search .input{flex-basis:100%}
+  .table-wrap.jobs-wrap{overflow:visible;border:0;background:transparent;border-radius:0}
+  .jobs thead{display:none}
+  .jobs,.jobs tbody{display:block;width:100%}
+  .jobs tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--space-2xs) var(--space-sm);padding:var(--space-sm) 0;border-top:1px solid var(--color-rule)}
+  .jobs td{display:block;border:0;padding:0;min-width:0}
+  .jobs td.route,.jobs td.people,.jobs td.act,.jobs td.empty{grid-column:1/-1}
+  .jobs td.act.is-empty{display:none}
+  .jobs td[data-label]::before{content:attr(data-label);display:block;font:500 var(--text-2xs)/1.6 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--color-muted)}
+  .jobs .route{min-width:0}
+  .jobs td.act{white-space:normal;padding-top:var(--space-3xs)}
+  .jobs td.act .btn{height:var(--control)}
+  tbody tr:hover>td{background:transparent}
+}
+${CHART_CSS}`;
+
+interface Counted { status: string; n: number }
+
+export async function board(request: Request, url: URL, env: Env, config: Config, execCtx: ExecutionContext, session: { signedIn: boolean }): Promise<Response> {
   if (request.method === 'POST' && url.pathname === '/board/sheet/resync') return sheetResync(request, url, env);
   if (request.method === 'POST') return boardAction(request, url, env, execCtx);
   const detail = /^\/board\/jobs\/(ZD-[0-9A-Z]{5})$/.exec(url.pathname)?.[1];
-  if (detail) return jobDetail(detail, url, env, config);
-  if (url.pathname !== '/board') return page('Not found', '<h1>Not found</h1><p><a href="/board">Back to the board</a></p>', 404);
+  if (detail) return jobDetail(detail, url, env, config, session);
+  if (url.pathname !== '/board') {
+    return page({ title: 'Not found', status: 404, body: `${bar(config, session)}<main class="wrap head"><div><h1>Not found</h1><p class="muted"><a href="/board">Back to the board</a></p></div></main>` });
+  }
 
-  const statusFilter = url.searchParams.get('status') ?? '';
-  const search = url.searchParams.get('q') ?? '';
+  const f = listQuery(url);
   const where: string[] = [];
   const binds: unknown[] = [];
-  if ((STATUSES as string[]).includes(statusFilter)) {
+  if (f.status) {
     where.push('j.status = ?');
-    binds.push(statusFilter);
+    binds.push(f.status);
   }
-  const sf = searchFilter(search);
+  const sf = searchFilter(f.q);
   if (sf) {
     where.push(sf.sql);
     binds.push(...sf.binds);
   }
-  const jobs = await env.DB.prepare(
-    `SELECT j.*, pu.label AS pickup_label, dr.label AS dropoff_label, q.package_size, q.approximate,
-            (SELECT json_extract(e.detail_json, '$.via') FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'paid' ORDER BY e.id DESC LIMIT 1) AS paid_via
-       FROM jobs j JOIN quotes q ON q.id = j.quote_id
-       LEFT JOIN places pu ON pu.id = q.pickup_place_id LEFT JOIN places dr ON dr.id = q.dropoff_place_id
-      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY j.created_at DESC LIMIT 100`,
-  )
-    .bind(...binds)
-    .all<BoardRow>();
-  const counts = await env.DB.prepare('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status').all<{ status: string; n: number }>();
-  const reviews = await env.DB.prepare(
-    `SELECT job_id, detail_json, created_at FROM job_events WHERE type = 'needs_review' ORDER BY id DESC LIMIT 10`,
-  ).all<{ job_id: string; detail_json: string | null; created_at: number }>();
-  const notices = await env.DB.prepare(
-    'SELECT event, reference, job_id, outcome, ip_trusted, received_at FROM paystack_events ORDER BY received_at DESC LIMIT 8',
-  ).all<{ event: string; reference: string | null; job_id: string | null; outcome: string; ip_trusted: number; received_at: number }>();
-  const escalations = await env.DB.prepare(
-    `SELECT thread_id, initiator, reason, received_at FROM chord_events WHERE type = 'conversation.escalated' ORDER BY received_at DESC LIMIT 10`,
-  ).all<{ thread_id: string | null; initiator: string | null; reason: string | null; received_at: number }>();
-  const calls = await env.DB.prepare('SELECT tool, ok, error_code, latency_ms, detail, created_at FROM tool_calls ORDER BY id DESC LIMIT 15').all<{
-    tool: string; ok: number; error_code: string | null; latency_ms: number; detail: string | null; created_at: number;
-  }>();
-  const flash = url.searchParams.get('msg');
+  const now = Date.now();
+  const today = watDayStart(now);
+  const db = env.DB;
+  const mirror = mirrorStatus(env);
+  // One round trip to D1 for everything on the page.
+  const [jobs, counts, reviews, notices, escalations, calls, daily, via, method, paidToday, owed, sheetState] = await db.batch([
+    db.prepare(
+      `SELECT j.*, pu.label AS pickup_label, dr.label AS dropoff_label, q.package_size, q.approximate, q.distance_m,
+              (SELECT json_extract(e.detail_json, '$.via') FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'paid' ORDER BY e.id DESC LIMIT 1) AS paid_via
+         FROM jobs j JOIN quotes q ON q.id = j.quote_id
+         LEFT JOIN places pu ON pu.id = q.pickup_place_id LEFT JOIN places dr ON dr.id = q.dropoff_place_id
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY j.created_at DESC LIMIT ${LIST_LIMIT + 1}`,
+    ).bind(...binds),
+    db.prepare('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status'),
+    db.prepare(`SELECT job_id, detail_json, created_at FROM job_events WHERE type = 'needs_review' ORDER BY id DESC LIMIT 10`),
+    db.prepare('SELECT event, reference, job_id, outcome, ip_trusted, received_at FROM paystack_events ORDER BY received_at DESC LIMIT 8'),
+    db.prepare(`SELECT thread_id, initiator, reason, received_at FROM chord_events WHERE type = 'conversation.escalated' ORDER BY received_at DESC LIMIT 10`),
+    db.prepare('SELECT tool, ok, error_code, latency_ms, detail, created_at FROM tool_calls ORDER BY id DESC LIMIT 200'),
+    db.prepare(
+      `SELECT (created_at + 3600000) / 86400000 AS day, COUNT(*) AS booked,
+              SUM(CASE WHEN status IN ('paid','dispatched','delivered') THEN 1 ELSE 0 END) AS paid,
+              SUM(CASE WHEN status IN ('paid','dispatched','delivered') THEN amount_kobo ELSE 0 END) AS revenue
+         FROM jobs WHERE created_at >= ? GROUP BY day`,
+    ).bind(today - 6 * 86_400_000),
+    db.prepare(
+      `SELECT COALESCE(json_extract(e.detail_json, '$.via'), e.actor) AS via, COUNT(DISTINCT e.job_id) AS n
+         FROM job_events e JOIN jobs j ON j.id = e.job_id
+        WHERE e.to_status = 'paid' AND j.status IN ('paid','dispatched','delivered') GROUP BY 1`,
+    ),
+    db.prepare(
+      `SELECT p.method, COUNT(DISTINCT p.job_id) AS n FROM payments p JOIN jobs j ON j.id = p.job_id
+        WHERE p.status = 'success' AND j.status IN ('paid','dispatched','delivered') GROUP BY p.method`,
+    ),
+    db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount_kobo), 0) AS kobo FROM jobs WHERE paid_at >= ? AND status IN ('paid','dispatched','delivered')`).bind(today),
+    db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount_kobo), 0) AS kobo FROM jobs WHERE status IN ('awaiting_payment','payment_failed')`),
+    db.prepare("SELECT ok, detail, updated_at FROM sheet_state WHERE key = 'last'"),
+  ]);
+  const list = (jobs!.results as unknown as BoardRow[]).slice(0, LIST_LIMIT);
+  const more = jobs!.results.length > LIST_LIMIT;
+  const statusCounts: Record<string, number> = Object.fromEntries((counts!.results as unknown as Counted[]).map((c) => [c.status, c.n]));
+  const totalJobs = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+  const toolRows = calls!.results as unknown as { tool: string; ok: number; error_code: string | null; latency_ms: number; detail: string | null; created_at: number }[];
+  const reviewRows = reviews!.results as unknown as { job_id: string; detail_json: string | null; created_at: number }[];
+  const escalationRows = escalations!.results as unknown as { thread_id: string | null; initiator: string | null; reason: string | null; received_at: number }[];
+  const noticeRows = notices!.results as unknown as { event: string; reference: string | null; job_id: string | null; outcome: string; ip_trusted: number; received_at: number }[];
+  const days = lastSevenDays(daily!.results as unknown as DayRow[], now);
+  const todayRow = days[days.length - 1]!;
+  const paidNow = paidToday!.results[0] as unknown as { n: number; kobo: number };
+  const owedNow = owed!.results[0] as unknown as { n: number; kobo: number };
+  const sheet = mirror === 'enabled' ? ((sheetState!.results[0] as unknown as { ok: number; detail: string; updated_at: number } | undefined) ?? null) : null;
 
-  const rows = jobs.results
+  // ---- what needs a person
+  const recentEscalations = escalationRows.filter((e) => now - e.received_at < 86_400_000).length;
+  const attention = [
+    { n: statusCounts.paid ?? 0, label: 'paid, ready to dispatch', href: listHref({ status: 'paid', live: f.live }), urgent: false },
+    { n: statusCounts.dispatched ?? 0, label: 'out for delivery', href: listHref({ status: 'dispatched', live: f.live }), urgent: false },
+    { n: statusCounts.amount_mismatch ?? 0, label: 'amount mismatch to review', href: listHref({ status: 'amount_mismatch', live: f.live }), urgent: true },
+    { n: recentEscalations, label: 'handed to a human today', href: '#handovers', urgent: true },
+  ].filter((a) => a.n > 0);
+  const attentionHtml = attention.length
+    ? `<ul class="attn" aria-label="Waiting on the dispatcher">${attention.map((a) => `<li><a href="${h(a.href)}"${a.urgent ? ' class="is-urgent"' : ''}><span class="attn__n num">${a.n}</span>${h(a.label)}</a></li>`).join('')}</ul>`
+    : '<p class="attn__none">Nothing is waiting on you right now.</p>';
+
+  // ---- overview band
+  const okCalls = toolRows.filter((c) => c.ok).length;
+  const lat = percentiles(toolRows.map((c) => c.latency_ms));
+  const figures = `<dl class="figures">
+<div class="figure"><dt class="label">Booked today</dt><dd class="figure__v num">${todayRow.booked}</dd><dd class="figure__sub">${todayRow.paid} of them paid</dd></div>
+<div class="figure"><dt class="label">Paid today</dt><dd class="figure__v num">${formatNaira(paidNow.kobo)}</dd><dd class="figure__sub">${paidNow.n} job${paidNow.n === 1 ? '' : 's'}, any booking day</dd></div>
+<div class="figure"><dt class="label">Waiting for payment</dt><dd class="figure__v num">${formatNaira(owedNow.kobo)}</dd><dd class="figure__sub">${owedNow.n} job${owedNow.n === 1 ? '' : 's'} awaiting or failed</dd></div>
+<div class="figure"><dt class="label">Agent tool calls</dt><dd class="figure__v num">${toolRows.length ? `${pct(okCalls, toolRows.length)}% ok` : '—'}</dd><dd class="figure__sub">${lat ? `median ${lat.p50} ms · p95 ${lat.p95} ms · last ${toolRows.length}` : 'no calls yet'}</dd></div>
+</dl>`;
+  const viaParts = (via!.results as unknown as { via: string; n: number }[]).map((v) => ({ label: PAID_VIA[v.via] ?? v.via, n: v.n }));
+  const methodParts = (method!.results as unknown as { method: string; n: number }[]).map((m) => ({ label: m.method === 'bank_transfer' ? 'Bank transfer' : 'Checkout link', n: m.n }));
+  const band = `<section class="band" aria-labelledby="overview-h"><div class="wrap">
+<div class="band__head"><h2 id="overview-h">Overview</h2><p class="label">${totalJobs} job${totalJobs === 1 ? '' : 's'} all time · days in WAT</p></div>
+${figures}
+<div class="viz-grid">
+<figure class="viz viz--wide"><figcaption class="label">Where every job is now</figcaption>${pipelineChart(statusCounts, (s) => listHref({ status: s, live: f.live }))}</figure>
+<figure class="viz"><figcaption class="label">Bookings, last 7 days</figcaption>${weekChart(days)}</figure>
+<figure class="viz"><figcaption class="label">How payments were confirmed</figcaption>${breakdown('Noticed by', viaParts, 'No paid jobs yet.')}${breakdown('Paid with', methodParts, 'No successful payments yet.')}</figure>
+</div></div></section>`;
+
+  // ---- jobs list
+  const back = listHref(f);
+  const rows = list
     .map((j) => {
       const phone = normalizeNigerianPhone(j.recipient_phone);
-      const buttons = Object.entries(ACTIONS)
-        .filter(([, a]) => a.from.includes(j.status))
-        .map(([key, a]) => `<form method="post" action="/board/jobs/${h(j.id)}"><input type="hidden" name="action" value="${key}"><input type="hidden" name="version" value="${j.version}"><button>${a.label}</button></form>`)
-        .join(' ');
-      return `<tr><td><a href="/board/jobs/${h(j.id)}"><code>${h(j.id)}</code></a><div class="muted">${time(j.created_at)}</div></td>
-<td><span class="pill s-${h(j.status)}">${h(j.status.replaceAll('_', ' '))}</span>${j.paid_via ? `<div class="muted">paid via ${h(PAID_VIA[j.paid_via] ?? j.paid_via)}</div>` : ''}</td>
-<td>${h(j.pickup_label ?? '?')}<div class="muted">→ ${h(j.dropoff_label ?? '?')}</div></td>
-<td>${h(j.package_size ?? '')}${j.approximate ? ' <span class="muted">(est. distance)</span>' : ''}</td>
-<td><b>${formatNaira(j.amount_kobo)}</b></td>
-<td>${h(j.sender_name)} → ${h(j.recipient_name)}<div class="muted">${h(phone.ok ? phone.display : j.recipient_phone)} · code ${h(j.handover_code)}</div></td>
-<td>${buttons}</td></tr>`;
+      const km = j.distance_m ? `${(j.distance_m / 1000).toFixed(1)} km${j.approximate ? ' (est.)' : ''}` : '';
+      const actions = actionForms(j, back, true);
+      return `<tr>
+<td data-label="Job"><a href="/board/jobs/${h(j.id)}">${h(j.id)}</a><span class="sub">${time(j.created_at)}</span></td>
+<td data-label="Status">${statusPill(j.status)}${j.paid_via ? `<span class="sub">via ${h((PAID_VIA[j.paid_via] ?? j.paid_via).toLowerCase())}</span>` : ''}</td>
+<td data-label="Route" class="route">${h(j.pickup_label ?? '?')}<span class="sub">→ ${h(j.dropoff_label ?? '?')}</span></td>
+<td data-label="Package">${h(j.package_size ?? '')}${km ? `<span class="sub num">${km}</span>` : ''}</td>
+<td data-label="Amount" class="amt num">${formatNaira(j.amount_kobo)}</td>
+<td data-label="Sender → recipient" class="people">${h(j.sender_name)} → ${h(j.recipient_name)}<span class="sub">${h(phone.ok ? phone.display : j.recipient_phone)} · code <span class="mono">${h(j.handover_code)}</span></span></td>
+<td class="act${actions ? '' : ' is-empty'}"><div class="actions">${actions || '<span class="muted">—</span>'}</div></td></tr>`;
     })
     .join('');
+  const tabs = [{ key: '', label: 'All', n: totalJobs }, ...STATUSES.map((s) => ({ key: s, label: s.replaceAll('_', ' '), n: statusCounts[s] ?? 0 }))]
+    .map((t) => `<li><a href="${h(listHref({ ...f, status: t.key }))}"${t.key === f.status ? ' aria-current="page"' : ''}>${h(t.label[0]!.toUpperCase() + t.label.slice(1))}<span class="num">${t.n}</span></a></li>`)
+    .join('');
+  const filtered = Boolean(f.q || f.status);
+  const resultLine = `<p class="result" role="status"><span>${filtered ? `${list.length}${more ? '+' : ''} matching` : `${list.length}${more ? '+' : ''} most recent`}${f.status ? ` · ${h(f.status.replaceAll('_', ' '))}` : ''}${f.q ? ` · “${h(f.q)}”` : ''}</span>${more ? `<span>Showing the latest ${LIST_LIMIT}. Search to find older ones.</span>` : ''}${filtered ? `<a href="${h(listHref({ live: f.live }))}">Clear filters</a>` : ''}</p>`;
+  const listHtml = `<section class="wrap list" aria-labelledby="jobs-h">
+<div class="section__head"><h2 id="jobs-h">Deliveries</h2></div>
+<nav aria-label="Filter by status"><ul class="tabs">${tabs}</ul></nav>
+<form class="search" method="get" action="/board" role="search">
+<label class="sr" for="q">Search deliveries</label>
+<input class="input" id="q" name="q" value="${h(f.q)}" placeholder="Job id, phone, name or address" autocomplete="off" maxlength="80">
+${f.status ? `<input type="hidden" name="status" value="${h(f.status)}">` : ''}${f.live ? '<input type="hidden" name="live" value="1">' : ''}
+<button class="btn btn--primary" type="submit">Search</button>
+</form>
+${resultLine}
+<div class="table-wrap jobs-wrap"><table class="jobs"><thead><tr><th>Job</th><th>Status</th><th>Route</th><th>Package</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th></tr></thead>
+<tbody>${rows || `<tr><td colspan="7" class="empty">${filtered ? 'No deliveries match. Try a job id like ZD-AB12C, a phone number, or part of a name.' : 'No deliveries yet. They appear here as soon as the agent books one.'}</td></tr>`}</tbody></table></div>
+</section>`;
 
-  const reviewHtml = reviews.results.length
-    ? `<div class="card"><h2>Needs review</h2><table><tr><th>Job</th><th>Reason</th><th>When</th></tr>${reviews.results
-        .map((r) => `<tr><td><code>${h(r.job_id)}</code></td><td>${h((JSON.parse(r.detail_json ?? '{}') as { reason?: string }).reason ?? '')}</td><td>${time(r.created_at)}</td></tr>`)
-        .join('')}</table></div>`
-    : '';
-
-  const escalationHtml = escalations.results.length
-    ? `<div class="card"><h2>Handed to a human (from Chord)</h2><p class="muted">Open these in Chord → Teammates → Zuma → Escalated and reply as the operator.</p><table><tr><th>When</th><th>Thread</th><th>By</th><th>Reason</th></tr>${escalations.results
-        .map((e) => `<tr><td>${time(e.received_at)}</td><td><code>${h(e.thread_id ?? '?')}</code></td><td>${h(e.initiator ?? '')}</td><td>${h(e.reason ?? '')}</td></tr>`)
-        .join('')}</table></div>`
-    : '';
-
-  const noticeHtml = notices.results.length
-    ? `<div class="card"><h2>Payment notifications (Paystack webhook)</h2><table><tr><th>When</th><th>Event</th><th>Reference</th><th>Job</th><th>Result</th><th>From Paystack IP</th></tr>${notices.results
-        .map((n) => `<tr><td>${time(n.received_at)}</td><td><code>${h(n.event)}</code></td><td><code>${h(n.reference ?? '')}</code></td><td><code>${h(n.job_id ?? '')}</code></td><td>${h(n.outcome)}</td><td>${n.ip_trusted ? 'yes' : 'no'}</td></tr>`)
-        .join('')}</table></div>`
-    : '';
-
-  const mirror = mirrorStatus(env);
-  const sheetState = mirror === 'enabled'
-    ? await env.DB.prepare("SELECT ok, detail, updated_at FROM sheet_state WHERE key = 'last'").first<{ ok: number; detail: string; updated_at: number }>().catch(() => null)
-    : null;
-  const sheetHtml = `<div class="card"><h2>Google Sheet mirror</h2>${
+  // ---- secondary panels
+  const panelTable = (head: string[], body: string) =>
+    `<div class="table-wrap"><table><thead><tr>${head.map((x) => `<th>${x}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const handoverHtml = `<section class="section" id="handovers" aria-labelledby="handovers-h"><div class="section__head"><h3 id="handovers-h">Handed to a human</h3><p class="muted">From Chord's webhook. Reply in Chord → Teammates → Zuma → Escalated.</p></div>${
+    escalationRows.length
+      ? panelTable(['When', 'Thread', 'By', 'Reason'], escalationRows.map((e) => `<tr><td>${time(e.received_at)}</td><td><code>${h(e.thread_id ?? '?')}</code></td><td>${h(e.initiator ?? '')}</td><td>${h(e.reason ?? '')}</td></tr>`).join(''))
+      : `<p class="muted">${env.CHORD_WEBHOOK_SECRET ? 'No handovers yet.' : 'Chord webhook not configured (CHORD_WEBHOOK_SECRET).'}</p>`
+  }</section>`;
+  const reviewHtml = `<section class="section" aria-labelledby="review-h"><div class="section__head"><h3 id="review-h">Payments needing review</h3><p class="muted">Paystack said success but the amount, currency or reference did not match.</p></div>${
+    reviewRows.length
+      ? panelTable(['Job', 'Reason', 'When'], reviewRows.map((r) => `<tr><td><a class="mono" href="/board/jobs/${h(r.job_id)}">${h(r.job_id)}</a></td><td>${h(safeReason(r.detail_json))}</td><td>${time(r.created_at)}</td></tr>`).join(''))
+      : '<p class="muted">None.</p>'
+  }</section>`;
+  const noticeHtml = `<section class="section" aria-labelledby="notices-h"><div class="section__head"><h3 id="notices-h">Paystack notifications</h3><p class="muted">Each one is re-checked with Paystack before anything changes.</p></div>${
+    noticeRows.length
+      ? panelTable(['When', 'Event', 'Job', 'Result', 'Paystack IP'], noticeRows.map((n) => `<tr><td>${time(n.received_at)}</td><td><code>${h(n.event)}</code></td><td>${n.job_id ? `<a class="mono" href="/board/jobs/${h(n.job_id)}">${h(n.job_id)}</a>` : '—'}</td><td>${h(n.outcome)}</td><td>${n.ip_trusted ? 'yes' : 'no'}</td></tr>`).join(''))
+      : '<p class="muted">None received yet.</p>'
+  }</section>`;
+  const sheetHtml = `<section class="section" aria-labelledby="sheet-h"><div class="section__head"><h3 id="sheet-h">Google Sheet mirror</h3><p class="muted">A read-only copy for the owner, updated after every change.</p></div>${
     mirror === 'enabled'
-      ? `<p><a href="https://docs.google.com/spreadsheets/d/${h(env.GOOGLE_SHEET_ID!.trim())}" rel="noopener noreferrer" target="_blank">Open the sheet</a> · read-only copy, updated after every change.
-${sheetState ? ` Last sync ${time(sheetState.updated_at)}: ${sheetState.ok ? 'ok' : `<b>failed</b> (${h(sheetState.detail)})`}.` : ' No sync yet.'}</p>
-<form method="post" action="/board/sheet/resync"><button>Resync all</button></form>`
+      ? `<p>${sheet ? `Last sync ${time(sheet.updated_at)}: ${sheet.ok ? 'ok' : `<b>failed</b> (${h(sheet.detail)})`}.` : 'No sync yet.'}</p>
+<div class="actions" style="margin-top:var(--space-xs)"><a class="btn" href="https://docs.google.com/spreadsheets/d/${h(env.GOOGLE_SHEET_ID!.trim())}" rel="noopener noreferrer" target="_blank">Open the sheet</a><form class="inline" method="post" action="/board/sheet/resync"><button class="btn" type="submit">Resync all</button></form></div>`
       : mirror === 'invalid_config'
         ? '<p><b>Misconfigured:</b> GOOGLE_SHEET_ID or GOOGLE_SERVICE_ACCOUNT_JSON is invalid. See docs/FEATURES.md §12.</p>'
         : '<p class="muted">Not configured (optional). See docs/FEATURES.md §12.</p>'
-  }</div>`;
+  }</section>`;
+  const callHtml = `<section class="section" aria-labelledby="calls-h"><details><summary><h3 id="calls-h">Recent tool calls</h3><span class="muted">${toolRows.length ? `${toolRows.length - okCalls} errors in the last ${toolRows.length}` : 'none yet'}</span></summary>${
+    toolRows.length
+      ? panelTable(['When', 'Tool', 'Result', 'Latency', 'Provider path'], toolRows.slice(0, 25).map((c) => `<tr><td>${time(c.created_at)}</td><td><code>${h(c.tool)}</code></td><td>${c.ok ? 'ok' : `<b>${h(c.error_code ?? 'error')}</b>`}</td><td class="num">${c.latency_ms} ms</td><td class="muted"><code>${h(c.detail ?? '')}</code></td></tr>`).join(''))
+      : '<p class="muted">None yet.</p>'
+  }</details></section>`;
 
-  const callHtml = calls.results
-    .map((c) => `<tr><td>${time(c.created_at)}</td><td><code>${h(c.tool)}</code></td><td>${c.ok ? 'ok' : h(c.error_code ?? 'error')}</td><td>${c.latency_ms} ms</td><td class="muted"><code>${h(c.detail ?? '')}</code></td></tr>`)
-    .join('');
+  const flash = url.searchParams.get('msg');
+  const head = `<div class="wrap head"><div><p class="label">Dispatcher board</p><h1>${h(config.businessName)}</h1></div>
+<p class="head__meta"><span>Updated ${time(now)}</span>${
+    f.live
+      ? `<span>Auto-refresh every 30 s</span><a href="${h(listHref({ ...f, live: false }))}">Turn off</a>`
+      : `<a href="${h(listHref({ ...f, live: true }))}">Turn on auto-refresh</a>`
+  }<a href="${h(listHref(f))}">Refresh</a></p></div>`;
 
-  return page(
-    `${config.businessName} board`,
-    `<h1>${h(config.businessName)} dispatcher board</h1><p class="muted">Test mode · refreshes every 30 s · statuses here are what the WhatsApp agent reports to customers.</p>
-${flash ? `<div class="card">${h(flash)}</div>` : ''}${escalationHtml}${reviewHtml}
-<div class="card"><form method="get" action="/board" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-<input name="q" value="${h(search)}" placeholder="Job id, phone, name or address" style="flex:1;min-width:220px;font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)">
-<select name="status" style="font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)"><option value="">All statuses</option>${STATUSES.map((st) => `<option value="${st}"${st === statusFilter ? ' selected' : ''}>${st.replaceAll('_', ' ')} (${counts.results.find((c) => c.status === st)?.n ?? 0})</option>`).join('')}</select>
-<button>Filter</button>${search || statusFilter ? ' <a href="/board">Clear</a>' : ''}</form>
-<p class="muted">${jobs.results.length} job(s)${jobs.results.length === 100 ? ' (latest 100; narrow the search to see older ones)' : ''}. Click a job id for everything about it.</p>
-<table><tr><th>Job</th><th>Status</th><th>Route</th><th>Size</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th></tr>${rows || `<tr><td colspan="7" class="muted">${search || statusFilter ? 'No jobs match this filter.' : 'No jobs yet.'}</td></tr>`}</table></div>
-${noticeHtml}${sheetHtml}
-<div class="card"><h2>Recent tool calls</h2><table><tr><th>When</th><th>Tool</th><th>Result</th><th>Latency</th><th>Provider path</th></tr>${callHtml || '<tr><td colspan="5" class="muted">None yet.</td></tr>'}</table></div>`,
-    200,
-    30,
+  return page({
+    title: `${config.businessName} board`,
+    refreshSeconds: f.live ? 30 : undefined,
+    css: BOARD_CSS,
+    body: `${bar(config, session)}
+${head}
+<div class="wrap">${flash ? `<div class="flash">${notice(flash.slice(0, 300), url.searchParams.get('tone') === 'error' ? 'error' : 'info')}</div>` : ''}${attentionHtml}</div>
+${band}
+${listHtml}
+<div class="wrap panels"><div class="grid-2">${handoverHtml}${reviewHtml}${noticeHtml}${sheetHtml}</div>${callHtml}</div>
+${footLine(`${h(config.businessName)} · test mode · times in WAT (UTC+1) · statuses here are what the WhatsApp agent tells customers`)}`,
+  });
+}
+
+function safeReason(detailJson: string | null): string {
+  try {
+    return (JSON.parse(detailJson ?? '{}') as { reason?: string }).reason ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function bar(config: Config, session: { signedIn: boolean }): string {
+  return topBar(
+    config.businessName,
+    `<span class="chip hide-sm">Test mode</span>${
+      session.signedIn ? '<form class="inline" method="post" action="/board/logout"><button class="btn btn--sm btn--ghost" type="submit">Sign out</button></form>' : ''
+    }`,
   );
 }
 
-function crossSite(request: Request, url: URL): boolean {
-  // Basic-auth credentials are sent automatically by the browser, so block cross-site form posts (CSRF).
-  const origin = request.headers.get('Origin');
-  const site = request.headers.get('Sec-Fetch-Site');
-  return Boolean((origin && origin !== url.origin) || (site && site !== 'same-origin'));
+function blocked(): Response {
+  return page({ title: 'Forbidden', status: 403, body: '<main class="wrap head"><div><h1>Request blocked</h1><p class="muted">This form was submitted from another site. Open the board directly and try again.</p></div></main>' });
+}
+
+function backTo(url: URL, path: string, msg: string, error: boolean): Response {
+  const target = new URL(path, url.origin);
+  target.searchParams.set('msg', msg);
+  if (error) target.searchParams.set('tone', 'error');
+  return Response.redirect(target.toString(), 303);
 }
 
 async function sheetResync(request: Request, url: URL, env: Env): Promise<Response> {
-  if (crossSite(request, url)) return page('Forbidden', '<h1>Forbidden</h1><p>Cross-site request blocked.</p>', 403);
+  if (crossSite(request, url)) return blocked();
   const r = await resyncAll(env, url.origin);
-  return Response.redirect(`${url.origin}/board?msg=${encodeURIComponent(r.detail)}`, 303);
+  return backTo(url, '/board', r.detail, !r.ok);
 }
 
 async function boardAction(request: Request, url: URL, env: Env, execCtx: ExecutionContext): Promise<Response> {
-  if (crossSite(request, url)) {
-    return page('Forbidden', '<h1>Forbidden</h1><p>Cross-site request blocked.</p>', 403);
-  }
+  if (crossSite(request, url)) return blocked();
   const id = /^\/board\/jobs\/(ZD-[0-9A-Z]{5})$/.exec(url.pathname)?.[1];
-  const back = url.searchParams.get('from') === 'detail' && id ? `/board/jobs/${id}` : '/board';
-  const form = await request.formData();
-  const action = ACTIONS[String(form.get('action'))];
+  const form = await request.formData().catch(() => new FormData());
+  // Where to return: the filtered list or the job page the button was on. Old forms used ?from=detail.
+  const back = url.searchParams.get('from') === 'detail' && id ? `/board/jobs/${id}` : safeNext(String(form.get('back') ?? ''));
+  const actionKey = String(form.get('action'));
+  const action = ACTIONS[actionKey];
   const version = Number(form.get('version'));
-  if (!id || !action) return Response.redirect(`${url.origin}/board?msg=${encodeURIComponent('Unknown action.')}`, 303);
+  if (!id || !action) return backTo(url, back, 'Unknown action.', true);
   const job = await getJob(env.DB, id);
-  if (!job) return Response.redirect(`${url.origin}/board?msg=${encodeURIComponent(`No job ${id}.`)}`, 303);
+  if (!job) return backTo(url, back, `No job ${id}.`, true);
   if (job.version !== version) {
-    return Response.redirect(`${url.origin}/board?msg=${encodeURIComponent(`${id} changed since you loaded the page (now ${job.status}). Check and try again.`)}`, 303);
+    return backTo(url, back, `${id} changed since you loaded the page (now ${job.status.replaceAll('_', ' ')}). Check it and try again.`, true);
   }
-  const ok = await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', Date.now(), { action: String(form.get('action')) });
+  const ok = await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', Date.now(), { action: actionKey });
   if (ok) queueSheetSync(env, (p) => execCtx.waitUntil(p), url.origin, id);
-  const msg = ok ? `${id}: ${action.label.toLowerCase()} ✓` : `${id} could not change from ${job.status}.`;
-  return Response.redirect(`${url.origin}${back}?msg=${encodeURIComponent(msg)}`, 303);
+  return ok
+    ? backTo(url, back, `${id}: ${action.label.toLowerCase()}.`, false)
+    : backTo(url, back, `${id} could not change from ${job.status.replaceAll('_', ' ')}.`, true);
 }
 
 // ------------------------------------------------------------------ /board/jobs/:id
@@ -278,9 +449,72 @@ interface PlaceDetail {
   postcode: string | null; postcode_status: string | null; in_service_area: number; query_text: string;
 }
 
-async function jobDetail(id: string, url: URL, env: Env, config: Config): Promise<Response> {
+interface EventRow { type: string; from_status: string | null; to_status: string | null; actor: string; detail_json: string | null; created_at: number }
+
+export interface Step { key: string; label: string; at: number | null; state: 'done' | 'current' | 'todo' | 'stopped' }
+
+/** The delivery's progress for the stepper: booked → paid → dispatched → delivered (or where it stopped). */
+export function progressSteps(job: { status: JobStatus; created_at: number; paid_at: number | null; updated_at: number }, events: { to_status: string | null; created_at: number }[]): Step[] {
+  const reached = (s: string) => events.find((e) => e.to_status === s)?.created_at ?? null;
+  const happy = ['awaiting_payment', 'paid', 'dispatched', 'delivered'];
+  const labels = ['Booked', 'Paid', 'Dispatched', 'Delivered'];
+  const at = [job.created_at, job.paid_at ?? reached('paid'), reached('dispatched'), reached('delivered')];
+  const pos = happy.indexOf(job.status);
+  if (pos >= 0) {
+    // On the happy path: everything up to the current status is done, the next step is what we wait for.
+    return happy.map((key, i) => ({ key, label: labels[i]!, at: i <= pos ? at[i] ?? null : null, state: i <= pos ? 'done' : i === pos + 1 ? 'current' : 'todo' }));
+  }
+  // Off the happy path (payment_failed, amount_mismatch, cancelled): show what happened, then where it stopped.
+  const steps: Step[] = happy.map((key, i) => ({ key, label: labels[i]!, at: at[i] ?? null, state: at[i] ? 'done' : 'todo' }));
+  const done = steps.filter((s) => s.state === 'done').length;
+  const label = ({ payment_failed: 'Payment failed', amount_mismatch: 'Amount mismatch', cancelled: 'Cancelled' } as Record<string, string>)[job.status] ?? job.status;
+  const stopped: Step = { key: job.status, label, at: reached(job.status) ?? job.updated_at, state: 'stopped' };
+  // A cancelled job has no next steps; a failed or mismatched payment can still be paid.
+  return job.status === 'cancelled' ? [...steps.slice(0, done), stopped] : [...steps.slice(0, done), stopped, ...steps.slice(done)];
+}
+
+const DETAIL_CSS = `
+.crumb{padding-top:var(--space-md);font-size:var(--text-sm)}
+.crumb a{white-space:nowrap}
+.jhead{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-xs) var(--space-sm);padding-block:var(--space-2xs) var(--space-3xs)}
+.jhead h1{font-family:var(--font-mono);font-weight:500;letter-spacing:0}
+.jmeta{font-size:var(--text-sm);color:var(--color-muted);margin-bottom:var(--space-md)}
+.steps{list-style:none;margin:0 0 var(--space-lg);padding:0;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);border-top:1px solid var(--color-rule)}
+.steps li{position:relative;padding:var(--space-sm) var(--space-xs) 0 0;min-width:0}
+.steps li::before{content:"";position:absolute;top:-1px;left:0;right:0;height:3px;background:var(--color-rule)}
+.steps li.is-done::before{background:var(--color-accent)}
+.steps li.is-current::before{background:linear-gradient(90deg,var(--color-accent) 0 50%,var(--color-rule) 50%)}
+.steps li.is-stopped::before{background:var(--color-bad)}
+.steps .label{display:block;margin-bottom:var(--space-3xs)}
+.steps li.is-done .step__name,.steps li.is-current .step__name{color:var(--color-ink)}
+.steps li.is-stopped .step__name{color:var(--color-bad)}
+.step__name{font:600 var(--text-sm)/1.3 var(--font-display);color:var(--color-muted)}
+.step__at{display:block;font-size:var(--text-xs);color:var(--color-muted)}
+.facts{display:grid;grid-template-columns:minmax(0,9rem) minmax(0,1fr);gap:var(--space-2xs) var(--space-sm);margin:0;font-size:var(--text-sm)}
+.facts dt{font:500 var(--text-2xs)/1.9 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--color-muted)}
+.facts dd{margin:0;color:var(--color-ink);overflow-wrap:anywhere}
+.typed{color:var(--color-muted);font-size:var(--text-sm);margin-top:var(--space-3xs)}
+.place h3{margin-bottom:var(--space-3xs)}.place .facts{margin-top:var(--space-sm)}
+.total td{font-weight:600;color:var(--color-ink)}
+.timeline{list-style:none;margin:0;padding:0}
+.timeline li{display:grid;grid-template-columns:minmax(0,9rem) minmax(0,1fr);gap:var(--space-sm);padding:var(--space-xs) 0;border-top:1px solid var(--color-rule);font-size:var(--text-sm)}
+.timeline li:first-child{border-top:0}
+.timeline .what{color:var(--color-ink);font-weight:500}
+.timeline .detail{display:block;color:var(--color-muted);font-size:var(--text-xs);overflow-wrap:anywhere}
+@media (max-width:48rem){
+  .steps{grid-auto-flow:row;grid-auto-columns:auto;border-top:0;border-left:1px solid var(--color-rule)}
+  .steps li{padding:0 0 var(--space-sm) var(--space-sm)}
+  .steps li::before{top:0;bottom:0;left:-1px;right:auto;width:3px;height:auto}
+  .steps li.is-current::before{background:linear-gradient(180deg,var(--color-accent) 0 50%,var(--color-rule) 50%)}
+  .facts,.timeline li{grid-template-columns:minmax(0,1fr);gap:var(--space-3xs)}
+  .facts dd{margin-bottom:var(--space-2xs)}
+}`;
+
+async function jobDetail(id: string, url: URL, env: Env, config: Config, session: { signedIn: boolean }): Promise<Response> {
   const job = await getJob(env.DB, id);
-  if (!job) return page('Not found', `<h1>No job ${h(id)}</h1><p><a href="/board">Back to the board</a></p>`, 404);
+  if (!job) {
+    return page({ title: 'Not found', status: 404, body: `${bar(config, session)}<main class="wrap head"><div><h1>No job ${h(id)}</h1><p class="muted"><a href="/board">Back to the board</a></p></div></main>` });
+  }
   const quote = await env.DB.prepare('SELECT * FROM quotes WHERE id = ?').bind(job.quote_id).first<{
     package_size: string; distance_m: number; duration_s: number | null; distance_source: string; approximate: number;
     amount_kobo: number; breakdown_json: string; rate_card_version: string; created_at: number; expires_at: number;
@@ -291,36 +525,55 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config): Promis
     place(quote?.pickup_place_id),
     place(quote?.dropoff_place_id),
     env.DB.prepare('SELECT * FROM payments WHERE job_id = ? ORDER BY attempt').bind(id).all<PaymentRow>(),
-    env.DB.prepare('SELECT type, from_status, to_status, actor, detail_json, created_at FROM job_events WHERE job_id = ? ORDER BY id').bind(id).all<{
-      type: string; from_status: string | null; to_status: string | null; actor: string; detail_json: string | null; created_at: number;
-    }>(),
+    env.DB.prepare('SELECT type, from_status, to_status, actor, detail_json, created_at FROM job_events WHERE job_id = ? ORDER BY id').bind(id).all<EventRow>(),
     env.DB.prepare('SELECT event, reference, outcome, ip_trusted, received_at FROM paystack_events WHERE job_id = ? ORDER BY received_at').bind(id).all<{
       event: string; reference: string | null; outcome: string; ip_trusted: number; received_at: number;
     }>(),
   ]);
   const phone = normalizeNigerianPhone(job.recipient_phone);
   const flash = url.searchParams.get('msg');
-  const placeCard = (title: string, p: PlaceDetail | null) =>
-    p
-      ? `<h3>${title}</h3><p><b>${h(p.label)}</b><br><span class="muted">Customer typed: "${h(p.query_text)}"</span></p>
-<table><tr><th>Precision</th><td>${h(p.precision)}</td><th>Found by</th><td>${h(p.provider)} (${h(p.confidence)} confidence)</td></tr>
-<tr><th>Postcode</th><td>${p.postcode ? `${h(p.postcode)} · NIPOST: ${h(p.postcode_status ?? '?')}` : '—'}</td><th>Service area</th><td>${p.in_service_area ? 'inside' : 'outside'}</td></tr>
-<tr><th>Map</th><td colspan="3"><a href="https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lng}#map=17/${p.lat}/${p.lng}" rel="noopener noreferrer" target="_blank">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</a></td></tr></table>`
-      : `<h3>${title}</h3><p class="muted">Not found.</p>`;
-  const buttons = Object.entries(ACTIONS)
-    .filter(([, a]) => a.from.includes(job.status))
-    .map(([key, a]) => `<form method="post" action="/board/jobs/${h(job.id)}?from=detail"><input type="hidden" name="action" value="${key}"><input type="hidden" name="version" value="${job.version}"><button>${a.label}</button></form>`)
-    .join(' ');
-  const lines = quote ? (JSON.parse(quote.breakdown_json) as { label: string; amount: string }[]) : [];
+  const self = `/board/jobs/${job.id}`;
+  const actions = actionForms(job, self, false);
+
+  const steps = progressSteps(job, events.results)
+    .map((s) => `<li class="is-${s.state}"><span class="label">${s.state === 'done' ? 'Done' : s.state === 'current' ? 'Waiting' : s.state === 'stopped' ? 'Stopped' : 'Next'}</span><span class="step__name">${h(s.label)}</span><span class="step__at">${s.at && s.state !== 'todo' ? time(s.at) : '—'}</span></li>`)
+    .join('');
+
+  const placeBlock = (title: string, p: PlaceDetail | null) =>
+    `<section class="section place" aria-label="${title}"><h3>${title}</h3>${
+      p
+        ? `<p>${h(p.label)}</p><p class="typed">Customer typed “${h(p.query_text)}”</p>
+<dl class="facts"><dt>Precision</dt><dd>${h(p.precision)}</dd><dt>Found by</dt><dd>${h(p.provider)} · ${h(p.confidence)} confidence</dd>
+<dt>Postcode</dt><dd>${p.postcode ? `${h(p.postcode)} · NIPOST ${h(p.postcode_status ?? '?')}` : '—'}</dd><dt>Service area</dt><dd>${p.in_service_area ? 'Inside' : '<b>Outside</b>'}</dd>
+<dt>Map</dt><dd><a href="https://www.openstreetmap.org/?mlat=${p.lat}&amp;mlon=${p.lng}#map=17/${p.lat}/${p.lng}" rel="noopener noreferrer" target="_blank">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</a></dd></dl>`
+        : '<p class="muted">Not found.</p>'
+    }</section>`;
+
+  let lines: { label: string; amount: string }[] = [];
+  try {
+    lines = quote ? (JSON.parse(quote.breakdown_json) as { label: string; amount: string }[]) : [];
+  } catch {
+    lines = [];
+  }
+  const quoteHtml = `<section class="section" aria-labelledby="quote-h"><div class="section__head"><h3 id="quote-h">Quote <code>${h(job.quote_id)}</code></h3>${
+    quote
+      ? `<p class="muted">${(quote.distance_m / 1000).toFixed(1)} km by ${h(quote.distance_source)}${quote.approximate ? ' (estimated: route service unavailable)' : ''}${quote.duration_s ? ` · about ${Math.round(quote.duration_s / 60)} min` : ''} · rate card ${h(quote.rate_card_version)} · quoted ${time(quote.created_at)}</p>`
+      : ''
+  }</div>${
+    quote
+      ? `<div class="table-wrap"><table><tbody>${lines.map((l) => `<tr><td>${h(l.label)}</td><td class="num">${h(l.amount)}</td></tr>`).join('')}<tr class="total"><td>Total</td><td class="num">${formatNaira(quote.amount_kobo)}</td></tr></tbody></table></div>`
+      : '<p class="muted">Quote missing.</p>'
+  }</section>`;
+
   const payRows = payments.results
     .map((p) => {
       const where = p.method === 'bank_transfer'
-        ? `${h(p.transfer_bank ?? '')} ${h(p.transfer_account_number ?? '')}${p.transfer_expires_at ? `<div class="muted">expires ${time(p.transfer_expires_at)}</div>` : ''}`
-        : p.authorization_url ? `<a href="${h(p.authorization_url)}" rel="noopener noreferrer" target="_blank">checkout link</a>` : '<span class="muted">no link (initialize did not finish)</span>';
-      return `<tr><td>#${p.attempt}</td><td>${p.method === 'bank_transfer' ? 'bank transfer' : 'link'}</td><td><code>${h(p.reference)}</code></td><td>${formatNaira(p.amount_kobo)}</td><td><b>${h(p.status)}</b>${p.gateway_response ? `<div class="muted">${h(p.gateway_response)}</div>` : ''}</td><td>${h(p.channel ?? '')}</td><td>${where}</td><td>${time(p.created_at)}${p.paid_at ? `<div class="muted">paid ${time(p.paid_at)}</div>` : ''}</td></tr>`;
+        ? `${h(p.transfer_bank ?? '')} <span class="mono">${h(p.transfer_account_number ?? '')}</span>${p.transfer_expires_at ? `<span class="sub">expires ${time(p.transfer_expires_at)}</span>` : ''}`
+        : p.authorization_url ? `<a href="${h(p.authorization_url)}" rel="noopener noreferrer" target="_blank">Checkout link</a>` : '<span class="muted">No link (initialize did not finish)</span>';
+      return `<tr><td class="num">#${p.attempt}</td><td>${p.method === 'bank_transfer' ? 'Bank transfer' : 'Link'}</td><td><code>${h(p.reference)}</code></td><td class="num">${formatNaira(p.amount_kobo)}</td><td><b>${h(p.status)}</b>${p.gateway_response ? `<span class="sub">${h(p.gateway_response)}</span>` : ''}</td><td>${h(p.channel ?? '')}</td><td>${where}</td><td>${time(p.created_at)}${p.paid_at ? `<span class="sub">paid ${time(p.paid_at)}</span>` : ''}</td></tr>`;
     })
     .join('');
-  const eventRows = events.results
+  const timeline = events.results
     .map((e) => {
       let detail = '';
       try {
@@ -329,29 +582,41 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config): Promis
       } catch {
         detail = e.detail_json ?? '';
       }
-      return `<tr><td>${time(e.created_at)}</td><td>${h(e.type.replaceAll('_', ' '))}</td><td>${e.from_status || e.to_status ? `${h(e.from_status ?? '')} → ${h(e.to_status ?? '')}` : ''}</td><td>${h(e.actor)}</td><td class="muted">${h(detail)}</td></tr>`;
+      const change = e.from_status || e.to_status ? ` · ${h((e.from_status ?? '').replaceAll('_', ' '))} → ${h((e.to_status ?? '').replaceAll('_', ' '))}` : '';
+      return `<li><span class="muted">${time(e.created_at)}</span><span><span class="what">${h(e.type.replaceAll('_', ' '))}</span><span class="muted">${change} · by ${h(e.actor)}</span>${detail ? `<span class="detail">${h(detail)}</span>` : ''}</span></li>`;
     })
     .join('');
   const noticeRows = notices.results
     .map((n) => `<tr><td>${time(n.received_at)}</td><td><code>${h(n.event)}</code></td><td><code>${h(n.reference ?? '')}</code></td><td>${h(n.outcome)}</td><td>${n.ip_trusted ? 'yes' : 'no'}</td></tr>`)
     .join('');
 
-  return page(
-    `${job.id} · ${config.businessName}`,
-    `<p><a href="/board">← All jobs</a></p>
-<h1>${h(job.id)} <span class="pill s-${h(job.status)}">${h(job.status.replaceAll('_', ' '))}</span></h1>
-<p class="muted">Booked ${time(job.created_at)} · last change ${time(job.updated_at)}${job.paid_at ? ` · paid ${time(job.paid_at)}` : ''}${job.cancel_reason ? ` · cancelled: "${h(job.cancel_reason)}"` : ''}</p>
-${flash ? `<div class="card">${h(flash)}</div>` : ''}
-<div class="card"><table>
-<tr><th>Sender</th><td>${h(job.sender_name)}</td><th>Recipient</th><td>${h(job.recipient_name)} · ${h(phone.ok ? phone.display : job.recipient_phone)}</td></tr>
-<tr><th>Amount</th><td><b>${formatNaira(job.amount_kobo)}</b></td><th>Handover code</th><td><code>${h(job.handover_code)}</code></td></tr>
-<tr><th>Package</th><td>${h(quote?.package_size ?? '?')}${job.package_note ? ` · "${h(job.package_note)}"` : ''}</td><th>Actions</th><td>${buttons || '<span class="muted">none for this status</span>'}</td></tr>
-</table></div>
-<div class="card">${placeCard('Pickup', pickup)}${placeCard('Drop-off', dropoff)}</div>
-<div class="card"><h3>Quote <code>${h(job.quote_id)}</code></h3>${quote ? `<p>${(quote.distance_m / 1000).toFixed(1)} km by ${h(quote.distance_source)}${quote.approximate ? ' (estimated: route service unavailable)' : ''}${quote.duration_s ? ` · about ${Math.round(quote.duration_s / 60)} min` : ''} · rate card ${h(quote.rate_card_version)} · quoted ${time(quote.created_at)}</p>
-<table>${lines.map((l) => `<tr><td>${h(l.label)}</td><td>${h(l.amount)}</td></tr>`).join('')}<tr><th>Total</th><th>${formatNaira(quote.amount_kobo)}</th></tr></table>` : '<p class="muted">Quote missing.</p>'}</div>
-<div class="card"><h3>Payment attempts</h3><table><tr><th>#</th><th>Method</th><th>Reference</th><th>Amount</th><th>Paystack status</th><th>Channel</th><th>Link / account</th><th>When</th></tr>${payRows || '<tr><td colspan="8" class="muted">No payment requested yet.</td></tr>'}</table></div>
-${noticeRows ? `<div class="card"><h3>Paystack notifications</h3><table><tr><th>When</th><th>Event</th><th>Reference</th><th>Result</th><th>From Paystack IP</th></tr>${noticeRows}</table></div>` : ''}
-<div class="card"><h3>Timeline</h3><table><tr><th>When</th><th>What</th><th>Status</th><th>By</th><th>Detail</th></tr>${eventRows}</table></div>`,
-  );
+  return page({
+    title: `${job.id} · ${config.businessName}`,
+    css: DETAIL_CSS,
+    body: `${bar(config, session)}
+<main class="wrap">
+<p class="crumb"><a href="/board">← All deliveries</a></p>
+<div class="jhead"><h1>${h(job.id)}</h1>${statusPill(job.status)}</div>
+<p class="jmeta">Booked ${time(job.created_at)} · last change ${time(job.updated_at)}${job.cancel_reason ? ` · cancelled: “${h(job.cancel_reason)}”` : ''}</p>
+${flash ? `<div class="flash" style="margin-bottom:var(--space-md)">${notice(flash.slice(0, 300), url.searchParams.get('tone') === 'error' ? 'error' : 'info')}</div>` : ''}
+<ol class="steps" aria-label="Progress">${steps}</ol>
+<div class="grid-2">
+<section class="section" aria-labelledby="booking-h"><div class="section__head"><h3 id="booking-h">Booking</h3></div>
+<dl class="facts"><dt>Sender</dt><dd>${h(job.sender_name)}</dd><dt>Recipient</dt><dd>${h(job.recipient_name)} · ${h(phone.ok ? phone.display : job.recipient_phone)}</dd>
+<dt>Package</dt><dd>${h(quote?.package_size ?? '?')}${job.package_note ? ` · “${h(job.package_note)}”` : ''}</dd><dt>Amount</dt><dd><b class="num">${formatNaira(job.amount_kobo)}</b></dd>
+<dt>Handover code</dt><dd><span class="mono">${h(job.handover_code)}</span> <span class="muted">(rider asks the recipient for it)</span></dd></dl>
+<div class="actions" style="margin-top:var(--space-md)">${actions || '<span class="muted">No dispatcher actions for this status.</span>'}</div></section>
+${quoteHtml}
+${placeBlock('Pickup', pickup)}${placeBlock('Drop-off', dropoff)}
+</div>
+<section class="section" aria-labelledby="pay-h"><div class="section__head"><h3 id="pay-h">Payment attempts</h3></div>${
+      payRows
+        ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Method</th><th>Reference</th><th>Amount</th><th>Paystack status</th><th>Channel</th><th>Link / account</th><th>When</th></tr></thead><tbody>${payRows}</tbody></table></div>`
+        : '<p class="muted">No payment requested yet.</p>'
+    }</section>
+${noticeRows ? `<section class="section" aria-labelledby="pn-h"><div class="section__head"><h3 id="pn-h">Paystack notifications</h3></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Event</th><th>Reference</th><th>Result</th><th>Paystack IP</th></tr></thead><tbody>${noticeRows}</tbody></table></div></section>` : ''}
+<section class="section" aria-labelledby="tl-h"><div class="section__head"><h3 id="tl-h">Timeline</h3></div><ol class="timeline">${timeline}</ol></section>
+</main>
+${footLine(`${h(config.businessName)} · test mode · times in WAT (UTC+1)`)}`,
+  });
 }

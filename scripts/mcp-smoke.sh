@@ -33,8 +33,12 @@ for t in resolve_address quote_delivery create_dispatch_job create_payment_link 
 done
 check "schema rejects unconfirmed booking" 'isError' \
   "$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_dispatch_job","arguments":{"quote_id":"Q-X","sender_name":"Ada","recipient_name":"Bola","recipient_phone":"08031234567","customer_confirmed":false}}}')"
-check "board requires login"      'HTTP 401'         "$(curl -sS -m 15 "$BASE/board" -w '\nHTTP %{http_code}')"
 if [[ -z "${BOARD_TOKEN:-}" && -f .env ]]; then BOARD_TOKEN="$(grep -E '^BOARD_TOKEN=' .env | head -1 | cut -d= -f2-)"; fi
+check "board sends browsers to sign-in"   '303 '"$BASE"'/board/login?next=' "$(curl -sS -m 15 -o /dev/null "$BASE/board?status=paid" -w '%{http_code} %{redirect_url}')"
+check "sign-in page loads"                'Sign in to the dispatcher board' "$(curl -sS -m 15 "$BASE/board/login")"
+check "wrong board password -> 401"       'HTTP 401'  "$(curl -sS -m 15 -o /dev/null -X POST "$BASE/board/login" -H "Origin: $BASE" -d 'password=wrong&next=/board' -w 'HTTP %{http_code}')"
+check "sign-in blocks cross-site POST"    'HTTP 403'  "$(curl -sS -m 15 -o /dev/null -X POST "$BASE/board/login" -H 'Origin: https://evil.example' -d 'password=x' -w 'HTTP %{http_code}')"
+check "scripts can use Basic auth"        'HTTP 200'  "$(curl -sS -m 15 -o /dev/null -u "dispatcher:${BOARD_TOKEN:-x}" "$BASE/board" -w 'HTTP %{http_code}')"
 check "board blocks cross-site POST (CSRF)" 'HTTP 403'      "$(curl -sS -m 15 -u "dispatcher:${BOARD_TOKEN:-x}" -X POST "$BASE/board/jobs/ZD-00000" -H 'Origin: https://evil.example' -d 'action=dispatch&version=1' -w '\nHTTP %{http_code}')"
 check "pay/return with unknown reference -> 404" 'HTTP 404' "$(curl -sS -m 15 "$BASE/pay/return?reference=ZD-NOPE0-1" -w '\nHTTP %{http_code}')"
 WH="$(curl -sS -m 15 -X POST "$BASE/hooks/chord" -H 'Content-Type: application/json' -H 'X-Chord-Signature: sha256=00' -d '{}' -w '\nHTTP %{http_code}')"

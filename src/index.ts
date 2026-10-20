@@ -1,12 +1,13 @@
 import { loadConfig } from './config';
 import type { Env } from './env';
-import { basicPassword, bearerToken, secretsMatch } from './lib/auth';
+import { bearerToken, secretsMatch } from './lib/auth';
 import { log } from './lib/log';
 import { handleMcp, SERVER_VERSION } from './mcp/server';
 import { chordWebhook } from './web/chordWebhook';
 import { paystackWebhook } from './web/paystackWebhook';
 import { mirrorStatus } from './sheets/mirror';
-import { board, payReturn } from './web/pages';
+import { boardGate } from './web/login';
+import { payReturn } from './web/pages';
 
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
@@ -105,14 +106,7 @@ async function route(request: Request, url: URL, env: Env, ctx: ExecutionContext
 
   if (url.pathname === '/board' || url.pathname.startsWith('/board/')) {
     if (!cfg.ok) return json({ error: 'server_misconfigured' }, 503);
-    const password = basicPassword(request);
-    if (!password || !(await secretsMatch(password, cfg.config.boardToken))) {
-      return new Response('Dispatcher login required.', {
-        status: 401,
-        headers: { 'WWW-Authenticate': 'Basic realm="Zuma Dispatch board", charset="UTF-8"', ...SECURITY_HEADERS },
-      });
-    }
-    return board(request, url, env, cfg.config, ctx);
+    return boardGate(request, url, env, cfg.config, ctx, requestId);
   }
 
   if (url.pathname === '/hooks/paystack' && request.method === 'POST') {
