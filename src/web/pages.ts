@@ -9,6 +9,7 @@ import { ToolError, type ToolContext } from '../mcp/tooling';
 import { checkPayments } from '../payments/service';
 import { mirrorStatus, resyncAll } from '../sheets/mirror';
 import { queueSheetSync } from '../sheets/queue';
+import { NOTICE_KIND, noticeStatus, notifyPaymentReceived, queueChatNotice } from '../chord/notices';
 import {
   breakdown, CHART_CSS, lastSevenDays, pct, percentiles, pipelineChart, STATUS_ORDER, watDayStart, weekChart,
   type DayRow,
@@ -51,7 +52,9 @@ export async function payReturn(url: URL, env: Env, config: Config, ctx: Executi
       detail = 'A dispatcher will confirm shortly. Please go back to WhatsApp.';
     } else if (check.outcome === 'paid') {
       headline = `Payment received for ${h(job.id)}`;
-      detail = `${formatNaira(job.amount_kobo)} paid. Go back to WhatsApp and reply <b>paid</b>. We'll confirm your pickup there.`;
+      detail = noticeStatus(env) === 'enabled'
+        ? `${formatNaira(job.amount_kobo)} paid. Go back to WhatsApp: the confirmation and pickup time will be there in a minute.`
+        : `${formatNaira(job.amount_kobo)} paid. Go back to WhatsApp and reply <b>paid</b>. We'll confirm your pickup there.`;
     } else if (check.outcome === 'in_progress') {
       headline = 'Your payment is still processing';
       detail = 'Complete any OTP or bank step, then go back to WhatsApp.';
@@ -218,7 +221,7 @@ export async function board(request: Request, url: URL, env: Env, config: Config
   const db = env.DB;
   const mirror = mirrorStatus(env);
   // One round trip to D1 for everything on the page.
-  const [jobs, counts, reviews, notices, escalations, calls, daily, via, method, paidToday, owed, sheetState] = await db.batch([
+  const [jobs, counts, reviews, notices, escalations, calls, daily, via, method, paidToday, owed, sheetState, noticeRows2] = await db.batch([
     db.prepare(
       `SELECT j.*, pu.label AS pickup_label, dr.label AS dropoff_label, q.package_size, q.approximate, q.distance_m,
               (SELECT json_extract(e.detail_json, '$.via') FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'paid' ORDER BY e.id DESC LIMIT 1) AS paid_via
@@ -250,6 +253,7 @@ export async function board(request: Request, url: URL, env: Env, config: Config
     db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount_kobo), 0) AS kobo FROM jobs WHERE paid_at >= ? AND status IN ('paid','dispatched','delivered')`).bind(today),
     db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount_kobo), 0) AS kobo FROM jobs WHERE status IN ('awaiting_payment','payment_failed')`),
     db.prepare("SELECT ok, detail, updated_at FROM sheet_state WHERE key = 'last'"),
+    db.prepare('SELECT state, COUNT(*) AS n FROM chat_notices GROUP BY state'),
   ]);
   const list = (jobs!.results as unknown as BoardRow[]).slice(0, LIST_LIMIT);
   const more = jobs!.results.length > LIST_LIMIT;
@@ -263,6 +267,7 @@ export async function board(request: Request, url: URL, env: Env, config: Config
   const todayRow = days[days.length - 1]!;
   const paidNow = paidToday!.results[0] as unknown as { n: number; kobo: number };
   const owedNow = owed!.results[0] as unknown as { n: number; kobo: number };
+  const noticeCounts = (noticeRows2?.results ?? []) as unknown as { state: string; n: number }[];
   const sheet = mirror === 'enabled' ? ((sheetState!.results[0] as unknown as { ok: number; detail: string; updated_at: number } | undefined) ?? null) : null;
 
   // ---- what needs a person
@@ -359,6 +364,14 @@ ${resultLine}
         ? '<p><b>Misconfigured:</b> GOOGLE_SHEET_ID or GOOGLE_SERVICE_ACCOUNT_JSON is invalid. See docs/FEATURES.md §12.</p>'
         : '<p class="muted">Not configured (optional). See docs/FEATURES.md §12.</p>'
   }</section>`;
+  const noticeState = noticeStatus(env);
+  const chatNoticesHtml = `<section class="section" aria-labelledby="cnp-h"><div class="section__head"><h3 id="cnp-h">Payment notices in the chat</h3><p class="muted">After Paystack confirms a payment, the customer gets "Payment received" in their conversation without writing first.</p></div>${
+    noticeState === 'enabled'
+      ? `<p>${noticeCounts.map((c) => `${c.n} ${h(c.state === 'queued' ? 'sent' : c.state === 'skipped' ? 'not sent (by design)' : c.state)}`).join(' · ') || 'None yet.'}</p>`
+      : noticeState === 'invalid_config'
+        ? '<p><b>Misconfigured:</b> CHORD_API_KEY or CHORD_WORKSPACE_ID is invalid. See docs/FEATURES.md §5a.</p>'
+        : '<p class="muted">Off: CHORD_API_KEY is not set (optional). See docs/FEATURES.md §5a.</p>'
+  }</section>`;
   const callHtml = `<section class="section" aria-labelledby="calls-h"><details><summary><h3 id="calls-h">Recent tool calls</h3><span class="muted">${toolRows.length ? `${toolRows.length - okCalls} errors in the last ${toolRows.length}` : 'none yet'}</span></summary>${
     toolRows.length
       ? panelTable(['When', 'Tool', 'Result', 'Latency', 'Provider path'], toolRows.slice(0, 25).map((c) => `<tr><td>${time(c.created_at)}</td><td><code>${h(c.tool)}</code></td><td>${c.ok ? 'ok' : `<b>${h(c.error_code ?? 'error')}</b>`}</td><td class="num">${c.latency_ms} ms</td><td class="muted"><code>${h(c.detail ?? '')}</code></td></tr>`).join(''))
@@ -382,7 +395,7 @@ ${head}
 <div class="wrap">${flash ? `<div class="flash">${notice(flash.msg, flash.error ? 'error' : 'info')}</div>` : ''}${attentionHtml}</div>
 ${band}
 ${listHtml}
-<div class="wrap panels"><div class="grid-2">${handoverHtml}${reviewHtml}${noticeHtml}${sheetHtml}</div>${callHtml}</div>
+<div class="wrap panels"><div class="grid-2">${handoverHtml}${reviewHtml}${noticeHtml}${sheetHtml}${chatNoticesHtml}</div>${callHtml}</div>
 ${footLine(`${h(config.businessName)} · test mode · times in WAT (UTC+1) · statuses here are what the WhatsApp agent tells customers`)}`,
   });
 }
@@ -440,6 +453,19 @@ async function sheetResync(request: Request, url: URL, env: Env): Promise<Respon
   return backTo(url, env, '/board', r.detail, !r.ok);
 }
 
+/** Plain-English meaning of each chat-notice outcome, for the job page and flash messages. */
+const NOTICE_REASONS: Record<string, string> = {
+  not_configured: 'chat notices are off: CHORD_API_KEY is not set',
+  job_not_paid: 'the job is not paid',
+  already_handled: 'a notice was already sent or is being sent',
+  thread_not_found: "no recent conversation where the agent sent this job id",
+  ambiguous_thread: 'the job id appears in conversations with different customers, so none was guessed',
+  human_handling: 'a person has taken over that conversation',
+  customer_mid_conversation: 'the customer was writing at that moment; the agent confirms in its reply',
+  outside_24h_window: "the customer's last message is older than WhatsApp's 24-hour window",
+  local_server: 'this is a local test server (set CHORD_NOTICES_ALLOW_LOCAL=1 to allow)',
+};
+
 async function boardAction(request: Request, url: URL, env: Env, execCtx: ExecutionContext): Promise<Response> {
   if (crossSite(request, url)) return blocked();
   const id = /^\/board\/jobs\/(ZD-[0-9A-Z]{5})$/.exec(url.pathname)?.[1];
@@ -447,6 +473,13 @@ async function boardAction(request: Request, url: URL, env: Env, execCtx: Execut
   // Where to return: the filtered list or the job page the button was on. Old forms used ?from=detail.
   const back = url.searchParams.get('from') === 'detail' && id ? `/board/jobs/${id}` : safeNext(String(form.get('back') ?? ''));
   const actionKey = String(form.get('action'));
+  if (actionKey === 'notify' && id) {
+    // "Send again" on the job page: retries a skipped or failed chat notice, synchronously so the
+    // dispatcher sees the result. A notice that was already queued is never sent twice.
+    const r = await notifyPaymentReceived(env, id, { manual: true, origin: url.origin });
+    const text = r.state === 'queued' ? `${id}: payment notice queued for the customer's chat.` : `${id}: notice not sent. Reason: ${NOTICE_REASONS[r.reason ?? ''] ?? r.reason ?? r.state}.`;
+    return backTo(url, env, `/board/jobs/${id}`, text, r.state !== 'queued');
+  }
   const action = Object.hasOwn(ACTIONS, actionKey) ? ACTIONS[actionKey] : undefined;
   const version = Number(form.get('version'));
   if (!id || !action) return backTo(url, env, back, 'Unknown action.', true);
@@ -461,6 +494,8 @@ async function boardAction(request: Request, url: URL, env: Env, execCtx: Execut
     ? await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', now, { action: actionKey, via: 'dispatcher' }, ', paid_at = COALESCE(paid_at, ?)', [now])
     : await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', now, { action: actionKey });
   if (ok) queueSheetSync(env, (p) => execCtx.waitUntil(p), url.origin, id);
+  // The customer was told "a dispatcher will check"; tell them in the chat once it is approved.
+  if (ok && actionKey === 'approve') queueChatNotice(env, (p) => execCtx.waitUntil(p), id, url.origin);
   return ok
     ? backTo(url, env, back, `${id}: ${action.label.toLowerCase()}.`, false)
     : backTo(url, env, back, `${id} could not change from ${job.status.replaceAll('_', ' ')}.`, true);
@@ -544,7 +579,7 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config, session
     pickup_place_id: string; dropoff_place_id: string;
   }>();
   const place = (pid?: string) => (pid ? env.DB.prepare('SELECT * FROM places WHERE id = ?').bind(pid).first<PlaceDetail>() : Promise.resolve(null));
-  const [pickup, dropoff, payments, events, notices] = await Promise.all([
+  const [pickup, dropoff, payments, events, notices, chatNotice] = await Promise.all([
     place(quote?.pickup_place_id),
     place(quote?.dropoff_place_id),
     env.DB.prepare('SELECT * FROM payments WHERE job_id = ? ORDER BY attempt').bind(id).all<PaymentRow>(),
@@ -552,6 +587,9 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config, session
     env.DB.prepare('SELECT event, reference, outcome, ip_trusted, received_at FROM paystack_events WHERE job_id = ? ORDER BY received_at').bind(id).all<{
       event: string; reference: string | null; outcome: string; ip_trusted: number; received_at: number;
     }>(),
+    env.DB.prepare('SELECT state, reason, thread_id, task_id, attempts, updated_at FROM chat_notices WHERE job_id = ? AND kind = ?').bind(id, NOTICE_KIND).first<{
+      state: string; reason: string | null; thread_id: string | null; task_id: string | null; attempts: number; updated_at: number;
+    }>().catch(() => null),
   ]);
   const phone = normalizeNigerianPhone(job.recipient_phone);
   const flash = await readFlash(url, config.boardToken);
@@ -632,6 +670,7 @@ ${flash ? `<div class="flash" style="margin-bottom:var(--space-md)">${notice(fla
 ${quoteHtml}
 ${placeBlock('Pickup', pickup)}${placeBlock('Drop-off', dropoff)}
 </div>
+${chatNoticeSection(job, chatNotice, noticeStatus(env) === 'enabled')}
 <section class="section" aria-labelledby="pay-h"><div class="section__head"><h3 id="pay-h">Payment attempts</h3></div>${
       payRows
         ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Method</th><th>Reference</th><th>Amount</th><th>Paystack status</th><th>Channel</th><th>Link / account</th><th>When</th></tr></thead><tbody>${payRows}</tbody></table></div>`
@@ -642,4 +681,29 @@ ${noticeRows ? `<section class="section" aria-labelledby="pn-h"><div class="sect
 </main>
 ${footLine(`${h(config.businessName)} · test mode · times in WAT (UTC+1)`)}`,
   });
+}
+
+function chatNoticeSection(
+  job: { id: string; status: JobStatus },
+  n: { state: string; reason: string | null; thread_id: string | null; task_id: string | null; attempts: number; updated_at: number } | null,
+  enabled: boolean,
+): string {
+  const paid = ['paid', 'dispatched', 'delivered'].includes(job.status);
+  if (!paid && !n) return '';
+  const reason = n?.reason ? NOTICE_REASONS[n.reason] ?? n.reason : '';
+  const line = !enabled && !n
+    ? 'Chat notices are off (CHORD_API_KEY not set). The customer is confirmed when they next write.'
+    : !n
+      ? 'No notice sent. One goes out when Paystack\'s notification, the checkout return page or a dispatcher approval confirms the payment; when the customer asked in the chat, the agent confirmed it there itself.'
+      : n.state === 'queued'
+        ? `Sent to the customer's chat ${time(n.updated_at)} (conversation <code>${h(n.thread_id ?? '')}</code>, Chord task <code>${h(n.task_id ?? '')}</code>).`
+        : n.state === 'pending'
+          ? 'Being sent now.'
+          : `${n.state === 'failed' ? '<b>Failed</b>' : 'Not sent'} ${time(n.updated_at)}: ${h(reason)}.`;
+  const canRetry = enabled && paid && (!n || n.state === 'failed' || n.state === 'skipped');
+  return `<section class="section" aria-labelledby="cn-h"><div class="section__head"><h3 id="cn-h">"Payment received" in the chat</h3></div><p>${line}</p>${
+    canRetry
+      ? `<form class="inline" method="post" action="/board/jobs/${h(job.id)}" style="display:block;margin-top:var(--space-xs)"><input type="hidden" name="action" value="notify"><button class="btn" type="submit">${n ? 'Send again' : 'Send now'}</button></form>`
+      : ''
+  }</section>`;
 }

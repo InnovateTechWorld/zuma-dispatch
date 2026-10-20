@@ -23,6 +23,10 @@
     "GEOCODER_MODE": "crosscheck",
     "ROUTER_CHAIN": "osrm,ors,straight_line",
     "QUOTE_TTL_MINUTES": "30",
-    "PROVIDER_TIMEOUT_MS": "4000"
+    "PROVIDER_TIMEOUT_MS": "4000",
+    "CHORD_API_BASE": "https://api.chordhq.xyz",
+    "CHORD_WORKSPACE_ID": "ws-6f317367-26a3-4b04-b40e-c3d301b450f5",
+    "CHORD_TEAMMATE_ID": "668480f8-a26a-43b6-9a32-ea9156f2fb4a",
+    "CHORD_NOTICE_ROUTE": "direct_line"
   }
 }

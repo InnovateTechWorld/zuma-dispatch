@@ -3,6 +3,7 @@ import { eventStmt, getPayment, listPayments, type JobRow, type PaymentRow } fro
 import { paymentReference } from '../lib/ids';
 import { log } from '../lib/log';
 import { formatNaira } from '../lib/money';
+import { afterPaymentTiming, paymentReceivedMessage } from '../business/messages';
 import { ToolError, type ToolContext } from '../mcp/tooling';
 import { chargeBankTransfer, initializeTransaction } from '../payments/paystack';
 import { checkPayments, isAwaitingTransfer, type PaymentCheck } from '../payments/service';
@@ -214,11 +215,6 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
 }
 
 /** Pickup timing worded for after payment (the quote-time wording says "as soon as payment is confirmed"). */
-function afterPaymentTiming(now: number): string {
-  const w = pickupWindow(now);
-  return w.now ? 'A dispatcher is assigning a rider now; pickup is usually within 45 minutes.' : w.note;
-}
-
 // ------------------------------------------------------------------ verify_payment
 export async function verifyPayment(args: { job_id: string }, ctx: ToolContext): Promise<Record<string, unknown>> {
   const job = await loadJob(ctx, args.job_id);
@@ -258,7 +254,7 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
         pickup_timing: afterPaymentTiming(now),
         // Ready-to-send text: in a live test the model once dropped the confirmation and the timing
         // and replied only "keep the envelope ready" (FIELD_NOTES #13). A full sentence to pass on is harder to drop.
-        message_for_customer: `Payment received: ${formatNaira(job.amount_kobo)} for ${job.id}. ${afterPaymentTiming(now)} The recipient gives the rider code ${check.job.handover_code}.`,
+        message_for_customer: paymentReceivedMessage(check.job, now),
         what_to_do: 'Payment confirmed. Send message_for_customer (you may adjust the wording, but keep the payment confirmation, the pickup timing and the code), then answer anything else they asked.',
       };
     case 'in_progress':

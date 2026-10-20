@@ -109,6 +109,25 @@ Every row names the code that handles the case and the evidence that it works.
 | W8 | Request not from Paystack's IPs | Logged (`ip_trusted = no` on the board); the signature decides | Code |
 | W9 | Webhook URL not configured | Paths B (return page) and C (`verify_payment`) still confirm | E (all payment checks pass without it) |
 
+## "Payment received" pushed into the chat (FEATURES §5a)
+
+| # | Case | Handling | Evidence |
+|---|---|---|---|
+| N1 | Paid by webhook / return page / dispatcher approval, customer silent | Conversation found by the agent message that contains the job id; one MESSAGE task queued | U (whole send against a fake Chord API) |
+| N2 | Paid because the customer asked in the chat | Nothing pushed; the agent confirms in its reply (no duplicate) | Code path (`via: verify` does not trigger) |
+| N3 | Paystack retries, or webhook + return page together | Atomic claim in `chat_notices`: one notice per job | U "sends at most once" |
+| N4 | Job id appears in chats with two different customers | Not sent, never guessed (privacy) | U `pickThread` |
+| N5 | A customer typed someone else's job id | Only agent turns count | U `agentMentioned` |
+| N6 | Same customer, two conversations | The most recently active one | U |
+| N7 | A human holds or paused the chat | Not sent (Chord would deliver over the operator) | U |
+| N8 | Customer writing right now | Not sent if their message is under 90 s old and unanswered; the agent will confirm | U |
+| N9 | Outside WhatsApp's 24-hour window | Not sent | U |
+| N10 | Key missing a scope / Chord down / timeout | Recorded as `failed` with Chord's reason; never throws; webhook unaffected | U; live: `chord_http_403: Missing required permission: thread:read` with the narrow key |
+| N11 | Worker evicted mid-send | A `pending` claim older than 5 min can be retaken | Code (`claim`) |
+| N12 | Dispatcher wants to retry | "Send again" on the job page retries failed / skipped only; a queued notice is never resent | Code; local run (blocked as `local_server`) |
+| N13 | Local test server with the real key in `.env` | Sends nothing unless `CHORD_NOTICES_ALLOW_LOCAL=1` | U; local e2e (42 checks, no Chord calls made) |
+| N14 | The agent sees a message it did not write | Skill v5: a "Payment received: …" message is from our system; treat it as true and don't ask for "paid" | Simulator run (FIELD_NOTES #14) |
+
 ## Status without a job id
 
 | # | Case | Handling | Evidence |
@@ -174,7 +193,7 @@ Every row names the code that handles the case and the evidence that it works.
 
 ## Known gaps (deliberately not built)
 
-- No proactive WhatsApp message after a payment lands: the webhook updates the job and the board at once,
-  but Chord gives us no conversation id to message, so the agent tells the customer when they next write.
+- Chat notices cover "payment received" only. Other unprompted updates (rider assigned, delivered) would
+  use the same mechanism but are not built.
 - Rate limiting of our own endpoint relies on Cloudflare plus the bearer token. There is no per-sender quota.
 - The handover code is generated and shown but not verified at delivery.

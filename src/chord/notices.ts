@@ -1,0 +1,236 @@
+import { paymentReceivedMessage } from '../business/messages';
+import { eventStmt, getJob } from '../db/repo';
+import type { Env } from '../env';
+import { fetchJson, type HttpResult } from '../lib/http';
+import { log } from '../lib/log';
+
+/**
+ * "Payment received" pushed into the customer's chat, without the customer writing first.
+ *
+ * Chord sends no conversation id with MCP tool calls (FIELD_NOTES #9), so we find the conversation
+ * the way a person would: the agent always sends the job id ("ZD-H01G4") when it books, so we look
+ * through this workspace's recent conversations for the agent turn that contains it. Then we queue
+ * a Chord scheduled MESSAGE task into that conversation (delivered within about 30–60 s).
+ *
+ * Every step fails safe. If anything is unclear (no match, two different customers mention the id,
+ * a human holds the chat, the customer is typing right now, outside WhatsApp's 24-hour window, Chord
+ * down, key missing a scope), we send nothing and record why. The customer still gets the
+ * confirmation the old way, when they next write and the agent calls verify_payment.
+ *
+ * Docs: docs/FEATURES.md §5a, FIELD_NOTES #14. Chord API: /v1/threads, /v1/threads/{id}/turns,
+ * /v1/scheduled-tasks (scopes thread:read, teammate:update).
+ */
+
+export const NOTICE_KIND = 'payment_received';
+/** How far back to look for the conversation: the job cannot have been booked in a chat older than this. */
+const LOOKBACK_MS = 10 * 60_000;
+/** Conversations whose turns we read per notice (newest activity first). Bounds subrequests and time. */
+const MAX_THREADS_SCANNED = 8;
+/** If the customer wrote this recently and the agent has not answered yet, the agent is about to reply
+ *  (and will call verify_payment), so a pushed notice would arrive as a duplicate. */
+export const CUSTOMER_ACTIVE_MS = 90_000;
+/** WhatsApp only allows business-initiated free text within 24 h of the customer's last message. */
+export const SERVICE_WINDOW_MS = 23 * 60 * 60_000;
+/** A claim stuck in "pending" this long (Worker evicted mid-send) may be taken again. */
+const STALE_PENDING_MS = 5 * 60_000;
+
+export type NoticeConfig = { base: string; key: string; workspaceId: string; teammateId: string | null; route: 'direct_line' | 'channel' };
+export type NoticeStatus = 'enabled' | 'not_configured' | 'invalid_config';
+
+export function noticeConfig(env: Env): NoticeConfig | null {
+  const key = env.CHORD_API_KEY?.trim() ?? '';
+  const workspaceId = env.CHORD_WORKSPACE_ID?.trim() ?? '';
+  if (!key || !/^chord_[A-Za-z0-9_-]{20,}$/.test(key) || !workspaceId) return null;
+  const base = (env.CHORD_API_BASE?.trim() || 'https://api.chordhq.xyz').replace(/\/+$/, '');
+  if (!/^https:\/\/[a-z0-9.-]+$/i.test(base)) return null;
+  return { base, key, workspaceId, teammateId: env.CHORD_TEAMMATE_ID?.trim() || null, route: env.CHORD_NOTICE_ROUTE === 'channel' ? 'channel' : 'direct_line' };
+}
+
+/** A local dev server must not post into real customers' chats (it shares the Chord workspace). */
+export function sendsAllowed(env: Env, origin: string): boolean {
+  let host = '';
+  try {
+    host = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+  const local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost');
+  return !local || env.CHORD_NOTICES_ALLOW_LOCAL === '1';
+}
+
+export function noticeStatus(env: Env): NoticeStatus {
+  if (!env.CHORD_API_KEY?.trim()) return 'not_configured';
+  return noticeConfig(env) ? 'enabled' : 'invalid_config';
+}
+
+// ------------------------------------------------------------------ choosing the conversation (pure)
+export interface ThreadRow {
+  id: string;
+  channel_id?: string;
+  channel_participant_id?: string;
+  control_state?: string;
+  last_turn_at?: number;
+  last_turn_direction?: string;
+}
+export interface Turn { direction?: string; sender?: { kind?: string }; content?: { text?: string } | null; timestamp?: number }
+
+export type Pick =
+  | { ok: true; thread: ThreadRow }
+  | { ok: false; reason: 'thread_not_found' | 'ambiguous_thread' | 'human_handling' | 'customer_mid_conversation' | 'outside_24h_window' };
+
+/** Did the agent itself send this job id in this conversation? (Customer text does not count.) */
+export function agentMentioned(turns: Turn[], jobId: string): boolean {
+  const re = new RegExp(`\\b${jobId}\\b`);
+  return turns.some((t) => t.direction === 'outbound' && t.sender?.kind === 'agent' && re.test(t.content?.text ?? ''));
+}
+
+/**
+ * Picks the one conversation to notify. Several matches are fine when they are the same customer
+ * (they opened a new chat to ask about it): the most recently active wins. Matches from different
+ * customers are never guessed between: someone else may have quoted the id.
+ */
+export function pickThread(matches: ThreadRow[], now: number): Pick {
+  if (matches.length === 0) return { ok: false, reason: 'thread_not_found' };
+  const people = new Set(matches.map((t) => t.channel_participant_id ?? `?${t.id}`));
+  if (people.size > 1) return { ok: false, reason: 'ambiguous_thread' };
+  const thread = [...matches].sort((a, b) => (b.last_turn_at ?? 0) - (a.last_turn_at ?? 0))[0]!;
+  if (thread.control_state && thread.control_state !== 'agent_active') return { ok: false, reason: 'human_handling' };
+  const last = thread.last_turn_at ?? 0;
+  if (thread.last_turn_direction === 'inbound' && now - last < CUSTOMER_ACTIVE_MS) return { ok: false, reason: 'customer_mid_conversation' };
+  if (now - last > SERVICE_WINDOW_MS) return { ok: false, reason: 'outside_24h_window' };
+  return { ok: true, thread };
+}
+
+/** Which Chord delivery route to use. DIRECT_LINE writes into the Chord thread by id (works for the
+ *  simulator); "channel" sends through the workspace's WhatsApp/Telegram/Slack connector. */
+export function platformFor(thread: ThreadRow, route: NoticeConfig['route']): string {
+  if (route === 'direct_line') return 'DIRECT_LINE';
+  const c = (thread.channel_id ?? '').toLowerCase();
+  return c === 'whatsapp' ? 'WHATSAPP' : c === 'telegram' ? 'TELEGRAM' : c === 'slack' ? 'SLACK' : 'DIRECT_LINE';
+}
+
+// ------------------------------------------------------------------ Chord API
+function chordError(r: HttpResult<unknown>): string {
+  if (r.ok) return '';
+  if (r.failure !== 'http') return `chord_${r.failure}`;
+  let msg = '';
+  try {
+    msg = (JSON.parse(r.body ?? '{}') as { error?: { message?: string } }).error?.message ?? '';
+  } catch {
+    msg = '';
+  }
+  return `chord_http_${r.status}${msg ? `: ${msg.slice(0, 120)}` : ''}`;
+}
+
+async function chord<T>(cfg: NoticeConfig, path: string, timeoutMs: number, body?: unknown): Promise<HttpResult<T>> {
+  return fetchJson<T>(`${cfg.base}${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { Authorization: `Bearer ${cfg.key}` },
+    body,
+    timeoutMs,
+  });
+}
+
+async function findThread(cfg: NoticeConfig, jobId: string, since: number, now: number, timeoutMs: number): Promise<Pick | { ok: false; reason: string }> {
+  // Workspace-wide on purpose: the job-id match below is what selects the conversation, and filtering
+  // by teammate would silently find nothing if Chord's agent id format differs from the dashboard id.
+  const q = new URLSearchParams({ workspace_id: cfg.workspaceId, from: String(since), limit: '20' });
+  const list = await chord<{ threads?: ThreadRow[] }>(cfg, `/v1/threads?${q}`, timeoutMs);
+  if (!list.ok) return { ok: false, reason: chordError(list) };
+  const threads = (list.data.threads ?? []).filter((t) => /^[0-9a-f]{24}$/.test(t.id)).slice(0, MAX_THREADS_SCANNED);
+  const matches: ThreadRow[] = [];
+  // Sequential on purpose: usually the first (newest) conversation is the one, and it keeps us far
+  // below Chord's rate limit and the Worker's subrequest budget.
+  for (const t of threads) {
+    const turns = await chord<{ turns?: Turn[] }>(cfg, `/v1/threads/${t.id}/turns?limit=50`, timeoutMs);
+    if (!turns.ok) return { ok: false, reason: chordError(turns) };
+    if (agentMentioned(turns.data.turns ?? [], jobId)) matches.push(t);
+  }
+  return pickThread(matches, now);
+}
+
+// ------------------------------------------------------------------ the notice
+export type NoticeResult = { state: 'queued' | 'skipped' | 'failed' | 'not_sent'; reason?: string; thread_id?: string; task_id?: string };
+
+/**
+ * Takes the one-per-job claim. Automatic triggers only claim a fresh row (or a stale "pending" one);
+ * a dispatcher's "Send again" may also retry a failed or skipped notice, never a queued one.
+ */
+async function claim(db: D1Database, jobId: string, now: number, manual: boolean): Promise<boolean> {
+  const retryable = manual ? "state IN ('failed', 'skipped') OR " : '';
+  const row = await db
+    .prepare(
+      `INSERT INTO chat_notices (job_id, kind, state, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, ?3)
+       ON CONFLICT (job_id, kind) DO UPDATE SET state = 'pending', reason = NULL, attempts = attempts + 1, updated_at = ?3
+         WHERE ${retryable}(state = 'pending' AND updated_at < ?4)
+       RETURNING attempts`,
+    )
+    .bind(jobId, NOTICE_KIND, now, now - STALE_PENDING_MS)
+    .first<{ attempts: number }>();
+  return Boolean(row);
+}
+
+async function finish(db: D1Database, jobId: string, r: NoticeResult, now: number): Promise<void> {
+  await db.batch([
+    db
+      .prepare('UPDATE chat_notices SET state = ?, reason = ?, thread_id = ?, task_id = ?, updated_at = ? WHERE job_id = ? AND kind = ?')
+      .bind(r.state, r.reason ?? null, r.thread_id ?? null, r.task_id ?? null, now, jobId, NOTICE_KIND),
+    eventStmt(db, {
+      jobId,
+      type: r.state === 'queued' ? 'customer_notified' : 'customer_notice_not_sent',
+      actor: 'system',
+      detail: r.state === 'queued' ? { thread_id: r.thread_id, task_id: r.task_id } : { reason: r.reason },
+      at: now,
+    }),
+  ]);
+}
+
+/**
+ * Sends "payment received" into the customer's conversation, at most once per job. Never throws:
+ * it runs in the background after Paystack's webhook has already been answered.
+ */
+export async function notifyPaymentReceived(env: Env, jobId: string, opts: { manual?: boolean; now?: number; origin?: string } = {}): Promise<NoticeResult> {
+  const cfg = noticeConfig(env);
+  if (!cfg) return { state: 'not_sent', reason: 'not_configured' };
+  if (opts.origin && !sendsAllowed(env, opts.origin)) return { state: 'not_sent', reason: 'local_server' };
+  const now = opts.now ?? Date.now();
+  const timeoutMs = Math.min(Number(env.PROVIDER_TIMEOUT_MS) || 4000, 6000);
+  try {
+    const job = await getJob(env.DB, jobId);
+    if (!job || !['paid', 'dispatched', 'delivered'].includes(job.status)) return { state: 'not_sent', reason: 'job_not_paid' };
+    if (!(await claim(env.DB, jobId, now, opts.manual === true))) return { state: 'not_sent', reason: 'already_handled' };
+
+    let result: NoticeResult;
+    const pick = await findThread(cfg, jobId, job.created_at - LOOKBACK_MS, now, timeoutMs);
+    if (!pick.ok) {
+      result = { state: pick.reason.startsWith('chord_') ? 'failed' : 'skipped', reason: pick.reason };
+    } else {
+      const task = await chord<{ id?: string }>(cfg, '/v1/scheduled-tasks', timeoutMs, {
+        task_type: 'MESSAGE',
+        // Must be in the future; Chord's queue picks it up within about 30 s.
+        scheduled_at: new Date(now + 5_000).toISOString(),
+        workspace_id: cfg.workspaceId,
+        ...(cfg.teammateId ? { teammate_id: cfg.teammateId } : {}),
+        max_retries: 2,
+        payload: { platform: platformFor(pick.thread, cfg.route), conversation_id: pick.thread.id, body: paymentReceivedMessage(job, now) },
+      });
+      result = task.ok
+        ? { state: 'queued', thread_id: pick.thread.id, task_id: task.data.id ?? '' }
+        : { state: 'failed', reason: chordError(task), thread_id: pick.thread.id };
+    }
+    await finish(env.DB, jobId, result, Date.now());
+    log(result.state === 'failed' ? 'warn' : 'info', 'chat_notice', { job_id: jobId, state: result.state, reason: result.reason ?? null, thread_id: result.thread_id ?? null });
+    return result;
+  } catch (e) {
+    const reason = `error: ${e instanceof Error ? e.message.slice(0, 120) : String(e)}`;
+    log('error', 'chat_notice_error', { job_id: jobId, message: reason });
+    await finish(env.DB, jobId, { state: 'failed', reason }, Date.now()).catch(() => undefined);
+    return { state: 'failed', reason };
+  }
+}
+
+/** Fire-and-forget hook used after a payment is confirmed outside the conversation. No-op when off. */
+export function queueChatNotice(env: Env, waitUntil: (p: Promise<unknown>) => void, jobId: string, origin: string): void {
+  if (noticeStatus(env) !== 'enabled' || !sendsAllowed(env, origin)) return;
+  waitUntil(notifyPaymentReceived(env, jobId, { origin }));
+}

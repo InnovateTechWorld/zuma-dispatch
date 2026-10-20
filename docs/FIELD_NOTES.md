@@ -269,8 +269,9 @@ confirmed. A real business wants the payment noticed the moment it lands.
 - If Paystack's API is down we return 503 so Paystack retries; the return page and `verify_payment`
   remain as fallbacks.
 
-**What we could not build: telling the customer in the chat without them writing first.** We read
-every relevant Chord surface:
+**What we first thought we could not build: telling the customer in the chat without them writing first.**
+*(Corrected in #14: it is possible. The conversation can be found by the job id the agent sent.)*
+We read every relevant Chord surface:
 
 | Chord surface | Why it does not fit |
 |---|---|
@@ -400,3 +401,39 @@ received, rider on the way") inside WhatsApp's 24-hour service window.
 **What would help (Chord).** Showing the model, in later turns, at least the names of tools called on
 earlier turns would prevent both "I didn't check" apologies and re-bookings. Also, the simulator should
 not report "didn't answer" when the transcript has a reply.
+
+## 14. Correction to #10: the server can find the conversation after all
+
+**The question (from the user, after #13).** "Why do I need to send a message to get a confirmation? Once
+payment is confirmed, just send a message." Field note #10 had said this was impossible, because MCP tool
+calls carry no conversation id.
+
+**What #10 missed.**
+- The conversation id is not in the tool call, but it can be looked up.
+- The agent always sends the job id ("Your job id is ZD-H01G4") in the booking message.
+- `GET /v1/threads` lists the workspace's conversations, and `GET /v1/threads/{id}/turns` returns their
+  messages. Searching recent conversations for an **agent** turn containing the job id gives the exact
+  thread.
+- The scheduled-task API then delivers a `MESSAGE` into that thread by id (`DIRECT_LINE`), or through the
+  WhatsApp connector.
+
+**Built** (FEATURES §5a, EDGE_CASES N1–N14).
+- After Paystack's webhook, the return page or a dispatcher approval marks a job paid, the server queues
+  "Payment received: ₦… for ZD-…, pickup timing, handover code" into that chat.
+- It does so once per job, and never when it is unsure: different customers, a human in the chat, the
+  customer typing, or outside the 24-hour window.
+
+**Snag: the scope is not in the key form.**
+- Chord's "Create API key" form lists Chat, Knowledge, Teammates, Procedures, Usage and Webhooks. It has
+  no Threads row.
+- A key with Teammates Read + Update is refused on `/v1/threads` with
+  `403 Missing required permission: thread:read`.
+- The permissions doc says the dashboard's "Full access" expands to every permission the account holds,
+  so that is the only dashboard route to `thread:read`.
+- Creating a full-access key is an account-owner decision, so it was left to the owner. Until then the
+  feature records `failed: chord_http_403 … thread:read` and the old flow (the customer writes, the agent
+  verifies) still works.
+
+**What would help (Chord).**
+- A `thread:read` toggle in the key form.
+- Better: pass the conversation id to MCP tools (`params._meta`), so no search is needed.

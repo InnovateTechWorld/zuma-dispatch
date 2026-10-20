@@ -145,9 +145,11 @@ All three call the same function, `checkPayments()`, so the rules are identical.
 **What needs a person:** amount, currency or reference mismatch; paid twice; paid after cancelling;
 reversal. Each gives `needs_review`, the agent hands over, and the board lists the reason.
 
-**What the customer sees:** the checkout return page says "Payment received". Zuma confirms on the
-customer's next message. Chord has no way for our server to post into the conversation unprompted: it
-sends tools no conversation id (see FIELD_NOTES #10).
+**What the customer sees:**
+- The checkout return page says "Payment received".
+- When chat notices are on (§5a), "Payment received: ₦… for ZD-…" arrives in their chat within about a
+  minute, without them writing.
+- Otherwise Zuma confirms on the customer's next message.
 
 **Code:** `src/web/paystackWebhook.ts`, `src/payments/service.ts`, `src/payments/decide.ts` ·
 **Tests:** `test/decide.test.ts`, `test/integrations.test.ts` (signature, tampering, unknown reference,
@@ -155,6 +157,80 @@ event shapes), `scripts/e2e.py` (forged-but-signed event leaves the job unpaid).
 
 **Setup:** Paystack Dashboard → Settings → API Keys & Webhooks → Test Webhook URL:
 `https://zuma-dispatch.obimz123.workers.dev/hooks/paystack`.
+
+## 5a. "Payment received" pushed into the chat (no customer message needed)
+
+**The problem.**
+- Paystack's webhook marks a job paid within seconds, but the customer only heard about it after writing again.
+- Chord sends MCP tools no conversation id (FIELD_NOTES #9), so the server did not know which chat to
+  write to. Field note #10 called this impossible. #14 corrects that.
+
+**How it works** (`src/chord/notices.ts`):
+1. **Trigger.** A job turns paid through Paystack's notification, the checkout return page, or a
+   dispatcher approving a reviewed payment. These are the moments the customer is not in the chat.
+   When the customer asked (`verify_payment`), the agent confirms in its own reply, so nothing is pushed.
+2. **Find the conversation.**
+   - `GET /v1/threads` lists this workspace's conversations active since 10 minutes before the booking.
+   - For each, up to 8 and newest first, `GET /v1/threads/{id}/turns` looks for an **agent** message
+     containing the job id. The agent always sends the id when it books. A customer typing an id does not count.
+3. **Decide** (`pickThread`, pure and unit-tested). Send only when it is safe:
+
+   | Situation | Result |
+   |---|---|
+   | One conversation, or several with the **same** customer | The most recently active one |
+   | The id appears in chats with **different** customers | Not sent (`ambiguous_thread`); never guessed |
+   | No agent message with the id | Not sent (`thread_not_found`) |
+   | A human has taken over or paused the chat | Not sent (`human_handling`); Chord would deliver over the operator |
+   | The customer wrote in the last 90 s and the agent has not answered | Not sent (`customer_mid_conversation`); the agent is about to confirm |
+   | Customer's last message older than 23 h | Not sent (`outside_24h_window`); WhatsApp's free-text window |
+
+4. **Send.** `POST /v1/scheduled-tasks` with a `MESSAGE` task.
+   - Delivery: `scheduled_at` = now + 5 s. Chord's queue picks it up within about 30 s, so the message
+     arrives about 30–60 s after payment.
+   - Route: `DIRECT_LINE` with the thread id; `CHORD_NOTICE_ROUTE=channel` sends through the WhatsApp connector instead.
+   - Text: the same sentence `verify_payment` gives the agent (`src/business/messages.ts`). For example:
+     *"Payment received: ₦1,950 for ZD-H01G4. A dispatcher is assigning a rider now; pickup is usually
+     within 45 minutes. The recipient gives the rider code 8960."*
+   - Fixed text, no agent run, so it should not consume model credits.
+5. **Once only.** A row in `chat_notices` (migration 0008) is claimed with an atomic UPSERT before
+   anything is sent. Paystack retries, the return page and the webhook together, or two Workers at once
+   send one message.
+   - A claim stuck in `pending` for 5 minutes (Worker evicted) may be retaken.
+   - A dispatcher's **Send again** retries only `failed` or `skipped`, never `queued`.
+6. **Record.**
+   - Every outcome lands in `chat_notices` and the job timeline (`customer_notified` /
+     `customer_notice_not_sent` with the reason).
+   - The job page shows it in plain words with a Send again / Send now button.
+   - The board shows totals.
+   - `/health` reports `chat_payment_notices: enabled | not_configured | invalid_config`.
+
+**Fails safe.**
+- Chord down, a timeout (4 s per call), a 403 for a missing scope, or any exception is recorded as
+  `failed` with Chord's reason (e.g. `chord_http_403: Missing required permission: thread:read`).
+- The webhook was already answered, so Paystack is unaffected, and the agent still confirms when the
+  customer writes.
+- Logs carry the job id, outcome and thread id; never the message text or phone numbers.
+
+**Local servers never post into real chats.** `.env` and production share one Chord workspace, so
+`localhost` / `127.0.0.1` send nothing (`local_server`) unless `CHORD_NOTICES_ALLOW_LOCAL=1`.
+
+**Configuration.**
+
+| Setting | Where | Value |
+|---|---|---|
+| `CHORD_API_KEY` | secret | A Chord API key with `thread:read` + `teammate:update`. The dashboard offers `thread:read` only under **Full access** |
+| `CHORD_WORKSPACE_ID`, `CHORD_TEAMMATE_ID` | `wrangler.jsonc` vars | This workspace and teammate |
+| `CHORD_API_BASE` | var | `https://api.chordhq.xyz` |
+| `CHORD_NOTICE_ROUTE` | var | `direct_line` (default) or `channel` |
+| `CHORD_NOTICES_ALLOW_LOCAL` | `.env` | unset |
+
+**The agent's side (skill v5).** A "Payment received: …" message in the conversation comes from Zuma's
+system after Paystack confirmed. The agent treats it as true, does not repeat it, and does not ask the
+customer to say "paid".
+
+**Code:** `src/chord/notices.ts`, `src/business/messages.ts`, hook in `src/payments/service.ts`, board in
+`src/web/pages.ts` · **Tests:** `test/notices.test.ts` (matching, privacy, human / typing / 24 h rules,
+once-only, scope errors, Chord failures, local guard, the message text).
 
 ## 6. Status and tracking (`get_job_status`)
 
@@ -314,6 +390,8 @@ tools no conversation or customer id. The server is built so this cannot cause w
 | `OPENROUTE_BASIC_KEY`, `GOOGLE_MAPS_API_KEY` | secrets | optional (provider skipped if unset) |
 | `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON` | secrets | optional (sheet mirror, §12) |
 | `SHEET_MIRROR_ALLOW_LOCAL` | `.env` | unset (local servers never write to the sheet) |
+| `CHORD_API_KEY` (+ `CHORD_*` vars) | secret / vars | optional ("Payment received" pushed into the chat, §5a) |
+| `CHORD_NOTICES_ALLOW_LOCAL` | `.env` | unset (local servers never post into real chats) |
 
 ## 12. Google Sheet mirror (owner's view on the phone)
 

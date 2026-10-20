@@ -6,6 +6,7 @@ import { handleMcp, SERVER_VERSION } from './mcp/server';
 import { chordWebhook } from './web/chordWebhook';
 import { paystackWebhook } from './web/paystackWebhook';
 import { mirrorStatus } from './sheets/mirror';
+import { noticeStatus } from './chord/notices';
 import { boardGate } from './web/login';
 import { payReturn } from './web/pages';
 
@@ -72,6 +73,7 @@ async function route(request: Request, url: URL, env: Env, ctx: ExecutionContext
         geocoder_mode: cfg.ok ? cfg.config.geocoderMode : undefined,
         router_chain: cfg.ok ? cfg.config.routerChain : undefined,
         sheet_mirror: mirrorStatus(env),
+        chat_payment_notices: noticeStatus(env),
         paystack_webhook: '/hooks/paystack',
         chord_webhook: env.CHORD_WEBHOOK_SECRET ? 'configured' : 'not_configured',
       },

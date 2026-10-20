@@ -10,6 +10,7 @@
                                                                                   ├─ /board      admin board: sign-in, overview charts, jobs, job pages
                                                                                   ├─ /hooks/paystack  payment notifications (HMAC-SHA512)
                                                                                   ├─ /hooks/chord     handover alerts (HMAC-SHA256)
+                                                                                  ├─ → Chord API     "payment received" into the customer's chat (scheduled MESSAGE)
                                                                                   └─ /health     config + DB check
                                                                                        │
           ┌──────────────────────┬─────────────────────┬──────────────────┬──────────┴─────────┐
@@ -86,6 +87,7 @@ Payment attempts have their own states: `initializing` (row written before calli
 | Pluggable geocoder chain + cross-check | Free OSM geocoders disagree and miss Nigerian landmarks; disagreement is turned into a question to the customer | One provider (fast but wrong silently), Google only (needs a billing account) |
 | OSRM for distance, ORS second, straight line last | OSRM answered in 0.5 s; ORS took 18 s / timed out in tests | ORS only |
 | Payment attempt row written before initialize | A timed-out initialize can still be verified by reference; `duplicate_reference` is recoverable | Insert after success (a lost response orphans a real transaction) |
+| Find the chat by the job id the agent sent, then a Chord MESSAGE task | Chord gives tools no conversation id; the agent's own booking message is an exact, private key, and any doubt means "don't send" | Guessing by phone or time (wrong customer risk), operator take-over + message (pauses the agent) |
 | Board sign-in page + D1 sessions, not HTTP Basic | Basic auth puts credentials in URLs people share, which broke the board's forms in Chromium, and it cannot sign out; sessions can be revoked and the lockout slows guessing | Signed stateless cookies (no real sign-out), keep Basic (no lockout, browser popup) |
 | Google Sheet as a one-way mirror, not the store | The owner gets a familiar phone view; the money logic keeps compare-and-set safety; Sheets outages never block bookings | Sheets as the database (no atomic updates, quotas, human edits break it) |
 | Paystack webhook + re-verify, return page and `verify_payment` as fallbacks | Payments are noticed without the customer writing; the payload is never trusted | Trusting the webhook body (forgeable if the key leaks, no amount check) |
@@ -93,7 +95,7 @@ Payment attempts have their own states: `initializing` (row written before calli
 
 ## Data model
 
-See `migrations/0001_init.sql` … `0007_board_sessions.sql`. Money is integer kobo,
+See `migrations/0001_init.sql` … `0008_chat_notices.sql`. Money is integer kobo,
 times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 
 | Table | Holds | Key constraints |
@@ -110,6 +112,7 @@ times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 | `sheet_rows`, `sheet_state` | which sheet row holds which job; last sync result | `job_id` |
 | `board_sessions` | dispatcher sign-ins: SHA-256 of the cookie, password fingerprint, expiry | `token_hash` |
 | `board_login_failures` | failed sign-ins per hashed IP in a 15-minute window | `ip_hash` |
+| `chat_notices` | "payment received" pushed into a Chord conversation: state, reason, thread and task ids | `(job_id, kind)` |
 
 ## Configuration
 
@@ -117,5 +120,6 @@ times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 `QUOTE_TTL_MINUTES`, `PROVIDER_TIMEOUT_MS`, `BUSINESS_NAME`, `BUSINESS_CITY`. Secrets:
 `PAYSTACK_TEST_SECRET_KEY`, `NIPOST_API_KEY`, `MCP_BEARER_TOKEN`, `BOARD_TOKEN`, optional
 `OPENROUTE_BASIC_KEY`, `GOOGLE_MAPS_API_KEY`, `CHORD_WEBHOOK_SECRET`, `GOOGLE_SHEET_ID`,
-`GOOGLE_SERVICE_ACCOUNT_JSON`, and `SHEET_MIRROR_ALLOW_LOCAL` (local only; leave unset). `loadConfig` validates everything on every request.
+`GOOGLE_SERVICE_ACCOUNT_JSON`, `SHEET_MIRROR_ALLOW_LOCAL` (local only; leave unset), `CHORD_API_KEY` and
+`CHORD_NOTICES_ALLOW_LOCAL` (local only). Vars `CHORD_API_BASE`, `CHORD_WORKSPACE_ID`, `CHORD_TEAMMATE_ID`, `CHORD_NOTICE_ROUTE`. `loadConfig` validates everything on every request.
 It refuses non-test keys and reports problem names (never values) on `/health`.

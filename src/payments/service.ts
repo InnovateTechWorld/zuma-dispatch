@@ -4,6 +4,7 @@ import type { ToolContext } from '../mcp/tooling';
 import { combine, decideAttempt, type AttemptVerdict } from './decide';
 import { verifyTransaction } from './paystack';
 import { queueSheetSync } from '../sheets/queue';
+import { queueChatNotice } from '../chord/notices';
 
 /** Don't ask Paystack about the same reference more than once per this interval (rate limits; no polling loops). */
 export const RECHECK_INTERVAL_MS = 10_000;
@@ -125,6 +126,9 @@ export async function checkPayments(ctx: ToolContext, job: JobRow, opts: CheckOp
   if (outcome === 'paid') {
     const won = await transitionJob(ctx.db, job.id, ['awaiting_payment', 'payment_failed'], 'paid', 'system', now, { via: opts.via ?? 'verify' }, ', paid_at = ?', [now]);
     if (won) log('info', 'job_paid', { job_id: job.id, request_id: ctx.requestId, via: opts.via ?? 'verify' });
+    // Paid while the customer was not in the chat (Paystack's webhook, or the checkout return page):
+    // tell them there. When the customer asked (verify), the agent confirms in its own reply instead.
+    if (won && (opts.via === 'paystack_webhook' || opts.via === 'return_page')) queueChatNotice(ctx.env, ctx.waitUntil, job.id, ctx.publicOrigin);
     if (job.status === 'cancelled') needsReview = 'The customer paid for a job that had been cancelled. A refund or reinstatement is needed.';
     if (paidAttempts > 1) needsReview = `The customer paid ${paidAttempts} times for this job. One payment needs refunding.`;
   } else if (outcome === 'mismatch') {

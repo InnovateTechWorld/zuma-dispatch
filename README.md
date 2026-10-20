@@ -3,6 +3,7 @@
 A Chord teammate for a made-up Abuja courier, **Zuma Dispatch**.
 - A customer messages on WhatsApp with a pickup and a drop-off, in landmarks, street names or NIPOST postcodes.
 - The agent finds both places, quotes a price the server calculates, books the job, sends a Paystack (test mode) payment link or bank-transfer account details and confirms payment with Paystack before telling the customer it's paid.
+- When Paystack confirms a payment, the customer gets "Payment received" in the chat without having to say "paid".
 - Dispatchers see and advance jobs on a small board.
 
 | | |
@@ -134,6 +135,14 @@ npm run deploy && scripts/mcp-smoke.sh https://<your-worker>.workers.dev
 | Chord (customer handed to a human) | `/hooks/chord` | Chord → Admin → Channels & Tools → Developer → Webhooks → Add webhook ("Human takeover") | `CHORD_WEBHOOK_SECRET` |
 
 See [docs/FEATURES.md](docs/FEATURES.md) §5 and §9.
+
+**"Payment received" in the chat, without the customer writing (optional).**
+- After Paystack's webhook confirms a payment, the server finds the customer's Chord conversation (the
+  agent message that contains the job id) and queues a Chord `MESSAGE` into it.
+- Set `CHORD_API_KEY`. It needs `thread:read` and `teammate:update`, which the dashboard offers only under
+  Full access.
+- Safety rules (privacy, human takeover, customer typing, 24-hour window, once per job) are in
+  [docs/FEATURES.md](docs/FEATURES.md) §5a.
 
 ## Google Sheet mirror (optional)
 
