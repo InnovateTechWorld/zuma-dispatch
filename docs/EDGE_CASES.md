@@ -47,10 +47,10 @@ Every row names the code that handles the case and the evidence that it works.
 | # | Case | Handling | Evidence |
 |---|---|---|---|
 | A1 | Raw NIPOST postcode, any format (`FC-02-A09-DB-09`, `fc02a09db09`, `FC 02 A09 DB 09`) | Parsed, then LGA from NIPOST, area from the fixed FCT table, `needs_detail` | U `findPostcode`; live MCP run (TESTING.md) |
-| A2 | NIPOST's sandbox codes (`FC-01-A01-KP-27` …) | NIPOST answers `not_found`. They are in Abaji, ~89 km out, so `out_of_area` with the place named and a human offered | U; live MCP run; NIPOST re-checked 2026-10-20 18:20 |
+| A2 | NIPOST's sandbox codes (`FC-01-A01-KP-27` …) | NIPOST answers `not_found`. They are in Abaji (FCT), ~89 km from the centre: in coverage since the two-state change, so `needs_detail` | U; live MCP run; NIPOST re-checked 2026-10-20 18:20 |
 | A3 | Geocoder places an LGA in the wrong spot (Photon: "Abaji" → FCT Administration, Garki) | FCT uses the fixed area-council table; elsewhere a result must name the LGA | U `namesLga`; live: Abaji now 88.8 km every time |
 | A4 | Postcode + landmark matching places elsewhere ("Abaji General Hospital" → Wuse, Bauchi) | Matches more than 35 km from the postcode's area are dropped; if none remain, the postcode's area is used | U `withinKm`; live MCP run |
-| A5 | Postcode in another state (`LA-01-…`) | Area named (Agege, Lagos), `out_of_area` | Live MCP run |
+| A5 | Lagos postcode (`LA-01-…`) | Area named (Agege, Lagos), in coverage, `needs_detail`; other states' postcodes → `out_of_area` | Live MCP run |
 | A6 | Cached answers computed by older logic | Stable-answer cache key versioned (`resolve:v2:`) | Code |
 | 17 | Landmark addresses ("Jabi Lake Mall") | Geocoder chain: Nominatim + Photon cross-check by default, Google if a key is set, ORS last. | E |
 | 18 | Same name, different places ("Shoprite") | Providers disagreeing by more than 400 m, or one provider returning places more than 3 km apart → `ambiguous` with up to 3 candidates for the customer to pick. | U "Shoprite Lugbe case", E (production returned Jabi, Wuse II, Wuse branches) |
@@ -60,7 +60,16 @@ Every row names the code that handles the case and the evidence that it works.
 | 22 | Invalid NIPOST code | `not_found`: "ask them to check it or describe the place". | Code |
 | 23 | Legacy 6-digit code (`900288`) | Recognised and not sent to NIPOST (no API). The rest of the text is geocoded. A code alone → `needs_detail`. | U |
 | 24 | Phone numbers mistaken for postcodes | Runs of 7+ digits are not treated as legacy codes. | U |
-| 25 | Outside Abuja ("Ikeja City Mall, Lagos") | Resolves normally anywhere in Nigeria, then `out_of_area` (40 km radius). `quote_delivery` also refuses it. | E |
+| 25 | Lagos address ("Ikeja City Mall") | In coverage, labelled `state: "Lagos"`; Lagos → Lagos quotes and books | E (Lagos quote, booking, cancel) |
+| ST1 | Lagos → Abuja (or Abuja → Lagos) | `quote_delivery` → `INTERSTATE_NOT_SUPPORTED`; the agent offers a human | E |
+| ST2 | An Abuja place named during a Lagos booking | `what_to_do` carries an interstate note before quoting | E |
+| ST3 | Border suburbs in other states (Mararaba, Karu: Nasarawa; Suleja: Niger; Ota, Arepo, Agbara: Ogun) | `out_of_area`, named | U (22 towns vs OSM's own state); E (Ota, Suleja) |
+| ST4 | Same name in both cities ("Shoprite") | Without a hint: candidates from both, labelled by state; with `state` the other city's are dropped | U `preferState`; live MCP run |
+| ST5 | Every match is outside both states ("Ota, Ogun State" → two Ogun places) | One `out_of_area`, not a "which one?" question | Live MCP run |
+| ST6 | Duplicate labels ("Badagry, Lagos State" twice) | Merged | Live MCP run |
+| ST7 | Just "Lagos" / "Eko" | `needs_detail` | E |
+| ST8 | NIPOST sandbox codes (Abaji, FCT) | Now in coverage → `needs_detail` (ask for a landmark) | E |
+| ST9 | Places resolved before the change (stored in-area flag from the old 40 km rule) | Quotes judge the coordinates again; migration 0010 backfills `state` | Code |
 | 26 | Geocoder returns a point outside Nigeria | Dropped (Nigeria bounding box and coordinate validity). | Code `keep()` |
 | 27 | Nonsense text | `not_found` with landmark guidance. The skill escalates after two failures. | E |
 | 28 | A provider is slow or down | Per-call timeout (4 s). In cross-check, once the first answers the second gets 1.5 s more, then it finishes in the background into the cache. The chain stops starting new providers after 6 s. All down → `GEOCODER_UNAVAILABLE` "try once, then hand over". | E timings (8 s → ~1.5 s) |
@@ -75,7 +84,7 @@ Every row names the code that handles the case and the evidence that it works.
 | 32 | Router down (OSRM/ORS) | Falls back to straight line × 1.4. The quote is marked `approximate_distance` and the agent says "estimated". | Code `routing/route.ts` |
 | 33 | Asking for the same quote twice | The same unexpired quote is returned (stable price, no duplicate rows). | E "reuses the quote" |
 | 34 | Quote expired (30 min) | `create_dispatch_job` → `QUOTE_EXPIRED` "re-quote, tell the new price, get a fresh yes". Never silently re-priced. | Code |
-| 35 | Very long trip inside the radius | More than 60 km by road → `TRIP_TOO_LONG`. | Code |
+| 35 | Very long trip inside a state | Priced per km up to 160 km by road; beyond that → `TRIP_TOO_LONG` (a wrong-geocode guard) | Code |
 | 36 | Area-level place (e.g. "Garki") | Quoting is allowed, and the agent is told to also ask for a landmark for the rider. | Code |
 | 37 | Double "yes" / retried booking | `UNIQUE(quote_id)`: the same job is returned (`already_booked`). Concurrent inserts are caught and also return the winner. | E "double 'yes'" |
 | 38 | Bad phone ("12345", UK number, landline) | Normalised to +234 E.164. Wrong length, non-mobile prefix or letters each get a specific prompt. | U (10 cases), E |

@@ -1,4 +1,5 @@
-import { pickupWindow, SERVICE_AREA } from '../business/profile';
+import { pickupWindow } from '../business/profile';
+import { COVERAGE, SERVICE_STATES, stateOf } from '../business/states';
 import { MAX_ROAD_KM, MIN_DISTANCE_M, priceTrip, RATE_CARD_VERSION, SIZES, type PackageSize } from '../business/rates';
 import { getPlace, type PlaceRow, type QuoteRow } from '../db/repo';
 import { haversineMeters } from '../lib/geo';
@@ -61,12 +62,14 @@ export async function quoteDelivery(args: QuoteArgs, ctx: ToolContext): Promise<
   const now = ctx.now();
   const [pickup, dropoff] = await Promise.all([loadPlace(ctx, args.pickup_place_id, 'pickup'), loadPlace(ctx, args.dropoff_place_id, 'dropoff')]);
 
+  // The state is computed from the coordinates (not the stored flag), so places resolved under the
+  // old 40 km Abuja radius are judged by today's rule.
   for (const [p, role] of [[pickup, 'pickup'], [dropoff, 'drop-off']] as const) {
-    if (p.in_service_area !== 1) {
+    if (!stateOf(p)) {
       throw new ToolError(
         'OUT_OF_SERVICE_AREA',
         `The ${role} (${p.label}) is outside our service area.`,
-        `Tell the customer we deliver only within ${SERVICE_AREA.description} Offer a human dispatcher for out-of-town requests.`,
+        `Tell the customer: ${COVERAGE} Offer a human dispatcher for anywhere else.`,
       );
     }
     if (p.precision === 'lga') {
@@ -76,6 +79,15 @@ export async function quoteDelivery(args: QuoteArgs, ctx: ToolContext): Promise<
         `Ask the customer for a street, estate or landmark for the ${role} and call resolve_address again.`,
       );
     }
+  }
+  const from = stateOf(pickup)!;
+  const to = stateOf(dropoff)!;
+  if (from !== to) {
+    throw new ToolError(
+      'INTERSTATE_NOT_SUPPORTED',
+      `The pickup is in ${SERVICE_STATES[from].name} and the drop-off is in ${SERVICE_STATES[to].name}.`,
+      `Tell the customer we deliver within one state only (within Abuja, or within Lagos), not between states. Offer a human dispatcher if they need it carried between ${SERVICE_STATES[from].name} and ${SERVICE_STATES[to].name}.`,
+    );
   }
 
   const straight = haversineMeters(pickup, dropoff);

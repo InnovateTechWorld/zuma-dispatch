@@ -512,3 +512,37 @@ test locations in the sandbox?"
 - Reject unknown query parameters with a 400.
 - Put at least one sandbox code in each of the six FCT area councils, so a city-centre integration can be
   tested end to end.
+
+## 16. From one city to two states: boundaries, not radii
+
+**The change (from the user).** "We do not handle interstate delivery, just within state, and just two
+states: Abuja and Lagos."
+
+**Decisions.**
+- **Coverage is a state boundary, not a circle.**
+  - The old 40 km circle around Abuja's centre had two flaws. It left out Gwagwalada, Kuje, Kwali and
+    Abaji, which are in the FCT. And it included Mararaba, which is in Nasarawa. Under a "within the
+    state" rule that is wrong on both counts.
+  - We embed OpenStreetMap's state relations (FCT `r3717259`, Lagos `r3718182`), fetched once from
+    Nominatim with `polygon_geojson` and simplified to about 50 m: 40 and ~300 points.
+  - We test them against OSM's *own* `address.state` for 22 towns, including the hard ones: Zuba vs
+    Suleja, Nyanya vs Mararaba, Alagbado and Ijanikin vs Ota, Akute, Arepo and Agbara.
+  - A first pass at about 1 km simplification (25 points) put Madalla, Mararaba and Karu inside the FCT.
+    Simplification level matters at borders.
+- **No runtime calls for "which state".** A point-in-polygon on stored coordinates is deterministic,
+  costs microseconds of CPU (10 ms budget, #2), and also re-judges places stored under the old rule.
+- **The agent passes `state` once known.** The geocoders were all biased to Abuja's centre. With a
+  hint they are biased to the right city, and the other city's matches ("Shoprite") are dropped.
+- **Interstate is refused at the quote** (`INTERSTATE_NOT_SUPPORTED`), and flagged earlier, at the second
+  address.
+- **NIPOST's sandbox codes are now in coverage** (Abaji is in the FCT), so #15's dead end is gone.
+
+**Snags.**
+- *Cached answers.* The 6-hour stable-answer cache (#9) kept serving answers computed under the
+  previous rules during testing. The cache key is versioned (`resolve:v4:<hint>:…`) instead of deleting
+  rows.
+- *Geocoder quirks in Lagos:*
+  - "Lekki Phase 1" → a marine supply shop *in* Lekki Phase 1.
+  - "Yaba Market, Lagos" → "Yaba College of Technology, Ikeja" (wrong district in the label).
+  - "Badagry" → the town and the LGA, both labelled "Badagry, Lagos State" (now merged).
+  - The read-back-and-confirm rule (the agent must get a "yes") is what catches these.

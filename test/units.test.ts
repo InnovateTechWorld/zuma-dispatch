@@ -214,17 +214,13 @@ describe('board search', async () => {
 describe('NIPOST postcode areas', async () => {
   const { FCT_AREA_COUNCILS, findPostcode, namesLga } = await import('../src/geocode/postcode');
   const { withinKm, POSTCODE_AREA_KM } = await import('../src/tools/resolveAddress');
-  const { SERVICE_AREA } = await import('../src/business/profile');
-  const { haversineMeters } = await import('../src/lib/geo');
-  const kmFromCentre = (p: { lat: number; lng: number }) => haversineMeters(p, SERVICE_AREA.centre) / 1000;
+  const { stateOf } = await import('../src/business/states');
 
-  it('knows all six FCT area councils, and where NIPOST\'s sandbox codes are', () => {
+  it('knows all six FCT area councils; NIPOST\'s sandbox codes (Abaji) are inside our FCT coverage', () => {
     expect(Object.keys(FCT_AREA_COUNCILS).sort()).toEqual(['01', '02', '03', '04', '05', '06']);
-    const sandbox = findPostcode('FC-01-A01-KP-27');
-    expect(sandbox).toMatchObject({ kind: 'nipost', state: 'FC', lga: '01' });
+    expect(findPostcode('FC-01-A01-KP-27')).toMatchObject({ kind: 'nipost', state: 'FC', lga: '01' });
     expect(FCT_AREA_COUNCILS['01']!.name).toBe('Abaji');
-    expect(kmFromCentre(FCT_AREA_COUNCILS['01']!)).toBeGreaterThan(SERVICE_AREA.radiusKm); // the sandbox is outside the metro area
-    expect(kmFromCentre(FCT_AREA_COUNCILS['02']!)).toBeLessThan(1); // Abuja Municipal holds the city centre
+    for (const council of Object.values(FCT_AREA_COUNCILS)) expect(stateOf(council)).toBe('FC');
   });
 
   it('accepts a geocoder answer as an LGA only if it names that LGA (Photon returned the FCT Administration for Abaji)', () => {
@@ -238,5 +234,33 @@ describe('NIPOST postcode areas', async () => {
     const wuseHospital = { lat: 9.0627, lng: 7.4687 };
     const nearAbaji = { lat: 8.48, lng: 6.95 };
     expect(withinKm([wuseHospital, nearAbaji], abaji, POSTCODE_AREA_KM)).toEqual([nearAbaji]);
+  });
+});
+
+describe('service states: FCT and Lagos State, same-state deliveries only', async () => {
+  const { stateOf } = await import('../src/business/states');
+  const { preferState } = await import('../src/tools/resolveAddress');
+  // Ground truth: OpenStreetMap's own state for each town (Nominatim addressdetails, 2026-10-20).
+  const truth: [string, number, number, 'FC' | 'LA' | null][] = [
+    ['Wuse', 9.0765, 7.4686, 'FC'], ['Abaji', 8.4737, 6.9445, 'FC'], ['Zuba', 9.0932, 7.216, 'FC'],
+    ['Nyanya', 9.0228, 7.5693, 'FC'], ['Kubwa', 9.1527, 7.3411, 'FC'], ['Lugbe', 8.991, 7.3575, 'FC'],
+    ['Suleja (Niger)', 9.2082, 7.1872, null], ['Mararaba (Nasarawa)', 9.029, 7.5932, null], ['Karu (Nasarawa)', 8.995, 7.7512, null],
+    ['Ikeja', 6.6018, 3.3515, 'LA'], ['Lekki Phase 1', 6.4474, 3.4723, 'LA'], ['Epe', 6.5841, 3.9834, 'LA'],
+    ['Badagry', 6.4393, 2.906, 'LA'], ['Ikorodu', 6.6191, 3.5041, 'LA'], ['Alagbado', 6.6597, 3.2558, 'LA'], ['Ijanikin', 6.4967, 3.1208, 'LA'],
+    ['Ota (Ogun)', 6.6845, 3.233, null], ['Akute (Ogun)', 6.6815, 3.3747, null], ['Arepo (Ogun)', 6.7358, 3.419, null], ['Agbara (Ogun)', 6.5047, 3.1005, null],
+    ['Kano', 12.0022, 8.592, null], ['Port Harcourt', 4.8156, 7.0498, null],
+  ];
+  it.each(truth)('%s', (_name, lat, lng, expected) => {
+    expect(stateOf({ lat, lng })).toBe(expected);
+  });
+
+  it('with a state hint, drops matches in the other state but keeps out-of-area ones (and keeps all if nothing is left)', () => {
+    const shopriteLekki = { lat: 6.4474, lng: 3.4723 };
+    const shopriteJabi = { lat: 9.0765, lng: 7.4686 };
+    const ota = { lat: 6.6845, lng: 3.233 };
+    expect(preferState([shopriteJabi, shopriteLekki], 'LA')).toEqual([shopriteLekki]);
+    expect(preferState([shopriteJabi, ota], 'LA')).toEqual([ota]);
+    expect(preferState([shopriteJabi], 'LA')).toEqual([shopriteJabi]);
+    expect(preferState([shopriteJabi, shopriteLekki], undefined)).toHaveLength(2);
   });
 });

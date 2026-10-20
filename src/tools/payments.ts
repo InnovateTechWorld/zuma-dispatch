@@ -210,7 +210,7 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
     test_mode: true,
     what_to_do:
       `Send these as separate short lines: Bank: ${p.transfer_bank}, Account number: ${p.transfer_account_number}, Account name: ${p.transfer_account_name}, Amount: exactly ${formatNaira(p.amount_kobo)}. ` +
-      `Say the account is for this booking only and expires at ${watTime(expires)} (Abuja time); the amount must be exact or the bank will reverse it. Ask them to reply "sent" after transferring, then call verify_payment.`,
+      `Say the account is for this booking only and expires at ${watTime(expires)} (WAT); the amount must be exact or the bank will reverse it. Ask them to reply "sent" after transferring, then call verify_payment.`,
   };
 }
 

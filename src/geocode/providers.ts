@@ -1,4 +1,4 @@
-import { GEOCODE_BIAS } from '../business/profile';
+import { SERVICE_STATES, type ServiceState } from '../business/states';
 import type { Config, GeocoderName } from '../config';
 import { inNigeria, isValidCoordinate } from '../lib/geo';
 import { fetchJson, traceLabel, type HttpResult } from '../lib/http';
@@ -27,11 +27,13 @@ export interface Geocoder {
   name: GeocoderName;
   /** Why the provider cannot be used with this config, or null if it can. */
   unavailable: (config: Config) => string | null;
-  search: (query: string, config: Config) => Promise<ProviderResult>;
+  /** `bias` = the service state to prefer (soft preference, never a hard filter). Default: Abuja. */
+  search: (query: string, config: Config, bias?: ServiceState) => Promise<ProviderResult>;
 }
 
 const MAX_CANDIDATES = 3;
-const { centre } = GEOCODE_BIAS;
+const BIAS_RADIUS_M = 50_000;
+const centreOf = (bias: ServiceState = 'FC') => SERVICE_STATES[bias].centre;
 
 function keep(c: Candidate[]): Candidate[] {
   return c.filter((x) => isValidCoordinate(x) && inNigeria(x)).slice(0, MAX_CANDIDATES);
@@ -58,7 +60,8 @@ function googlePrecision(types: string[] = []): Precision {
 const google: Geocoder = {
   name: 'google',
   unavailable: (c) => (c.googleMapsApiKey ? null : 'no GOOGLE_MAPS_API_KEY'),
-  async search(query, config) {
+  async search(query, config, bias) {
+    const centre = centreOf(bias);
     const r = await fetchJson<{ places?: GooglePlace[] }>('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
       timeoutMs: config.providerTimeoutMs,
@@ -70,7 +73,7 @@ const google: Geocoder = {
         textQuery: query,
         regionCode: 'ng',
         pageSize: MAX_CANDIDATES,
-        locationBias: { circle: { center: { latitude: centre.lat, longitude: centre.lng }, radius: GEOCODE_BIAS.radiusM } },
+        locationBias: { circle: { center: { latitude: centre.lat, longitude: centre.lng }, radius: BIAS_RADIUS_M } },
       },
     });
     if (!r.ok) return failed('google', r);
@@ -108,7 +111,8 @@ let lastNominatimCall = 0;
 const nominatim: Geocoder = {
   name: 'nominatim',
   unavailable: () => null,
-  async search(query, config) {
+  async search(query, config, bias) {
+    const centre = centreOf(bias);
     // Best-effort 1 req/s within this isolate; the D1 cache keeps repeat queries off the API entirely.
     const wait = lastNominatimCall + 1000 - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 1000)));
@@ -156,7 +160,8 @@ function photonPrecision(p: Record<string, string | undefined>): Precision {
 const photon: Geocoder = {
   name: 'photon',
   unavailable: () => null,
-  async search(query, config) {
+  async search(query, config, bias) {
+    const centre = centreOf(bias);
     const params = new URLSearchParams({ q: query, limit: String(MAX_CANDIDATES + 2), lat: String(centre.lat), lon: String(centre.lng), lang: 'en' });
     const r = await fetchJson<{ features?: PhotonFeature[] }>(`https://photon.komoot.io/api/?${params}`, { timeoutMs: config.providerTimeoutMs });
     if (!r.ok) return failed('photon', r);
@@ -193,7 +198,8 @@ function orsPrecision(layer = ''): Precision {
 const ors: Geocoder = {
   name: 'ors',
   unavailable: (c) => (c.orsApiKey ? null : 'no OPENROUTE_BASIC_KEY'),
-  async search(query, config) {
+  async search(query, config, bias) {
+    const centre = centreOf(bias);
     const params = new URLSearchParams({
       api_key: config.orsApiKey!,
       text: query,

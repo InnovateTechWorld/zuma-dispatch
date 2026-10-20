@@ -86,8 +86,34 @@ dropoff = d.get("place", {}).get("place_id") or d["candidates"][0]["place_id"]
 d2, err, ms = call("resolve_address", text="Wuse Market, Abuja", role="dropoff")
 check("repeat lookup served from cache (fast)", not err and ms < 3000, d2, ms)
 
-x, err, ms = call("resolve_address", text="Ikeja City Mall, Lagos", role="dropoff")
-check("Lagos address -> out_of_area", not err and x["status"] == "out_of_area", x, ms)
+section("Two states: FCT and Lagos, same-state deliveries only")
+lp, err, ms = call("resolve_address", text="Ikeja City Mall", role="pickup")
+check("Lagos landmark resolves, labelled Lagos", not err and lp["status"] in ("confirmed", "ambiguous") and (lp.get("place") or lp["candidates"][0]).get("state") == "Lagos", lp, ms)
+lagos_pickup = (lp.get("place") or lp["candidates"][0])["place_id"]
+ld, err, ms = call("resolve_address", text="Lekki Phase 1", role="dropoff", state="lagos")
+check("second Lagos address with state hint", not err and ld["status"] in ("confirmed", "ambiguous", "needs_detail"), ld, ms)
+lagos_drop = (ld.get("place") or (ld.get("candidates") or [{}])[0]).get("place_id")
+if lagos_drop and ld["status"] != "needs_detail":
+    lq, err, ms = call("quote_delivery", pickup_place_id=lagos_pickup, dropoff_place_id=lagos_drop, package_size="small")
+    check("Lagos -> Lagos quote", not err and lq.get("total", "").startswith("₦"), lq, ms)
+    if not err:
+        lj, err, ms = call("create_dispatch_job", quote_id=lq["quote_id"], sender_name=f"E2E Lagos {RUN}", recipient_name=f"E2E Lagos Recipient {RUN}", recipient_phone=f"0817{RUN}44"[:11], customer_confirmed=True)
+        check("Lagos job booked", not err and lj.get("job_id", "").startswith("ZD-"), lj, ms)
+        if not err:
+            lc, err, ms = call("cancel_job", job_id=lj["job_id"], reason="e2e Lagos check")
+            check("Lagos job cancelled (unpaid)", not err and lc.get("status") == "cancelled", lc, ms)
+q, err, ms = call("quote_delivery", pickup_place_id=lagos_pickup, dropoff_place_id=dropoff, package_size="small")
+check("Lagos -> Abuja quote refused (INTERSTATE_NOT_SUPPORTED)", err and q.get("error", {}).get("code") == "INTERSTATE_NOT_SUPPORTED", q, ms)
+x, err, ms = call("resolve_address", text="Jabi Lake Mall", role="dropoff", state="lagos")
+check("Abuja place during a Lagos booking -> interstate note", not err and "We only deliver within one state" in x.get("what_to_do", ""), x, ms)
+x, err, ms = call("resolve_address", text="Ota, Ogun State", role="dropoff")
+check("Ogun (Lagos's neighbour) -> out_of_area", not err and x["status"] == "out_of_area", x, ms)
+x, err, ms = call("resolve_address", text="Suleja", role="dropoff", state="abuja")
+check("Suleja (Niger, next to Abuja) -> out_of_area", not err and x["status"] == "out_of_area", x, ms)
+x, err, ms = call("resolve_address", text="FC-01-A01-KP-27", role="pickup")
+check("NIPOST sandbox code (Abaji, FCT) -> in coverage, ask for a landmark", not err and x["status"] == "needs_detail" and (x.get("place") or {}).get("state") == "Abuja (FCT)", x, ms)
+x, err, ms = call("resolve_address", text="Lagos", role="pickup")
+check("just 'Lagos' -> needs_detail", not err and x["status"] == "needs_detail", x, ms)
 
 x, err, ms = call("resolve_address", text="Abuja", role="pickup")
 check("just 'Abuja' -> needs_detail", not err and x["status"] == "needs_detail", x, ms)

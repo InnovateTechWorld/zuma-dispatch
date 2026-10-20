@@ -19,10 +19,12 @@ interface SizeRate {
 
 export const INCLUDED_KM = 3;
 export const ROUND_TO_NAIRA = 50;
-/** Straight-line distance is multiplied by this when no road route is available (Abuja road network detour factor). */
+/** Straight-line distance is multiplied by this when no road route is available (typical road detour in Abuja and Lagos). */
 export const STRAIGHT_LINE_ROAD_FACTOR = 1.4;
 /** A quote is refused beyond this road distance even inside the service radius (e.g. a detour-heavy route). */
-export const MAX_ROAD_KM = 60;
+// Whole-state coverage: the longest same-state trips are ~130 km by road (Abaji → Bwari, Badagry → Epe).
+// This is a guard against a wrong geocode, not a business limit.
+export const MAX_ROAD_KM = 160;
 /** Pickup and drop-off closer than this are treated as the same place. */
 export const MIN_DISTANCE_M = 150;
 

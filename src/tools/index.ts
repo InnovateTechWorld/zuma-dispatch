@@ -29,12 +29,18 @@ export const resolveAddress = defineTool({
   description: [
     'Turn what the customer typed into a confirmed location. Call this once for the pickup and once for the drop-off, before quoting.',
     'Accepts landmarks ("opposite Shoprite, Jabi Lake Mall"), street addresses, area names, and NIPOST postcodes (e.g. "FC-02-A09-DB-09"); pass the customer\'s words unchanged.',
-    'Returns status: "confirmed" (read the label back and get a yes), "ambiguous" (show the candidates and let the customer pick), "needs_detail" (too vague, e.g. just "Abuja" or a postcode alone: ask for a street or landmark), "not_found" (ask for a nearby landmark), or "out_of_area" (we do not serve it).',
+    'We deliver within Abuja (the whole FCT) and within Lagos State; both addresses must be in the same state. Each result names the state.',
+    'Pass state ("abuja" or "lagos") once you know it (from the customer, or from the first confirmed address) so the other address is looked up there.',
+    'Returns status: "confirmed" (read the label back and get a yes), "ambiguous" (show the candidates and let the customer pick), "needs_detail" (too vague, e.g. just "Lagos" or a postcode alone: ask for a street or landmark), "not_found" (ask for a nearby landmark), or "out_of_area" (outside both states).',
     'Never describe a location the tool did not return, and never pass coordinates anywhere.',
   ].join(' '),
   inputSchema: {
     text: z.string().min(2).max(300).describe('The address exactly as the customer wrote it.'),
     role: z.enum(['pickup', 'dropoff']).describe('Whether this is where the package is collected or delivered.'),
+    state: z
+      .enum(['abuja', 'lagos'])
+      .optional()
+      .describe('Which state the delivery is in, once known. Omit if you do not know yet.'),
   },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   handler: resolveHandler,

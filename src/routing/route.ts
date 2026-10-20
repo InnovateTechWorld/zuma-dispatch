@@ -11,7 +11,7 @@ export interface Route {
   approximate: boolean;
 }
 
-/** Average Abuja traffic speed used for the ETA when only a straight line is known. */
+/** Average city traffic speed used for the ETA when only a straight line is known. */
 const FALLBACK_SPEED_KMH = 25;
 
 async function osrm(a: LatLng, b: LatLng, config: Config, trace: string[]): Promise<Route | null> {

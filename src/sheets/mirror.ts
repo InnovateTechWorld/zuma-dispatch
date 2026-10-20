@@ -1,3 +1,4 @@
+import { stateOf, type ServiceState } from '../business/states';
 import { formatNaira } from '../lib/money';
 import { log } from '../lib/log';
 import { normalizeNigerianPhone } from '../lib/phone';
@@ -18,8 +19,10 @@ export const TAB = 'Deliveries';
 export const HEADERS = [
   'Job ID', 'Status', 'Booked (WAT)', 'Sender', 'Recipient', 'Recipient phone', 'Pickup', 'Drop-off', 'Size',
   'Distance (km)', 'Amount', 'Payment method', 'Paid via', 'Paid at (WAT)', 'Last update (WAT)', 'Board link',
+  // Added last so existing rows keep their columns; Resync fills it for older rows.
+  'City',
 ];
-const LAST_COL = 'P';
+const LAST_COL = 'Q';
 
 export interface MirrorEnv {
   DB: D1Database;
@@ -69,10 +72,11 @@ interface JoinedJob {
   id: string; status: string; created_at: number; updated_at: number; paid_at: number | null; sender_name: string;
   recipient_name: string; recipient_phone: string; amount_kobo: number; pickup: string | null; dropoff: string | null;
   package_size: string | null; distance_m: number | null; method: string | null; paid_via: string | null;
+  pickup_state?: string | null; pickup_lat?: number | null; pickup_lng?: number | null;
 }
 
 const JOB_SQL = `SELECT j.id, j.status, j.created_at, j.updated_at, j.paid_at, j.sender_name, j.recipient_name, j.recipient_phone, j.amount_kobo,
-       pu.label AS pickup, dr.label AS dropoff, q.package_size, q.distance_m,
+       pu.label AS pickup, dr.label AS dropoff, q.package_size, q.distance_m, pu.state AS pickup_state, pu.lat AS pickup_lat, pu.lng AS pickup_lng,
        (SELECT p.method FROM payments p WHERE p.job_id = j.id ORDER BY (p.status = 'success') DESC, p.attempt DESC LIMIT 1) AS method,
        (SELECT json_extract(e.detail_json, '$.via') FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'paid' ORDER BY e.id DESC LIMIT 1) AS paid_via
   FROM jobs j JOIN quotes q ON q.id = j.quote_id
@@ -86,7 +90,14 @@ export function toRow(j: JoinedJob, origin: string): string[] {
     j.pickup ?? '', j.dropoff ?? '', j.package_size ?? '', j.distance_m !== null ? (j.distance_m / 1000).toFixed(1) : '',
     formatNaira(j.amount_kobo), j.method === 'bank_transfer' ? 'Bank transfer' : j.method === 'link' ? 'Payment link' : '',
     j.paid_via ? (PAID_VIA[j.paid_via] ?? j.paid_via) : '', wat(j.paid_at), wat(j.updated_at), `${origin}/board/jobs/${j.id}`,
+    cityOf(j),
   ];
+}
+
+/** "Abuja" / "Lagos" for the sheet, from the stored state or (older rows) the pickup's coordinates. */
+function cityOf(j: JoinedJob): string {
+  const st = (j.pickup_state as ServiceState | null | undefined) ?? (j.pickup_lat != null && j.pickup_lng != null ? stateOf({ lat: j.pickup_lat, lng: j.pickup_lng }) : null);
+  return st ? (st === 'FC' ? 'Abuja' : 'Lagos') : '';
 }
 
 async function recordState(db: D1Database, ok: boolean, detail: string): Promise<void> {

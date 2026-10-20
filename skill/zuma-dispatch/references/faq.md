@@ -3,19 +3,26 @@
 Zuma Dispatch is a made-up same-day courier used for a TSG Labs take-home (test mode only).
 
 ## Who we are
-- Same-day package delivery inside Abuja, booked on WhatsApp.
+- Same-day package delivery in **Abuja** and in **Lagos**, booked on WhatsApp.
 - Motorbike riders for small and medium packages; a car for large packages.
-- Dispatch office: Wuse 2, Abuja. Dispatchers are people; this assistant books and tracks jobs.
+- Dispatch offices: Wuse 2, Abuja, and Yaba, Lagos. Dispatchers are people; this assistant books
+  and tracks jobs.
 
 ## Where we deliver
-- The Abuja metro area, within about 40 km of the city centre: Wuse, Garki, Maitama, Asokoro,
-  Central Area, Jabi, Utako, Wuye, Life Camp, Gwarinpa, Kubwa, Lugbe, the airport, Lokogoma,
-  Galadimawa, Nyanya, Karu and Mararaba.
-- Not covered: Gwagwalada, Abaji, Suleja and anywhere outside the FCT metro, and intercity
-  deliveries (e.g. Abuja to Lagos). A human dispatcher can advise on those.
+- **Within Abuja:** anywhere in the Federal Capital Territory. That includes Abuja Municipal (Wuse,
+  Garki, Maitama, Asokoro, Central Area, Jabi, Utako, Wuye, Life Camp, Gwarinpa, Lugbe, the airport,
+  Lokogoma, Galadimawa, Nyanya), Bwari (Kubwa), Gwagwalada, Kuje, Kwali and Abaji.
+- **Within Lagos:** anywhere in Lagos State. That includes Lagos Island, Victoria Island, Ikoyi, Lekki,
+  Ajah, Ikeja, Yaba, Surulere, Apapa, Festac, Ikorodu, Epe and Badagry.
+- **Both addresses must be in the same state.** We do not carry packages between states (e.g. Abuja to
+  Lagos), or to neighbouring states, even close suburbs:
+  - Mararaba, Karu and Masaka are in Nasarawa; Suleja and Madalla are in Niger.
+  - Ota, Mowe, Arepo, Akute and Agbara are in Ogun.
+  A human dispatcher can advise on those.
 
 ## Hours
-- Riders work **7am to 8pm, Monday to Saturday** (Abuja time). Closed Sundays and public holidays.
+- Riders work **7am to 8pm, Monday to Saturday** in both cities (Nigeria time, WAT). Closed Sundays and
+  public holidays.
 - You can book and pay any time. Bookings made after 8pm or on Sunday are picked up from 7am
   the next working day.
 - Typical pickup is within 45 minutes of payment during working hours, depending on traffic.

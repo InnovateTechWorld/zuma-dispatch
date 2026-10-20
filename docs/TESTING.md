@@ -7,10 +7,10 @@ real Paystack test mode, and the real Chord teammate in the TSG simulator.
 
 | Suite | Command | Result | Covers |
 |---|---|---|---|
-| Unit | `npm test` | **123 / 123** (6 files) | pricing, payment verdicts, geocoder judgement and timing, phone and postcode parsing, config safety, webhook signatures, Paystack failures, sheet mirror, board sign-in / CSRF / lockout / filters / charts / progress / signed flash, chat notices |
+| Unit | `npm test` | **149 / 149** (6 files) | pricing, payment verdicts, geocoder judgement and timing, phone and postcode parsing, config safety, webhook signatures, Paystack failures, sheet mirror, board sign-in / CSRF / lockout / filters / charts / progress / signed flash, chat notices, postcode areas, FCT + Lagos boundaries (22 towns vs OSM) |
 | Typecheck | `npm run typecheck` | clean | `src/` and `test/` |
 | Smoke | `scripts/mcp-smoke.sh <url>` | **23 / 23** local and production | MCP protocol and auth, Origin guard, tool list, schema refusal, board sign-in redirect, wrong password, no browser password popup, Basic auth for scripts, CSRF, `/pay/return` 404, Chord webhook signature |
-| End to end | `python3 scripts/e2e.py <url>` | **42 / 42** local and production | the whole booking flow over MCP with real geocoders, routers, NIPOST and Paystack test mode: quotes, booking guards, link and bank transfer, verify, cancel, status lookup, webhook signature and replay, sheet sync |
+| End to end | `python3 scripts/e2e.py <url>` | **52 / 52** local (production after deploy, below) | the whole booking flow over MCP with real geocoders, routers, NIPOST and Paystack test mode: quotes, booking guards, link and bank transfer, verify, cancel, status lookup, webhook signature and replay, sheet sync; Lagos booking, Lagos→Abuja refused, border towns, sandbox postcode |
 | Skill check | `python3 scripts/check-skill.py` | OK | skill folder shape, front matter, size; `dist/` ZIP equals the folder |
 
 ## Live checks, by feature
@@ -33,6 +33,7 @@ real Paystack test mode, and the real Chord teammate in the TSG simulator.
 | Approve reviewed payment | Local, against D1 | `paid_at` and `via: dispatcher` recorded |
 | Google Sheet mirror | Production | Append, update in place, formula text kept as text, phones masked, resync |
 | Paystack webhook | Production | Real `charge.success` events from Paystack IPs |
+| Two states (FCT + Lagos) | Live MCP runs with real geocoders (2026-10-20 19:00) | Ikeja City Mall → Lekki Phase 1: ₦5,700, 30 km, booked and cancelled. Lagos → Abuja: `INTERSTATE_NOT_SUPPORTED`. "Shoprite" + lagos gives Lagos branches only. Mararaba, Suleja, Ota and Kano are out of area. Sandbox `FC-01-…` → Abaji, in coverage |
 | Raw NIPOST postcodes | `resolve_address` over MCP with the real NIPOST API, after the fix (2026-10-20 18:30) | `FC-02-A09-DB-09` → Abuja Municipal, ask for a landmark. `+ Wuse Market` → exact. `FC-03-…` → Bwari (27.9 km), ask for a landmark. Sandbox `FC-01-A01-KP-27` → Abaji (88.8 km), out of area. `LA-01-…` → Agege, Lagos, out of area. `900211` → old code, ask for a landmark. NIPOST's validity check answers `not_found` for every code with our test key, including its own sandbox codes |
 
 ## Not tested, and why

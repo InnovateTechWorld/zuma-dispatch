@@ -16,6 +16,12 @@ import {
 } from './charts';
 import { footLine, notice, page, statusPill, time, topBar } from './layout';
 import { crossSite, safeNext, sha256Hex } from './session';
+import { SERVICE_STATES, stateOf, type ServiceState } from '../business/states';
+
+const stateLabel = (p: { lat: number; lng: number }) => {
+  const st = stateOf(p);
+  return st ? SERVICE_STATES[st].name : 'Outside our states';
+};
 
 function toolCtx(env: Env, config: Config, ctx: ExecutionContext, requestId: string, origin: string): ToolContext {
   return { env, config, db: env.DB, requestId, now: () => Date.now(), waitUntil: (p) => ctx.waitUntil(p), publicOrigin: origin, trace: [] };
@@ -97,6 +103,17 @@ interface BoardRow extends JobRow {
   package_size: string | null;
   approximate: number | null;
   distance_m: number | null;
+  pickup_state: ServiceState | null;
+  pickup_lat: number | null;
+  pickup_lng: number | null;
+}
+
+const CITY_PARAM: Record<string, ServiceState> = { abuja: 'FC', lagos: 'LA' };
+const CITY_LABEL: Record<ServiceState, string> = { FC: 'Abuja', LA: 'Lagos' };
+
+/** A job's city: the pickup's stored state, or (places resolved before migration 0010) its coordinates. */
+export function jobCity(j: { pickup_state: ServiceState | null; pickup_lat: number | null; pickup_lng: number | null }): ServiceState | null {
+  return j.pickup_state ?? (j.pickup_lat != null && j.pickup_lng != null ? stateOf({ lat: j.pickup_lat, lng: j.pickup_lng }) : null);
 }
 
 const STATUSES: JobStatus[] = [...STATUS_ORDER];
@@ -117,7 +134,7 @@ export function searchFilter(raw: string): { sql: string; binds: unknown[] } | n
   };
 }
 
-export interface ListQuery { status: string; q: string; live: boolean }
+export interface ListQuery { status: string; q: string; live: boolean; city?: string }
 
 /** Reads the list filters from the URL; an unknown status is ignored rather than matching nothing. */
 export function listQuery(url: URL): ListQuery {
@@ -126,6 +143,7 @@ export function listQuery(url: URL): ListQuery {
     status: (STATUSES as string[]).includes(status) ? status : '',
     q: (url.searchParams.get('q') ?? '').trim().slice(0, 80),
     live: url.searchParams.get('live') === '1',
+    city: Object.hasOwn(CITY_PARAM, url.searchParams.get('city') ?? '') ? url.searchParams.get('city')! : '',
   };
 }
 
@@ -134,6 +152,7 @@ export function listHref(f: Partial<ListQuery>): string {
   const p = new URLSearchParams();
   if (f.q) p.set('q', f.q);
   if (f.status) p.set('status', f.status);
+  if (f.city) p.set('city', f.city);
   if (f.live) p.set('live', '1');
   const s = p.toString();
   return s ? `/board?${s}` : '/board';
@@ -216,14 +235,19 @@ export async function board(request: Request, url: URL, env: Env, config: Config
     where.push(sf.sql);
     binds.push(...sf.binds);
   }
+  if (f.city) {
+    where.push('pu.state = ?');
+    binds.push(CITY_PARAM[f.city]);
+  }
   const now = Date.now();
   const today = watDayStart(now);
   const db = env.DB;
   const mirror = mirrorStatus(env);
   // One round trip to D1 for everything on the page.
-  const [jobs, counts, reviews, notices, escalations, calls, daily, via, method, paidToday, owed, sheetState, noticeRows2] = await db.batch([
+  const [jobs, counts, cityCounts, reviews, notices, escalations, calls, daily, via, method, paidToday, owed, sheetState, noticeRows2] = await db.batch([
     db.prepare(
       `SELECT j.*, pu.label AS pickup_label, dr.label AS dropoff_label, q.package_size, q.approximate, q.distance_m,
+              pu.state AS pickup_state, pu.lat AS pickup_lat, pu.lng AS pickup_lng,
               (SELECT json_extract(e.detail_json, '$.via') FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'paid' ORDER BY e.id DESC LIMIT 1) AS paid_via
          FROM jobs j JOIN quotes q ON q.id = j.quote_id
          LEFT JOIN places pu ON pu.id = q.pickup_place_id LEFT JOIN places dr ON dr.id = q.dropoff_place_id
@@ -231,6 +255,7 @@ export async function board(request: Request, url: URL, env: Env, config: Config
         ORDER BY j.created_at DESC LIMIT ${LIST_LIMIT + 1}`,
     ).bind(...binds),
     db.prepare('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status'),
+    db.prepare('SELECT pu.state AS state, COUNT(*) AS n FROM jobs j JOIN quotes q ON q.id = j.quote_id LEFT JOIN places pu ON pu.id = q.pickup_place_id GROUP BY pu.state'),
     db.prepare(`SELECT job_id, detail_json, created_at FROM job_events WHERE type = 'needs_review' ORDER BY id DESC LIMIT 10`),
     db.prepare('SELECT event, reference, job_id, outcome, ip_trusted, received_at FROM paystack_events ORDER BY received_at DESC LIMIT 8'),
     // Our own momentary take-overs (to post "payment received") also fire conversation.escalated; they are
@@ -316,11 +341,13 @@ ${figures}
   const rows = list
     .map((j) => {
       const phone = normalizeNigerianPhone(j.recipient_phone);
+      const city = jobCity(j);
       const km = j.distance_m ? `${(j.distance_m / 1000).toFixed(1)} km${j.approximate ? ' (est.)' : ''}` : '';
       const actions = actionForms(j, back, true);
       return `<tr>
 <td data-label="Job"><a href="/board/jobs/${h(j.id)}">${h(j.id)}</a><span class="sub">${time(j.created_at)}</span></td>
 <td data-label="Status">${statusPill(j.status)}${j.paid_via ? `<span class="sub">via ${h((PAID_VIA[j.paid_via] ?? j.paid_via).toLowerCase())}</span>` : ''}</td>
+<td data-label="City">${h(city ? CITY_LABEL[city] : '—')}</td>
 <td data-label="Route" class="route">${h(j.pickup_label ?? '?')}<span class="sub">→ ${h(j.dropoff_label ?? '?')}</span></td>
 <td data-label="Package">${h(j.package_size ?? '')}${km ? `<span class="sub num">${km}</span>` : ''}</td>
 <td data-label="Amount" class="amt num">${formatNaira(j.amount_kobo)}</td>
@@ -331,20 +358,25 @@ ${figures}
   const tabs = [{ key: '', label: 'All', n: totalJobs }, ...STATUSES.map((s) => ({ key: s, label: s.replaceAll('_', ' '), n: statusCounts[s] ?? 0 }))]
     .map((t) => `<li><a href="${h(listHref({ ...f, status: t.key }))}"${t.key === f.status ? ' aria-current="page"' : ''}>${h(t.label[0]!.toUpperCase() + t.label.slice(1))}<span class="num">${t.n}</span></a></li>`)
     .join('');
-  const filtered = Boolean(f.q || f.status);
-  const resultLine = `<p class="result" role="status"><span>${filtered ? `${list.length}${more ? '+' : ''} matching` : `${list.length}${more ? '+' : ''} most recent`}${f.status ? ` · ${h(f.status.replaceAll('_', ' '))}` : ''}${f.q ? ` · “${h(f.q)}”` : ''}</span>${more ? `<span>Showing the latest ${LIST_LIMIT}. Search to find older ones.</span>` : ''}${filtered ? `<a href="${h(listHref({ live: f.live }))}">Clear filters</a>` : ''}</p>`;
+  const byCity: Record<string, number> = Object.fromEntries((cityCounts!.results as unknown as { state: string | null; n: number }[]).map((c) => [c.state ?? '', c.n]));
+  const cityTabs = [{ key: '', label: 'All cities', n: totalJobs }, { key: 'abuja', label: 'Abuja', n: byCity.FC ?? 0 }, { key: 'lagos', label: 'Lagos', n: byCity.LA ?? 0 }]
+    .map((t) => `<li><a href="${h(listHref({ ...f, city: t.key }))}"${t.key === (f.city ?? '') ? ' aria-current="page"' : ''}>${h(t.label)}<span class="num">${t.n}</span></a></li>`)
+    .join('');
+  const filtered = Boolean(f.q || f.status || f.city);
+  const resultLine = `<p class="result" role="status"><span>${filtered ? `${list.length}${more ? '+' : ''} matching` : `${list.length}${more ? '+' : ''} most recent`}${f.city ? ` · ${h(CITY_LABEL[CITY_PARAM[f.city]!])}` : ''}${f.status ? ` · ${h(f.status.replaceAll('_', ' '))}` : ''}${f.q ? ` · “${h(f.q)}”` : ''}</span>${more ? `<span>Showing the latest ${LIST_LIMIT}. Search to find older ones.</span>` : ''}${filtered ? `<a href="${h(listHref({ live: f.live }))}">Clear filters</a>` : ''}</p>`;
   const listHtml = `<section class="wrap list" aria-labelledby="jobs-h">
 <div class="section__head"><h2 id="jobs-h">Deliveries</h2></div>
+<nav aria-label="Filter by city"><ul class="tabs">${cityTabs}</ul></nav>
 <nav aria-label="Filter by status"><ul class="tabs">${tabs}</ul></nav>
 <form class="search" method="get" action="/board" role="search">
 <label class="sr" for="q">Search deliveries</label>
 <input class="input" id="q" name="q" value="${h(f.q)}" placeholder="Job id, phone, name or address" autocomplete="off" maxlength="80">
-${f.status ? `<input type="hidden" name="status" value="${h(f.status)}">` : ''}${f.live ? '<input type="hidden" name="live" value="1">' : ''}
+${f.status ? `<input type="hidden" name="status" value="${h(f.status)}">` : ''}${f.city ? `<input type="hidden" name="city" value="${h(f.city)}">` : ''}${f.live ? '<input type="hidden" name="live" value="1">' : ''}
 <button class="btn btn--primary" type="submit">Search</button>
 </form>
 ${resultLine}
-<div class="table-wrap jobs-wrap"><table class="jobs"><thead><tr><th>Job</th><th>Status</th><th>Route</th><th>Package</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th></tr></thead>
-<tbody>${rows || `<tr><td colspan="7" class="empty">${filtered ? 'No deliveries match. Try a job id like ZD-AB12C, a phone number, or part of a name.' : 'No deliveries yet. They appear here as soon as the agent books one.'}</td></tr>`}</tbody></table></div>
+<div class="table-wrap jobs-wrap"><table class="jobs"><thead><tr><th>Job</th><th>Status</th><th>City</th><th>Route</th><th>Package</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th></tr></thead>
+<tbody>${rows || `<tr><td colspan="8" class="empty">${filtered ? 'No deliveries match. Try a job id like ZD-AB12C, a phone number, or part of a name.' : 'No deliveries yet. They appear here as soon as the agent books one.'}</td></tr>`}</tbody></table></div>
 </section>`;
 
   // ---- secondary panels
@@ -617,7 +649,7 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config, session
       p
         ? `<p>${h(p.label)}</p><p class="typed">Customer typed “${h(p.query_text)}”</p>
 <dl class="facts"><dt>Precision</dt><dd>${h(p.precision)}</dd><dt>Found by</dt><dd>${h(p.provider)} · ${h(p.confidence)} confidence</dd>
-<dt>Postcode</dt><dd>${p.postcode ? `${h(p.postcode)} · NIPOST ${h(p.postcode_status ?? '?')}` : '—'}</dd><dt>Service area</dt><dd>${p.in_service_area ? 'Inside' : '<b>Outside</b>'}</dd>
+<dt>Postcode</dt><dd>${p.postcode ? `${h(p.postcode)} · NIPOST ${h(p.postcode_status ?? '?')}` : '—'}</dd><dt>State</dt><dd>${stateOf(p) ? h(stateLabel(p)) : '<b>Outside Abuja and Lagos</b>'}</dd>
 <dt>Map</dt><dd><a href="https://www.openstreetmap.org/?mlat=${p.lat}&amp;mlon=${p.lng}#map=17/${p.lat}/${p.lng}" rel="noopener noreferrer" target="_blank">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</a></dd></dl>`
         : '<p class="muted">Not found.</p>'
     }</section>`;

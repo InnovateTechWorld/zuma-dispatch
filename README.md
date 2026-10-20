@@ -1,6 +1,7 @@
 # Zuma Dispatch: a WhatsApp delivery-booking agent on Chord
 
-A Chord teammate for a made-up Abuja courier, **Zuma Dispatch**.
+A Chord teammate for a made-up same-day courier in **Abuja and Lagos**, **Zuma Dispatch**. Deliveries
+are within one state (anywhere in the FCT, or anywhere in Lagos State), never between states.
 - A customer messages on WhatsApp with a pickup and a drop-off, in landmarks, street names or NIPOST postcodes.
 - The agent finds both places, quotes a price the server calculates, books the job, sends a Paystack (test mode) payment link or bank-transfer account details and confirms payment with Paystack before telling the customer it's paid.
 - When Paystack confirms a payment, the customer gets "Payment received" in the chat without having to say "paid".
@@ -40,7 +41,7 @@ docs/, notes/               architecture, edge cases, field notes, research
 
 | Tool | What it does | Safety |
 |---|---|---|
-| `resolve_address(text, role)` | Landmark, address or postcode → `confirmed` / `ambiguous` / `needs_detail` / `not_found` / `out_of_area`, with a `place_id` | Geocoder cross-check; NIPOST validity + LGA; 40 km service area |
+| `resolve_address(text, role, state?)` | Landmark, address or postcode → `confirmed` / `ambiguous` / `needs_detail` / `not_found` / `out_of_area`, with a `place_id` and its `state` | Geocoder cross-check; NIPOST validity + LGA; FCT + Lagos State boundaries |
 | `quote_delivery(pickup_place_id, dropoff_place_id, package_size)` | Road distance → rate card → `quote_id`, total, breakdown, valid 30 min | Price only from the server; same request → same quote |
 | `create_dispatch_job(quote_id, names, recipient_phone, customer_confirmed: true)` | Books the job; returns job id + handover code | Needs explicit yes; one job per quote; amount copied from quote; phone normalised |
 | `create_payment_link(job_id, method?)` | `link`: Paystack checkout (opens in WhatsApp; card, transfer, USSD). `bank_transfer`: one-time account number, bank and exact amount sent in the chat (30 min) | Reuses open details; checks Paystack first; timeout-safe references; warns if both methods are open |

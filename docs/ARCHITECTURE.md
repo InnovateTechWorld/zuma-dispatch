@@ -73,7 +73,9 @@ Payment attempts have their own states: `initializing` (row written before calli
      - Second answer more than 1.5 s late → answer from one source (`medium`) and finish the late call in the background into the cache.
      - Nothing found → the remaining providers in order (6 s budget).
    - Each provider: 4 s timeout, D1 cache (30 days for hits, 1 day for empty results), Nigeria-only results, precision mapped to `exact | street | area | lga`.
-4. **Service area:** within 40 km of the Central Business District. Outside → `out_of_area`.
+4. **Service area:** the whole FCT and the whole of Lagos State (point-in-polygon on embedded OSM
+   boundaries, `src/business/states.ts`). Outside → `out_of_area`. A quote needs both ends in the same
+   state (`INTERSTATE_NOT_SUPPORTED` otherwise).
 
 ## Why these choices
 
@@ -95,12 +97,12 @@ Payment attempts have their own states: `initializing` (row written before calli
 
 ## Data model
 
-See `migrations/0001_init.sql` … `0008_chat_notices.sql`. Money is integer kobo,
+See `migrations/0001_init.sql` … `0010_place_state.sql`. Money is integer kobo,
 times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 
 | Table | Holds | Key constraints |
 |---|---|---|
-| `places` | every resolved candidate (label, lat/lng, precision, postcode status, provider, in-area flag) | lat/lng ranges |
+| `places` | every resolved candidate (label, lat/lng, precision, postcode status, provider, in-area flag, `state` FC/LA) | lat/lng ranges |
 | `quotes` | frozen price, breakdown, distance source, approximate flag, expiry | `amount_kobo > 0`, `currency = 'NGN'` |
 | `jobs` | sender/recipient, amount (from quote), status, handover code, version | `UNIQUE(quote_id)` |
 | `payments` | one row per Paystack attempt (reference `ZD-xxxxx-n`) | `UNIQUE(job_id, attempt)` |

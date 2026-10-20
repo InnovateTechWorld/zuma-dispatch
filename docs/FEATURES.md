@@ -33,8 +33,19 @@ so the model can never invent a location.
      - **Second provider late** (more than 1.5 s after the first): answer from one source and finish
        the late call in the background, so it is cached for next time.
    - `fallback`: providers in order until one finds something.
-4. **Service area:** within 40 km of the Central Business District. Anything outside comes back
-   `out_of_area` (it is still resolved, so the customer is told what we found).
+4. **Service area: two states, same-state deliveries only.**
+   - Covered: the whole **Federal Capital Territory** (Abuja) and the whole of **Lagos State**.
+   - A place's state comes from its coordinates, checked against OpenStreetMap's state boundaries
+     embedded in `src/business/states.ts` (point-in-polygon, verified on 22 towns incl. the border ones).
+   - Every result carries `state` ("Abuja (FCT)" / "Lagos"). Outside both → `out_of_area`, still resolved,
+     so the customer is told what we found.
+   - **Border suburbs count as their own state:** Mararaba and Karu (Nasarawa), Suleja (Niger), and Ota,
+     Arepo and Agbara (Ogun) are out of area.
+   - **Optional `state` hint** (`abuja` / `lagos`): the geocoders are biased to that state, and matches in the
+     *other* service state are dropped ("Shoprite" with `lagos` gives Lagos branches only).
+   - If an address turns out to be in the other state anyway, `what_to_do` carries an interstate note.
+   - Identical labels are merged. When every match is outside both states, the answer is a single
+     `out_of_area` instead of "which one?".
 5. **Stable answers:** the same text returns the same `place_id`s for 6 hours. Chord re-asks every turn
    (see §10), so this keeps quotes and bookings stable.
 
@@ -71,9 +82,10 @@ The price exists only on the server and is frozen for 30 minutes.
 | Code | When |
 |---|---|
 | `SAME_LOCATION` | Pickup and drop-off less than 150 m apart |
-| `OUT_OF_SERVICE_AREA` | Either end is outside the service area |
+| `OUT_OF_SERVICE_AREA` | Either end is outside FCT and Lagos State |
+| `INTERSTATE_NOT_SUPPORTED` | Pickup and drop-off are in different states (e.g. Lagos → Abuja); the agent offers a human |
 | `PLACE_TOO_VAGUE` | Either end is only known to LGA level |
-| `TRIP_TOO_LONG` | More than 60 km by road |
+| `TRIP_TOO_LONG` | More than 160 km by road (a guard against a wrong geocode; the longest same-state trips are ~130 km) |
 | `PLACE_NOT_FOUND` | An invented or unknown `place_id` |
 | `INVALID_ARGUMENTS` | Any extra key such as `price` |
 
@@ -313,10 +325,11 @@ components) is written down in [`design.md`](../design.md).
   - Charts are plain HTML/CSS (no script, no images). Each is hidden from screen readers and paired with
     a screen-reader table or the legend text.
 - **Filters:**
-  - Status tabs with counts (plain links, so they work with scripts off).
+  - City tabs (All cities / Abuja / Lagos, with counts) and status tabs with counts (plain links, so
+    they work with scripts off).
   - A search box for job id (`zd-k45v7` works), recipient phone (any format), or part of a name or address.
-  - Status and search combine; "Clear filters" resets both. The latest 100 matches are shown.
-- **Each row:** job id and time, status (and how it was paid), route, package and distance, amount,
+  - City, status and search combine; "Clear filters" resets them. The latest 100 matches are shown.
+- **Each row:** job id and time, status (and how it was paid), city, route, package and distance, amount,
   sender → recipient with phone and handover code, and the actions allowed for that status.
 - **After an action** you return to the same filtered view, with a one-line confirmation or problem.
   The line is signed by the server, so a crafted `?msg=` link cannot show text on the board.

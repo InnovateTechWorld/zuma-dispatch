@@ -18,7 +18,7 @@
   // `wrangler secret put` in production and read from .env in local dev.
   "vars": {
     "BUSINESS_NAME": "Zuma Dispatch",
-    "BUSINESS_CITY": "Abuja",
+    "BUSINESS_CITY": "Abuja and Lagos",
     "GEOCODER_CHAIN": "google,nominatim,photon,ors",
     "GEOCODER_MODE": "crosscheck",
     "ROUTER_CHAIN": "osrm,ors,straight_line",

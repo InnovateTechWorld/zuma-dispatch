@@ -13,7 +13,8 @@ Use this only to **explain** prices. Never compute a price yourself: always call
 - The total is rounded up to the nearest ₦50.
 - If the route service is down, the distance is estimated from a straight line (x1.4) and the
   quote says "estimated".
-- Trips longer than 60 km by road are not offered.
+- The same prices apply in Abuja and in Lagos. Long trips inside a state (e.g. Abaji to Wuse, Badagry
+  to Lekki) are priced the same way, per kilometre.
 - Quotes are valid for 30 minutes. After that, quote again; the price may change.
 - There are no surcharges, discounts or tips.
 

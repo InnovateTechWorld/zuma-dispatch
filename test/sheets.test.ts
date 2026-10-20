@@ -122,7 +122,7 @@ describe('syncJob', () => {
     await syncJob(env(db), 'ZD-AAAAA', 'https://x');
     const append = calls.find((c) => c.url.includes(':append'))!;
     expect(append.url).toContain('valueInputOption=RAW');
-    expect(calls.some((c) => c.method === 'PUT' && decodeURIComponent(c.url).includes('Deliveries!A1:P1'))).toBe(true); // header
+    expect(calls.some((c) => c.method === 'PUT' && decodeURIComponent(c.url).includes('Deliveries!A1:Q1'))).toBe(true); // header
     expect(db.writes).toContain('UPDATE sheet_rows SET'); // row number stored
     expect(db.writes.some((w) => w.startsWith('INSERT INTO sheet_state'))).toBe(true);
   });
@@ -130,7 +130,7 @@ describe('syncJob', () => {
   it('known job: updates its own row in place', async () => {
     const calls = google({});
     await syncJob(env(mirrorDb({ mappedRow: 5, mappedRows: 9 })), 'ZD-AAAAA', 'https://x');
-    expect(calls.some((c) => c.method === 'PUT' && decodeURIComponent(c.url).includes('Deliveries!A5:P5'))).toBe(true);
+    expect(calls.some((c) => c.method === 'PUT' && decodeURIComponent(c.url).includes('Deliveries!A5:Q5'))).toBe(true);
     expect(calls.some((c) => c.url.includes(':append'))).toBe(false);
   });
 

@@ -1,3 +1,4 @@
+import type { ServiceState } from '../business/states';
 import type { Config, GeocoderName } from '../config';
 import { haversineMeters } from '../lib/geo';
 import { normalizeQuery } from '../lib/text';
@@ -20,14 +21,15 @@ export interface ChainOutcome {
   allFailed: boolean;
 }
 
-async function searchCached(name: GeocoderName, query: string, config: Config, db: D1Database, now: number): Promise<ProviderResult> {
+async function searchCached(name: GeocoderName, query: string, config: Config, db: D1Database, now: number, bias?: ServiceState): Promise<ProviderResult> {
   const provider = GEOCODERS[name];
   const why = provider.unavailable(config);
   if (why) return { provider: name, outcome: 'skipped', candidates: [], trace: `${name}:skipped(${why})` };
-  const key = `geo:${name}:${normalizeQuery(query)}`;
+  // Abuja-biased answers keep their original keys (existing cache stays valid); other states get their own.
+  const key = bias && bias !== 'FC' ? `geo:${name}:${bias.toLowerCase()}:${normalizeQuery(query)}` : `geo:${name}:${normalizeQuery(query)}`;
   const cached = await cacheGet<Candidate[]>(db, key, now);
   if (cached) return { provider: name, outcome: 'ok', candidates: cached, trace: `${name}:cache:${cached.length}` };
-  const result = await provider.search(query, config);
+  const result = await provider.search(query, config, bias);
   if (result.outcome === 'ok') await cachePut(db, key, name, result.candidates, now);
   return result;
 }
@@ -94,6 +96,7 @@ export async function geocode(
   now: number,
   trace: string[],
   waitUntil: (p: Promise<unknown>) => void = () => {},
+  bias?: ServiceState,
 ): Promise<ChainOutcome> {
   const started = Date.now();
   const usable = config.geocoderChain.filter((n) => {
@@ -114,8 +117,8 @@ export async function geocode(
   let b: Candidate[] | null = null;
 
   if (config.geocoderMode === 'crosscheck' && usable.length >= 2) {
-    const firstP = searchCached(usable[0]!, query, config, db, now);
-    const secondP = searchCached(usable[1]!, query, config, db, now);
+    const firstP = searchCached(usable[0]!, query, config, db, now, bias);
+    const secondP = searchCached(usable[1]!, query, config, db, now, bias);
     next = 2;
     const first = record(await firstP);
     let second: ProviderResult | null;
@@ -139,7 +142,7 @@ export async function geocode(
 
   // Fallback mode, or crosscheck where nothing was found yet: remaining providers one by one.
   while (a.length === 0 && next < usable.length && Date.now() - started < CHAIN_BUDGET_MS) {
-    const r = record(await searchCached(usable[next++]!, query, config, db, now));
+    const r = record(await searchCached(usable[next++]!, query, config, db, now, bias));
     a = r.candidates;
   }
 

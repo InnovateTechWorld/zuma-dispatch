@@ -55,7 +55,7 @@ WhatsApp is a **channel** in Chord, set up in the dashboard, not in our code:
 6. Point the sheet mirror at the owner's real sheet (a separate one from testing).
 7. Revoke the unused narrow Chord key ("zuma-dispatch server: payment notices").
 
-## 3. First-day test script on WhatsApp (about 10 minutes)
+## 3. First-day test script on WhatsApp (about 15 minutes)
 
 From a second phone, message the business number:
 
@@ -67,8 +67,19 @@ From a second phone, message the business number:
 4. Ask "where is my package?" in a **new** chat: it is found by your phone, without the job id.
 5. Ask for a refund: the chat is handed to a human and appears on the board under *Handed to a human*.
 6. On the board, mark the job dispatched → delivered, and ask again: the agent reports it.
+7. **Lagos:** "send a phone from Ikeja City Mall to Lekki Phase 1". It should quote and book, and appear
+   under **Lagos** on the board.
+8. **Interstate:** "from Ikeja to Jabi Lake Mall, Abuja". It should be refused politely, with a human
+   offered.
+
+**Two cities, one number.** One WhatsApp number can serve both cities: the agent asks "Abuja or Lagos?"
+when it isn't clear. Riders and dispatch offices (Wuse 2, Abuja; Yaba, Lagos) must exist in both before
+go-live.
 
 ## 4. Known limits that stay
+
+- Deliveries between states (and to neighbouring-state suburbs like Mararaba or Ota) are not offered.
+  A human dispatcher handles those requests.
 
 - Notices cover "payment received" only, not "rider assigned" or "delivered". Same mechanism; not built.
 - The handover code is shown but not checked at delivery (no rider app).

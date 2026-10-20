@@ -14,6 +14,8 @@ export interface PlaceRow {
   provider: string;
   confidence: 'high' | 'medium' | 'low';
   in_service_area: 0 | 1;
+  /** Service state from the coordinates ('FC' | 'LA'), or null outside both (migration 0010). */
+  state?: 'FC' | 'LA' | null;
   created_at: number;
 }
 
@@ -111,9 +113,9 @@ export async function getPayment(db: D1Database, reference: string): Promise<Pay
 export function insertPlaceStmt(db: D1Database, p: PlaceRow): D1PreparedStatement {
   return db
     .prepare(
-      'INSERT INTO places (id, query_text, label, lat, lng, precision, postcode, postcode_status, provider, confidence, in_service_area, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO places (id, query_text, label, lat, lng, precision, postcode, postcode_status, provider, confidence, in_service_area, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
-    .bind(p.id, p.query_text, p.label, p.lat, p.lng, p.precision, p.postcode, p.postcode_status, p.provider, p.confidence, p.in_service_area, p.created_at);
+    .bind(p.id, p.query_text, p.label, p.lat, p.lng, p.precision, p.postcode, p.postcode_status, p.provider, p.confidence, p.in_service_area, p.state ?? null, p.created_at);
 }
 
 export function eventStmt(

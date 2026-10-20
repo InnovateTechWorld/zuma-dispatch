@@ -48,8 +48,9 @@ describe('board sign-in', () => {
 
 describe('board filters', () => {
   it('ignores unknown statuses instead of showing an empty list', () => {
-    expect(listQuery(new URL('https://x/board?status=bogus&q=%20ada%20'))).toEqual({ status: '', q: 'ada', live: false });
-    expect(listQuery(new URL('https://x/board?status=paid&live=1'))).toEqual({ status: 'paid', q: '', live: true });
+    expect(listQuery(new URL('https://x/board?status=bogus&q=%20ada%20&city=kano'))).toEqual({ status: '', q: 'ada', live: false, city: '' });
+    expect(listQuery(new URL('https://x/board?status=paid&live=1&city=lagos'))).toEqual({ status: 'paid', q: '', live: true, city: 'lagos' });
+    expect(listHref({ city: 'abuja', status: 'paid' })).toBe('/board?status=paid&city=abuja');
   });
   it('builds short links that keep the other filters', () => {
     expect(listHref({})).toBe('/board');
