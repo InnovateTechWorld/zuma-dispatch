@@ -143,7 +143,9 @@ Every row names the code that handles the case and the evidence that it works.
 | M6 | Formula injection via names or addresses | `valueInputOption=RAW` | U (asserts RAW + raw text kept) |
 | M7 | PII in a shareable sheet | Phone masked | U |
 | M8 | Mirror not configured or bad key | No Google calls; `/health` + board say so | U "mirror off", `mirrorStatus` |
-| M9 | Token signing | RS256 JWT built with WebCrypto, verified by Node's crypto in tests | U |
+| M9 | Token signing | RS256 JWT built with WebCrypto, verified by Node's crypto in tests | U, live (Google accepted it) |
+| M10 | Local dev server pointed at the production sheet | Writes refused unless `SHEET_MIRROR_ALLOW_LOCAL=1` | U, live (local resync refused) |
+| M11 | Every job mirrored after heavy activity | 37/37 jobs mapped, highest row 38, no stuck claims after a full e2e run on production | Live, D1 query |
 
 ## Conversation memory (Chord-specific)
 

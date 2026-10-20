@@ -23,6 +23,8 @@ const LAST_COL = 'P';
 
 export interface MirrorEnv {
   DB: D1Database;
+  /** Set to "1" to let a local dev server (localhost / 127.0.0.1) write to the sheet. Off by default. */
+  SHEET_MIRROR_ALLOW_LOCAL?: string;
   GOOGLE_SHEET_ID?: string;
   GOOGLE_SERVICE_ACCOUNT_JSON?: string;
   PROVIDER_TIMEOUT_MS: string;
@@ -39,6 +41,22 @@ export function mirrorStatus(env: MirrorEnv): 'enabled' | 'not_configured' | 'in
   const anySet = Boolean(env.GOOGLE_SHEET_ID?.trim() || env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim());
   if (!anySet) return 'not_configured';
   return mirrorClient(env) ? 'enabled' : 'invalid_config';
+}
+
+/**
+ * Local dev and production share secrets in .env but not a database. Each keeps its own job -> row
+ * map, so a local server writing to the production sheet would overwrite production's rows. Local
+ * origins therefore never write unless SHEET_MIRROR_ALLOW_LOCAL=1 (use a separate test sheet then).
+ */
+export function writesAllowed(env: MirrorEnv, origin: string): boolean {
+  let host = '';
+  try {
+    host = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+  const local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost');
+  return !local || env.SHEET_MIRROR_ALLOW_LOCAL === '1';
 }
 
 const wat = (ms: number | null | undefined) => (ms ? new Date(ms + 3_600_000).toISOString().slice(0, 16).replace('T', ' ') : '');
@@ -98,7 +116,7 @@ async function ensureTab(sheets: Sheets): Promise<string | null> {
 /** Updates (or appends) one job's row. Never throws. */
 export async function syncJob(env: MirrorEnv, jobId: string, origin: string): Promise<void> {
   const sheets = mirrorClient(env);
-  if (!sheets) return;
+  if (!sheets || !writesAllowed(env, origin)) return;
   try {
     const job = await env.DB.prepare(`${JOB_SQL} WHERE j.id = ?`).bind(jobId).first<JoinedJob>();
     if (!job) return;
@@ -148,6 +166,9 @@ export async function syncJob(env: MirrorEnv, jobId: string, origin: string): Pr
 export async function resyncAll(env: MirrorEnv, origin: string): Promise<{ ok: boolean; detail: string }> {
   const sheets = mirrorClient(env);
   if (!sheets) return { ok: false, detail: 'Google Sheets mirror is not configured.' };
+  if (!writesAllowed(env, origin)) {
+    return { ok: false, detail: 'Sheet writes are off on a local server (it would overwrite production rows). Set SHEET_MIRROR_ALLOW_LOCAL=1 with a separate test sheet to try it locally.' };
+  }
   const problem = await ensureTab(sheets);
   if (problem) {
     await recordState(env.DB, false, problem);

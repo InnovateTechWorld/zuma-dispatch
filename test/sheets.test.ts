@@ -154,3 +154,14 @@ describe('syncJob', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('local servers do not write to the shared sheet', async () => {
+  const { writesAllowed } = await import('../src/sheets/mirror');
+  const env = { DB: {} as D1Database, PROVIDER_TIMEOUT_MS: '4000' };
+  it('blocks localhost and 127.0.0.1 unless explicitly allowed; production is allowed', () => {
+    expect(writesAllowed(env, 'http://127.0.0.1:8787')).toBe(false);
+    expect(writesAllowed(env, 'http://localhost:8787')).toBe(false);
+    expect(writesAllowed({ ...env, SHEET_MIRROR_ALLOW_LOCAL: '1' }, 'http://127.0.0.1:8787')).toBe(true);
+    expect(writesAllowed(env, 'https://zuma-dispatch.obimz123.workers.dev')).toBe(true);
+  });
+});

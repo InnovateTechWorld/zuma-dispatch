@@ -300,3 +300,28 @@ received, rider on the way") inside WhatsApp's 24-hour service window.
 | Stored escalation rules | Off by default |
 | Procedures | Legacy path for teammates without skills |
 | Teammate collaboration and schedule panes | Out of scope |
+
+---
+
+## 11. Setting up the Google Sheet mirror: three snags
+
+**What happened (2026-10-20, ~15:40 WAT, Google Cloud console in the second Chrome profile):**
+1. **Project limit.** "Create project" showed *"You've reached your project limit"*. Rather than delete
+   a project, we reused an existing unused one ("My First Project"). That is acceptable because the
+   service account gets **no project roles**: its only access is the one sheet shared with it.
+2. **Key download looked lost.** After "Create key → JSON", the console said "Private key saved to
+   your computer", but the file was not in Downloads, and a Spotlight and home-folder search found nothing.
+   We created a second key while capturing network traffic (the console's own API response contains the
+   key), and the first file then appeared at 15:42. The save had only been delayed by Chrome's download
+   handling in that profile.
+   - *Result:* we used the first key (`002c73d…`). The second (`a74643…`) is unused and was never saved.
+   - *Lesson:* check `chrome://downloads` or wait before creating another credential. Deleting the extra key
+     was left to the account owner.
+3. **Local and production share one sheet.** Each server keeps its own job → row map, so a local test
+   run would overwrite production's rows. The first local resync did exactly that (35 local rows) before
+   production's resync rebuilt it. *Fix:* local origins never write unless `SHEET_MIRROR_ALLOW_LOCAL=1`
+   (with a separate test sheet).
+
+**What would help.**
+- *Google:* show where the key file was saved (or that a save is pending) in the "key created" dialog.
+- *Our own docs:* say up front that each environment needs its own sheet.

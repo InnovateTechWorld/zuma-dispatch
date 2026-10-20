@@ -93,7 +93,7 @@ npm run dev             # http://127.0.0.1:8787
 Test it, no Chord credits needed:
 
 ```bash
-npm test                              # 83 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config
+npm test                              # 84 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config
 ```
 ```bash
 scripts/mcp-smoke.sh                  # protocol, auth, CSRF, webhook checks (18)
@@ -140,6 +140,8 @@ See [docs/FEATURES.md](docs/FEATURES.md) §5 and §9.
 A read-only "Deliveries" tab updated after every change, for the owner's phone. D1 stays the source of
 truth. Setup and failure handling are in [docs/FEATURES.md](docs/FEATURES.md) §12. Set
 `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON`, then press **Resync all** on the board.
+A local dev server never writes to the sheet (it would overwrite production rows) unless
+`SHEET_MIRROR_ALLOW_LOCAL=1`, and then only with a separate test sheet.
 
 ## Connect it to Chord
 

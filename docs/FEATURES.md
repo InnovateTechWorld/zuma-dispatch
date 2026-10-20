@@ -298,6 +298,26 @@ So D1 stays the source of truth, the sheet is a **read-only copy**, and actions 
 | Personal data in a shareable file | Recipient phone masked (`+234 803 *** 4567`); the full number only on the authenticated board |
 | Mirror not configured or misconfigured | `/health` shows `sheet_mirror: not_configured / invalid_config`; nothing else changes |
 | Token expiry | Access token cached per isolate and refreshed a minute before its 1-hour expiry |
+| Local dev and production share `.env` but not a database | A local server (localhost / 127.0.0.1) never writes to the sheet unless `SHEET_MIRROR_ALLOW_LOCAL=1`, which you should use only with a separate test sheet; otherwise local row numbers would overwrite production rows |
+
+**This deployment (set up 2026-10-20):**
+- Google Cloud project "My First Project" (`lucky-ridge-432003-e0`; the account was at its project limit, so an existing unused project was reused).
+- Sheets API enabled.
+- Service account `zuma-sheet-mirror@lucky-ridge-432003-e0.iam.gserviceaccount.com`, with **no project roles**; its only access is Editor on one sheet.
+- Sheet "Zuma Dispatch Deliveries (test mirror)", general access *Restricted*.
+
+**Verified live:**
+
+| Check | Result |
+|---|---|
+| Resync | 35 jobs written locally, then 33 and 37 on production |
+| First write | Created the "Deliveries" tab and header by itself |
+| New job | Appended at the next row |
+| Status change | Updated the same row in place, no duplicate row |
+| `=SUM(1+1) Ada` as a sender name | Stored as text, not evaluated |
+| Phone | Masked |
+| Every production job mirrored after the e2e run | 37 jobs, highest row 38, no stuck claims |
+| Local server writing | Refused, with a message |
 
 **Setup (about 10 minutes, in your Google account):**
 1. Google Cloud console:

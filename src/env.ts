@@ -23,4 +23,5 @@ export interface Env {
   /** Google Sheets mirror (optional): spreadsheet id and a service-account JSON key with access to it. */
   GOOGLE_SHEET_ID?: string;
   GOOGLE_SERVICE_ACCOUNT_JSON?: string;
+  SHEET_MIRROR_ALLOW_LOCAL?: string;
 }
