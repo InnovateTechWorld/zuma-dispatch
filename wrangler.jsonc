@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zuma-dispatch",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "zuma_dispatch_v2",
+      "database_id": "acae9ac6-c030-499b-9126-4d6a71fa32f2",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Non-secret configuration. Secrets (API keys, tokens) are set with
+  // `wrangler secret put` in production and read from .env in local dev.
+  "vars": {
+    "BUSINESS_NAME": "Zuma Dispatch",
+    "BUSINESS_CITY": "Abuja",
+    "GEOCODER_CHAIN": "google,nominatim,photon,ors",
+    "GEOCODER_MODE": "crosscheck",
+    "ROUTER_CHAIN": "osrm,ors,straight_line",
+    "QUOTE_TTL_MINUTES": "30",
+    "PROVIDER_TIMEOUT_MS": "4000"
+  }
+}

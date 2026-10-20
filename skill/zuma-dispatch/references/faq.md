@@ -1,0 +1,56 @@
+# Zuma Dispatch: customer FAQ
+
+Zuma Dispatch is a made-up same-day courier used for a TSG Labs take-home (test mode only).
+
+## Who we are
+- Same-day package delivery inside Abuja, booked on WhatsApp.
+- Motorbike riders for small and medium packages; a car for large packages.
+- Dispatch office: Wuse 2, Abuja. Dispatchers are people; this assistant books and tracks jobs.
+
+## Where we deliver
+- The Abuja metro area, within about 40 km of the city centre: Wuse, Garki, Maitama, Asokoro,
+  Central Area, Jabi, Utako, Wuye, Life Camp, Gwarinpa, Kubwa, Lugbe, the airport, Lokogoma,
+  Galadimawa, Nyanya, Karu and Mararaba.
+- Not covered: Gwagwalada, Abaji, Suleja and anywhere outside the FCT metro, and intercity
+  deliveries (e.g. Abuja to Lagos). A human dispatcher can advise on those.
+
+## Hours
+- Riders work **7am to 8pm, Monday to Saturday** (Abuja time). Closed Sundays and public holidays.
+- You can book and pay any time. Bookings made after 8pm or on Sunday are picked up from 7am
+  the next working day.
+- Typical pickup is within 45 minutes of payment during working hours, depending on traffic.
+
+## Packages
+- Small: fits in a backpack, up to 5 kg (documents, phones, food packs, clothes).
+- Medium: shoebox to carton, up to 10 kg.
+- Large: up to 25 kg, goes by car (small appliances, several cartons).
+- Not accepted: cash, gold or jewellery over ₦200,000 in value, firearms, drugs, alcohol to
+  minors, live animals, flammable or hazardous goods, and anything illegal. If a customer asks
+  to send any of these, politely decline and offer a human dispatcher.
+- Fragile items should be packed by the sender; tell us in the package note.
+
+## Payment
+- Two ways to pay, both through Paystack:
+  - a **payment link** that opens inside WhatsApp (card, bank transfer or USSD);
+  - **bank transfer** to a one-time account number we send in the chat. Send the exact amount
+    before the account expires (30 minutes). A wrong amount is reversed by the bank.
+- We never ask for card details, PINs or OTPs on WhatsApp.
+- In-chat "WhatsApp Pay" is not available in Nigeria, which is why we use Paystack.
+- Bank transfers usually confirm within a few minutes; we confirm on WhatsApp once Paystack
+  has received the money.
+- A job is dispatched only after payment is confirmed. The price is fixed when quoted and is
+  valid for 30 minutes.
+- This is a test deployment: links run in Paystack test mode and no real money moves.
+
+## Handover code
+- Every booking gets a 4-digit handover code. The sender shares it with the recipient, and the
+  recipient tells it to the rider on delivery.
+
+## Cancellations and refunds
+- Before payment: cancel any time, free.
+- After payment: a human dispatcher handles cancellations and refunds (usually full refund if no
+  rider has been dispatched yet).
+- If a customer pays twice or pays a cancelled booking, a dispatcher refunds it.
+
+## Problems
+- Late rider, damaged or missing items, wrong delivery, complaints: hand over to a human dispatcher.
