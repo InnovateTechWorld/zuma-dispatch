@@ -95,6 +95,17 @@ Every row names the code that handles the case and the evidence that it works.
 | 53 | PII in logs | Logs carry ids, codes, latencies and provider paths only. The phone is masked in tool output; the full number is shown only on the authenticated board. | Code review |
 | 54 | Cloudflare blocks unusual clients | `Python-urllib` gets Cloudflare error 1010 before the Worker runs. Chord's Java client and curl are fine. Scripts set their own User-Agent. | FIELD_NOTES #4 |
 
+## Conversation memory (Chord-specific)
+
+| # | Case | Handling | Evidence |
+|---|---|---|---|
+| C1 | The model can't see earlier tool results and re-resolves every turn | Same text → same `place_id` for 6 h (stable answers), so it gets the same quote back | E "same text -> same place_id" |
+| C2 | The model "forgets" a booking and books again | Duplicate guard: same sender + recipient phone + size + route (within 200 m), unpaid, < 2 h → the existing job is returned | E "re-booked under a different quote id", simulator (FIELD_NOTES #9) |
+| C3 | Different senders to the same recipient | Never merged (sender name is part of the match) | E "a different sender … is NOT merged" |
+| C4 | Two customers ask for the same trip | A quote that has a job is never re-issued | E reruns (35/35 twice on production) |
+| C5 | The model disowns an id it already sent | Skill v2 rule: ids already sent are real; continue with them | Simulator: after v2 the agent continued with real job ids |
+| C6 | Test traffic colliding with real conversations | The e2e script uses unique identities per run | FIELD_NOTES #9 |
+
 ## Known gaps (deliberately not built)
 
 - No Paystack webhook: payment is verified on demand and on the return page. A late payment is

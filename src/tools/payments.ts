@@ -211,6 +211,12 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
   };
 }
 
+/** Pickup timing worded for after payment (the quote-time wording says "as soon as payment is confirmed"). */
+function afterPaymentTiming(now: number): string {
+  const w = pickupWindow(now);
+  return w.now ? 'A dispatcher is assigning a rider now; pickup is usually within 45 minutes.' : w.note;
+}
+
 // ------------------------------------------------------------------ verify_payment
 export async function verifyPayment(args: { job_id: string }, ctx: ToolContext): Promise<Record<string, unknown>> {
   const job = await loadJob(ctx, args.job_id);
@@ -243,8 +249,8 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
         ...base,
         payment_status: 'paid',
         handover_code: check.job.handover_code,
-        pickup_timing: pickupWindow(now).note,
-        what_to_do: `Payment confirmed. Tell the customer: job ${job.id} is paid, the handover code is ${check.job.handover_code} (the recipient gives it to the rider), and when pickup will happen.`,
+        pickup_timing: afterPaymentTiming(now),
+        what_to_do: `Payment confirmed. Tell the customer: job ${job.id} is paid, the handover code is ${check.job.handover_code} (the recipient gives it to the rider), and the pickup timing below.`,
       };
     case 'in_progress':
       if (openTransfer) {

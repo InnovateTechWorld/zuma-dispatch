@@ -5,7 +5,8 @@ import { findPostcode, lgaQuery, nipostLgaName, nipostValidity, STATES, type Nip
 import type { Candidate } from '../geocode/providers';
 import { haversineMeters } from '../lib/geo';
 import { newPlaceId } from '../lib/ids';
-import { cleanText } from '../lib/text';
+import { cleanText, normalizeQuery } from '../lib/text';
+import { log } from '../lib/log';
 import { ToolError, type ToolContext } from '../mcp/tooling';
 
 export interface ResolveArgs {
@@ -19,9 +20,42 @@ function inServiceArea(c: { lat: number; lng: number }): boolean {
   return haversineMeters(c, SERVICE_AREA.centre) <= SERVICE_AREA.radiusKm * 1000;
 }
 
+/**
+ * Chord does not show the model earlier turns' tool results, so it re-resolves addresses on every
+ * turn (observed in the simulator test, FIELD_NOTES #9). Returning the same answer, and therefore
+ * the same place_ids, for the same text keeps quotes and bookings stable across turns.
+ */
+const STABLE_RESULT_MS = 6 * 60 * 60_000;
+
 export async function resolveAddress(args: ResolveArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
   const text = cleanText(args.text, 300);
   const now = ctx.now();
+  const stableKey = `resolve:${normalizeQuery(text)}`;
+  try {
+    const prior = await ctx.db
+      .prepare('SELECT result_json, created_at FROM geocode_cache WHERE cache_key = ?')
+      .bind(stableKey)
+      .first<{ result_json: string; created_at: number }>();
+    if (prior && now - prior.created_at < STABLE_RESULT_MS) {
+      ctx.trace.push('resolve:stable-reuse');
+      return { ...(JSON.parse(prior.result_json) as Record<string, unknown>), role: args.role };
+    }
+  } catch (e) {
+    log('warn', 'stable_resolve_read_failed', { message: String(e) });
+  }
+  const result = await resolveFresh(args, text, now, ctx);
+  // Only definite answers are pinned; "not found"/"needs detail" should be retried with new text anyway.
+  if (result['status'] === 'confirmed' || result['status'] === 'ambiguous' || result['status'] === 'out_of_area') {
+    await ctx.db
+      .prepare('INSERT INTO geocode_cache (cache_key, provider, result_json, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET result_json = excluded.result_json, created_at = excluded.created_at')
+      .bind(stableKey, 'resolve', JSON.stringify(result), now)
+      .run()
+      .catch((e: unknown) => log('warn', 'stable_resolve_write_failed', { message: String(e) }));
+  }
+  return result;
+}
+
+async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: ToolContext): Promise<Record<string, unknown>> {
   if (text.length < 2 || VAGUE.test(text.replace(/[.!]+$/, ''))) {
     return needsDetail(args.role, text, 'That is too general to find on a map.');
   }

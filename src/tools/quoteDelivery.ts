@@ -87,10 +87,13 @@ export async function quoteDelivery(args: QuoteArgs, ctx: ToolContext): Promise<
     );
   }
 
-  // Same places + size + rate card, still valid: return the existing quote so the price is stable.
+  // Same places + size + rate card, still valid, and not yet booked: return the existing quote so the
+  // price is stable across turns. A quote that already has a job is never handed out again: two
+  // customers asking for the same trip must not share one quote (and so one booking).
   const existing = await ctx.db
     .prepare(
-      'SELECT * FROM quotes WHERE pickup_place_id = ? AND dropoff_place_id = ? AND package_size = ? AND rate_card_version = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 1',
+      'SELECT * FROM quotes WHERE pickup_place_id = ? AND dropoff_place_id = ? AND package_size = ? AND rate_card_version = ? AND expires_at > ? ' +
+        'AND NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.quote_id = quotes.id) ORDER BY created_at DESC LIMIT 1',
     )
     .bind(pickup.id, dropoff.id, args.package_size, RATE_CARD_VERSION, now + 5 * 60_000)
     .first<QuoteRow>();

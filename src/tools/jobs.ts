@@ -1,5 +1,6 @@
 import { pickupWindow } from '../business/profile';
-import { eventStmt, getJob, getJobByQuote, getPlace, getQuote, transitionJob, type JobRow } from '../db/repo';
+import { eventStmt, getJob, getJobByQuote, getPlace, getQuote, transitionJob, type JobRow, type QuoteRow } from '../db/repo';
+import { haversineMeters } from '../lib/geo';
 import { newHandoverCode, newJobId, normalizeId } from '../lib/ids';
 import { formatNaira } from '../lib/money';
 import { normalizeNigerianPhone } from '../lib/phone';
@@ -58,6 +59,21 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
       handover_code: existing.handover_code,
       what_to_do: 'This quote is already booked; do not book again. Continue with create_payment_link for this job_id if it is unpaid.',
     });
+  }
+
+  // Same customer booking the same trip again, under a different quote id (e.g. the model lost
+  // track of an earlier booking between turns): return the open job instead of a duplicate.
+  const phoneForDup = normalizeNigerianPhone(args.recipient_phone);
+  const senderForDup = cleanPersonName(args.sender_name);
+  if (phoneForDup.ok && senderForDup) {
+    const twin = await findTwinJob(ctx, quote, phoneForDup.e164, senderForDup, now);
+    if (twin) {
+      return jobView(twin, {
+        already_booked: true,
+        handover_code: twin.handover_code,
+        what_to_do: `This trip is already booked as ${twin.id} (same route, size and recipient, not yet paid). Do not book again: tell the customer it is the same booking and continue with create_payment_link for ${twin.id}.`,
+      });
+    }
   }
 
   if (quote.expires_at <= now) {
@@ -133,6 +149,37 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
     pickup_timing: pickupWindow(now).note,
     what_to_do: `Booked as ${job.id}. Tell the customer the job id and handover code (${job.handover_code}): the recipient gives this code to the rider. Then call create_payment_link with this job_id.`,
   });
+}
+
+const TWIN_WINDOW_MS = 2 * 60 * 60_000;
+const TWIN_DISTANCE_M = 200;
+
+/**
+ * Chord sends no conversation or customer id with tool calls (verified: no _meta, no identifying
+ * headers), so "the same customer re-booking" is recognised from the booking itself: same sender
+ * name, same recipient phone, same size, pickup and drop-off within 200 m, still unpaid, < 2 h old.
+ * Different senders to the same recipient are never merged.
+ */
+async function findTwinJob(ctx: ToolContext, quote: QuoteRow, recipientE164: string, senderName: string, now: number): Promise<JobRow | null> {
+  const [pu, dr] = await Promise.all([getPlace(ctx.db, quote.pickup_place_id), getPlace(ctx.db, quote.dropoff_place_id)]);
+  if (!pu || !dr) return null;
+  const rows = await ctx.db
+    .prepare(
+      `SELECT j.*, p1.lat AS pu_lat, p1.lng AS pu_lng, p2.lat AS dr_lat, p2.lng AS dr_lng
+         FROM jobs j JOIN quotes q ON q.id = j.quote_id
+         JOIN places p1 ON p1.id = q.pickup_place_id JOIN places p2 ON p2.id = q.dropoff_place_id
+        WHERE j.recipient_phone = ? AND lower(j.sender_name) = lower(?) AND q.package_size = ? AND j.status IN ('awaiting_payment', 'payment_failed') AND j.created_at > ?
+        ORDER BY j.created_at DESC LIMIT 5`,
+    )
+    .bind(recipientE164, senderName, quote.package_size, now - TWIN_WINDOW_MS)
+    .all<JobRow & { pu_lat: number; pu_lng: number; dr_lat: number; dr_lng: number }>();
+  return (
+    rows.results.find(
+      (r) =>
+        haversineMeters({ lat: r.pu_lat, lng: r.pu_lng }, pu) <= TWIN_DISTANCE_M &&
+        haversineMeters({ lat: r.dr_lat, lng: r.dr_lng }, dr) <= TWIN_DISTANCE_M,
+    ) ?? null
+  );
 }
 
 // ------------------------------------------------------------------ get_job_status

@@ -202,3 +202,53 @@ two `mcp__Zuma_Dispatch_tools__resolve_address` calls, and our logs show them ar
 - Default customer-facing teammates to autonomous, or show "replies need approval" prominently.
 - Explain why activation is unavailable to an owner.
 - List assigned MCP servers and their tools under Settings → Tools.
+
+---
+
+## 9. Chord does not show the model earlier tool results, and sends no conversation id
+
+**What happened (simulator test, 2026-10-20 14:09–14:31 WAT).**
+- Turn 3 booked a real job (`create_dispatch_job` → ZD-JP2QG, in our database).
+- On turn 4 the agent re-resolved both addresses, re-quoted and told the customer:
+  > "The job ID ZD-JP2QG and handover code 9151 I gave you earlier were not real, so please ignore them."
+- Then it offered to book again, which would have created a duplicate.
+
+**How we found the cause.**
+- Our `tool_calls` table showed `resolve_address` being called again on **every** turn (14:09, 14:10:05,
+  14:10:34, 14:11:02). The model only sees the conversation text, not earlier tool results.
+- Seeing no `create_dispatch_job` result in its context, it concluded its own earlier reply was invented.
+- We then checked whether the server could tell which conversation a call belongs to. Chord sends
+  **no `_meta`** on `tools/call` (we logged it) and **no identifying headers**: only standard and
+  Cloudflare headers, from `Java-http-client`.
+
+**Fix (server + skill, so it does not depend on the model behaving).**
+1. *Stable answers:* the same address text returns the same `place_id`s for 6 hours, so re-resolving
+   each turn is harmless and the same quote comes back.
+2. *Duplicate-booking guard:* `create_dispatch_job` returns the existing unpaid job when the same sender,
+   recipient phone, package size and route (both ends within 200 m) were booked in the last 2 hours,
+   even under a different `quote_id`. Different senders are never merged.
+3. *Quotes are never shared:* a quote that already has a job is never re-issued (a re-run of our e2e
+   script exposed this: a second "customer" was handed the first one's cancelled job).
+4. *Skill v2:* "You cannot see tool results from earlier messages… ids you already sent are real…
+   once a job id exists, do not book again." Published as v2 in Chord.
+
+**A self-inflicted incident, recorded because it taught us something.** While the simulator chat was
+paused, our e2e script ran against production with the **same made-up test data** as the chat
+(sender "Ada Obi", recipient 0803 123 4567). The new duplicate guard correctly matched it to the chat's
+job and the script then cancelled it. The agent's next answer ("job ZD-JP2QG has been cancelled") was
+therefore true. *Fix:* the e2e script now generates unique sender, recipient and phone numbers per run,
+and two back-to-back production runs pass (35/35 each).
+
+**Result after the fixes.** The resumed conversation booked ZD-KJNH1, sent bank-transfer details, refused
+to confirm on "I don send am" (`awaiting_transfer`), switched to a card link with "pay one way only",
+confirmed payment after Paystack checkout, and reported "A rider is on the way" after the dispatcher
+update. Chord made 12 tool calls in this stretch with 0 errors. The 11 customer turns cost 1.3 credits.
+
+**What we'd change in Chord.**
+- Include tool results (or at least the ids they returned) in the context the model sees on later turns.
+- Or pass a stable conversation id to MCP servers (e.g. `params._meta.conversation_id`), so tools can
+  scope "the current booking" per customer.
+- Document the turn context ("recent 30 turns", text only?) explicitly.
+
+**Still open.** Cold requests to the Paystack-calling tools used up to 33 ms of CPU (free plan budget
+10 ms). Cloudflare served them, but a paid Workers plan ($5/month) removes this risk for go-live.

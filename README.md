@@ -99,7 +99,7 @@ npm test                              # 54 unit tests: pricing, payment decision
 scripts/mcp-smoke.sh                  # protocol + auth checks (15)
 ```
 ```bash
-python3 scripts/e2e.py                # the whole booking flow, bank transfer and edge cases against real providers (31)
+python3 scripts/e2e.py                # booking flow, bank transfer, lost-context guards and edge cases against real providers (35)
 ```
 ```bash
 python3 scripts/check-skill.py        # skill package vs Chord's limits

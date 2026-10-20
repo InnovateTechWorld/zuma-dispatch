@@ -19,6 +19,13 @@ assert TOKEN, "MCP_BEARER_TOKEN not set"
 
 results = []
 _id = 0
+# Unique per-run test identities: production is shared with real (simulator) conversations, and the
+# server's duplicate-booking guard matches on sender + recipient + route. Never reuse fixed names.
+RUN = format(int(time.time()) % 100000, "05d")
+SENDER = f"E2E Sender {RUN}"
+RECIPIENT = f"E2E Recipient {RUN}"
+PHONE_A = f"0809{RUN}11"[:11]
+PHONE_B = f"0907{RUN}22"[:11]
 
 
 def call(tool, **args):
@@ -92,7 +99,7 @@ x, err, ms = call("quote_delivery", pickup_place_id=pickup, dropoff_place_id=dro
 check("model tries to pass a price -> rejected", err and x["error"]["code"] == "INVALID_ARGUMENTS", x, ms)
 
 section("Booking")
-base = dict(quote_id=q["quote_id"], sender_name="Ada Obi", recipient_name="Bola Musa", recipient_phone="0803 123 4567")
+base = dict(quote_id=q["quote_id"], sender_name=SENDER, recipient_name=RECIPIENT, recipient_phone=PHONE_A)
 x, err, ms = call("create_dispatch_job", **base, customer_confirmed=False)
 check("no explicit yes -> refused with read-back hint", err and "Read back" in json.dumps(x), x, ms)
 x, err, ms = call("create_dispatch_job", **{**base, "recipient_phone": "12345"}, customer_confirmed=True)
@@ -123,9 +130,24 @@ check("cancel is idempotent", not err and c2.get("already_cancelled"), c2, ms)
 x, err, ms = call("create_payment_link", job_id=job)
 check("no link for a cancelled job", err and x["error"]["code"] == "JOB_CANCELLED", x, ms)
 
+section("Lost context between turns (Chord shows the model no earlier tool results)")
+d_again, err, ms = call("resolve_address", text="Wuse Market, Abuja", role="dropoff")
+check("same text -> same place_id (stable across turns)", not err and d_again.get("place", {}).get("place_id") == dropoff, d_again, ms)
+d_alt, err, ms = call("resolve_address", text="Wuse Market Abuja please", role="dropoff")
+alt_id = (d_alt.get("place") or (d_alt.get("candidates") or [{}])[0]).get("place_id")
+qL, err, ms = call("quote_delivery", pickup_place_id=pickup, dropoff_place_id=dropoff, package_size="large")
+qa, err, ms = call("quote_delivery", pickup_place_id=pickup, dropoff_place_id=alt_id, package_size="large")
+check("alternative wording -> a different quote id for the same trip", not err and qa["quote_id"] != qL["quote_id"], qa, ms)
+jb, err, ms = call("create_dispatch_job", quote_id=qL["quote_id"], sender_name=SENDER, recipient_name=RECIPIENT, recipient_phone=PHONE_B, customer_confirmed=True)
+jd, err, ms = call("create_dispatch_job", quote_id=qa["quote_id"], sender_name=SENDER.upper(), recipient_name=RECIPIENT, recipient_phone="+234" + PHONE_B[1:], customer_confirmed=True)
+check("same trip re-booked under a different quote id -> the open job is returned, no duplicate", not err and jd.get("already_booked") and jd["job_id"] == jb["job_id"], jd, ms)
+qo, err, ms = call("quote_delivery", pickup_place_id=pickup, dropoff_place_id=alt_id, package_size="large")
+jo, err, ms = call("create_dispatch_job", quote_id=qo["quote_id"], sender_name=f"Other Sender {RUN}", recipient_name=RECIPIENT, recipient_phone=PHONE_B, customer_confirmed=True)
+check("a different sender to the same recipient is NOT merged", not err and not jo.get("already_booked") and jo["job_id"] != jb["job_id"], jo, ms)
+
 section("Bank transfer (Paystack Pay with Transfer)")
 q3, err, ms = call("quote_delivery", pickup_place_id=pickup, dropoff_place_id=dropoff, package_size="medium")
-j3, err, ms = call("create_dispatch_job", quote_id=q3["quote_id"], sender_name="Chidi Eze", recipient_name="Fatima Bello", recipient_phone="+234 809 555 0101", customer_confirmed=True)
+j3, err, ms = call("create_dispatch_job", quote_id=q3["quote_id"], sender_name=f"E2E Transfer {RUN}", recipient_name=RECIPIENT, recipient_phone=f"0816{RUN}33"[:11], customer_confirmed=True)
 check("second job booked", not err and j3["status"] == "awaiting_payment", j3, ms)
 job3 = j3["job_id"]
 t1, err, ms = call("create_payment_link", job_id=job3, method="bank_transfer")
