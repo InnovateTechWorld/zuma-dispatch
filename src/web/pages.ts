@@ -14,7 +14,7 @@ import {
   type DayRow,
 } from './charts';
 import { footLine, notice, page, statusPill, time, topBar } from './layout';
-import { crossSite, safeNext } from './session';
+import { crossSite, safeNext, sha256Hex } from './session';
 
 function toolCtx(env: Env, config: Config, ctx: ExecutionContext, requestId: string, origin: string): ToolContext {
   return { env, config, db: env.DB, requestId, now: () => Date.now(), waitUntil: (p) => ctx.waitUntil(p), publicOrigin: origin, trace: [] };
@@ -365,7 +365,7 @@ ${resultLine}
       : '<p class="muted">None yet.</p>'
   }</details></section>`;
 
-  const flash = url.searchParams.get('msg');
+  const flash = await readFlash(url, config.boardToken);
   const head = `<div class="wrap head"><div><p class="label">Dispatcher board</p><h1>${h(config.businessName)}</h1></div>
 <p class="head__meta"><span>Updated ${time(now)}</span>${
     f.live
@@ -379,7 +379,7 @@ ${resultLine}
     css: BOARD_CSS,
     body: `${bar(config, session)}
 ${head}
-<div class="wrap">${flash ? `<div class="flash">${notice(flash.slice(0, 300), url.searchParams.get('tone') === 'error' ? 'error' : 'info')}</div>` : ''}${attentionHtml}</div>
+<div class="wrap">${flash ? `<div class="flash">${notice(flash.msg, flash.error ? 'error' : 'info')}</div>` : ''}${attentionHtml}</div>
 ${band}
 ${listHtml}
 <div class="wrap panels"><div class="grid-2">${handoverHtml}${reviewHtml}${noticeHtml}${sheetHtml}</div>${callHtml}</div>
@@ -408,17 +408,36 @@ function blocked(): Response {
   return page({ title: 'Forbidden', status: 403, body: '<main class="wrap head"><div><h1>Request blocked</h1><p class="muted">This form was submitted from another site. Open the board directly and try again.</p></div></main>' });
 }
 
-function backTo(url: URL, path: string, msg: string, error: boolean): Response {
+/**
+ * The one-line message shown after an action travels in the redirect URL, signed with a key derived
+ * from BOARD_TOKEN. A crafted link (?msg=Approved…) therefore cannot put words on the signed-in board.
+ */
+async function flashSig(secret: string, msg: string, error: boolean): Promise<string> {
+  return (await sha256Hex(`zuma-board-flash:${secret}:${error ? 'e' : 'i'}:${msg}`)).slice(0, 24);
+}
+
+/** The verified flash message for this page, or null if absent or unsigned. */
+export async function readFlash(url: URL, secret: string): Promise<{ msg: string; error: boolean } | null> {
+  const msg = url.searchParams.get('msg');
+  const sig = url.searchParams.get('sig');
+  if (!msg || !sig || msg.length > 300) return null;
+  const error = url.searchParams.get('tone') === 'error';
+  return sig === (await flashSig(secret, msg, error)) ? { msg, error } : null;
+}
+
+async function backTo(url: URL, env: Env, path: string, msg: string, error: boolean): Promise<Response> {
   const target = new URL(path, url.origin);
-  target.searchParams.set('msg', msg);
+  const text = msg.slice(0, 300);
+  target.searchParams.set('msg', text);
   if (error) target.searchParams.set('tone', 'error');
+  target.searchParams.set('sig', await flashSig(env.BOARD_TOKEN?.trim() ?? '', text, error));
   return Response.redirect(target.toString(), 303);
 }
 
 async function sheetResync(request: Request, url: URL, env: Env): Promise<Response> {
   if (crossSite(request, url)) return blocked();
   const r = await resyncAll(env, url.origin);
-  return backTo(url, '/board', r.detail, !r.ok);
+  return backTo(url, env, '/board', r.detail, !r.ok);
 }
 
 async function boardAction(request: Request, url: URL, env: Env, execCtx: ExecutionContext): Promise<Response> {
@@ -428,19 +447,23 @@ async function boardAction(request: Request, url: URL, env: Env, execCtx: Execut
   // Where to return: the filtered list or the job page the button was on. Old forms used ?from=detail.
   const back = url.searchParams.get('from') === 'detail' && id ? `/board/jobs/${id}` : safeNext(String(form.get('back') ?? ''));
   const actionKey = String(form.get('action'));
-  const action = ACTIONS[actionKey];
+  const action = Object.hasOwn(ACTIONS, actionKey) ? ACTIONS[actionKey] : undefined;
   const version = Number(form.get('version'));
-  if (!id || !action) return backTo(url, back, 'Unknown action.', true);
+  if (!id || !action) return backTo(url, env, back, 'Unknown action.', true);
   const job = await getJob(env.DB, id);
-  if (!job) return backTo(url, back, `No job ${id}.`, true);
+  if (!job) return backTo(url, env, back, `No job ${id}.`, true);
   if (job.version !== version) {
-    return backTo(url, back, `${id} changed since you loaded the page (now ${job.status.replaceAll('_', ' ')}). Check it and try again.`, true);
+    return backTo(url, env, back, `${id} changed since you loaded the page (now ${job.status.replaceAll('_', ' ')}). Check it and try again.`, true);
   }
-  const ok = await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', Date.now(), { action: actionKey });
+  const now = Date.now();
+  // Approving a reviewed payment is a payment confirmation: record when and how, like checkPayments does.
+  const ok = actionKey === 'approve'
+    ? await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', now, { action: actionKey, via: 'dispatcher' }, ', paid_at = COALESCE(paid_at, ?)', [now])
+    : await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', now, { action: actionKey });
   if (ok) queueSheetSync(env, (p) => execCtx.waitUntil(p), url.origin, id);
   return ok
-    ? backTo(url, back, `${id}: ${action.label.toLowerCase()}.`, false)
-    : backTo(url, back, `${id} could not change from ${job.status.replaceAll('_', ' ')}.`, true);
+    ? backTo(url, env, back, `${id}: ${action.label.toLowerCase()}.`, false)
+    : backTo(url, env, back, `${id} could not change from ${job.status.replaceAll('_', ' ')}.`, true);
 }
 
 // ------------------------------------------------------------------ /board/jobs/:id
@@ -531,7 +554,7 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config, session
     }>(),
   ]);
   const phone = normalizeNigerianPhone(job.recipient_phone);
-  const flash = url.searchParams.get('msg');
+  const flash = await readFlash(url, config.boardToken);
   const self = `/board/jobs/${job.id}`;
   const actions = actionForms(job, self, false);
 
@@ -598,7 +621,7 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config, session
 <p class="crumb"><a href="/board">← All deliveries</a></p>
 <div class="jhead"><h1>${h(job.id)}</h1>${statusPill(job.status)}</div>
 <p class="jmeta">Booked ${time(job.created_at)} · last change ${time(job.updated_at)}${job.cancel_reason ? ` · cancelled: “${h(job.cancel_reason)}”` : ''}</p>
-${flash ? `<div class="flash" style="margin-bottom:var(--space-md)">${notice(flash.slice(0, 300), url.searchParams.get('tone') === 'error' ? 'error' : 'info')}</div>` : ''}
+${flash ? `<div class="flash" style="margin-bottom:var(--space-md)">${notice(flash.msg, flash.error ? 'error' : 'info')}</div>` : ''}
 <ol class="steps" aria-label="Progress">${steps}</ol>
 <div class="grid-2">
 <section class="section" aria-labelledby="booking-h"><div class="section__head"><h3 id="booking-h">Booking</h3></div>

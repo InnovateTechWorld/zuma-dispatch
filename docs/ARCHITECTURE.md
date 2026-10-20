@@ -85,7 +85,6 @@ Payment attempts have their own states: `initializing` (row written before calli
 | D1 in ENAM, not WEUR | The Worker runs next to its caller (Chord, IAD). WEUR would add ~80–90 ms per query | Smart Placement (moves the Worker; our other calls are global anyway) |
 | Pluggable geocoder chain + cross-check | Free OSM geocoders disagree and miss Nigerian landmarks; disagreement is turned into a question to the customer | One provider (fast but wrong silently), Google only (needs a billing account) |
 | OSRM for distance, ORS second, straight line last | OSRM answered in 0.5 s; ORS took 18 s / timed out in tests | ORS only |
-| Verify on demand + return page, no webhook | Within scope and the 6-hour budget; the return page gives near-webhook freshness for customers who come back | Webhook (go-live item; needs HMAC verification and dedupe with verify) |
 | Payment attempt row written before initialize | A timed-out initialize can still be verified by reference; `duplicate_reference` is recoverable | Insert after success (a lost response orphans a real transaction) |
 | Board sign-in page + D1 sessions, not HTTP Basic | Basic auth puts credentials in URLs people share, which broke the board's forms in Chromium, and it cannot sign out; sessions can be revoked and the lockout slows guessing | Signed stateless cookies (no real sign-out), keep Basic (no lockout, browser popup) |
 | Google Sheet as a one-way mirror, not the store | The owner gets a familiar phone view; the money logic keeps compare-and-set safety; Sheets outages never block bookings | Sheets as the database (no atomic updates, quotas, human edits break it) |
@@ -117,5 +116,6 @@ times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 `wrangler.jsonc` vars (non-secret): `GEOCODER_CHAIN`, `GEOCODER_MODE`, `ROUTER_CHAIN`,
 `QUOTE_TTL_MINUTES`, `PROVIDER_TIMEOUT_MS`, `BUSINESS_NAME`, `BUSINESS_CITY`. Secrets:
 `PAYSTACK_TEST_SECRET_KEY`, `NIPOST_API_KEY`, `MCP_BEARER_TOKEN`, `BOARD_TOKEN`, optional
-`OPENROUTE_BASIC_KEY`, `GOOGLE_MAPS_API_KEY`. `loadConfig` validates everything on every request.
+`OPENROUTE_BASIC_KEY`, `GOOGLE_MAPS_API_KEY`, `CHORD_WEBHOOK_SECRET`, `GOOGLE_SHEET_ID`,
+`GOOGLE_SERVICE_ACCOUNT_JSON`, and `SHEET_MIRROR_ALLOW_LOCAL` (local only; leave unset). `loadConfig` validates everything on every request.
 It refuses non-test keys and reports problem names (never values) on `/health`.

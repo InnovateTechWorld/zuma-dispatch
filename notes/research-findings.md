@@ -79,7 +79,7 @@ Everything below was read in the docs or reproduced with a live call on 2026-10-
 - Initialize: `POST /transaction/initialize` with `{email, amount (kobo, as a string or number), currency, reference, metadata, callback_url}`, which returns `authorization_url`, `access_code` and `reference`. Reference characters are limited to letters, digits, `-`, `.` and `=`.
 - **Verify on an unpaid transaction returns `status:true, message:"Verification successful"` with `data.status:"abandoned"`.** Only `data.status == "success"` means paid; the top-level status describes the API call. Statuses are abandoned, failed, ongoing, pending, processing, queued, reversed and success.
 - Re-initializing with the same reference returns 400 `duplicate_reference`. Store and reuse the first `authorization_url`.
-- Paystack sends webhooks only for successful transactions. We verify on demand instead, since webhooks are out of scope.
+- Paystack sends webhooks only for successful transactions. We verify on demand instead, since webhooks are out of scope. *(Superseded: the webhook was built, see docs/FEATURES.md §5.)*
 - A probe transaction `takehome-probe-1792488665` (₦2,500, abandoned) now exists in the test dashboard.
 
 ## Observed Chord MCP client behaviour (from our Worker logs, 2026-10-20 13:00 UTC)

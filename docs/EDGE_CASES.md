@@ -90,7 +90,7 @@ Every row names the code that handles the case and the evidence that it works.
 | 48 | GET/DELETE on /mcp | 405 (stateless server). | S |
 | 49 | Chord calls `tools/list` without `initialize` | Works: the server is stateless. | Observed in Chord's discovery |
 | 50 | Free-plan CPU limit (10 ms) | Low-level SDK server, Workers JSON-schema validator, schemas compiled and warmed at module load. | FIELD_NOTES #2 (median 4 ms) |
-| 51 | Board CSRF (Basic auth is sent automatically) | POST needs a same-origin `Origin`/`Sec-Fetch-Site`. A stale page is caught by the version check. | M: cross-site POST → 403; stale version → "changed since you loaded" |
+| 51 | Board CSRF (the session cookie, or browser-cached credentials, would be sent automatically) | POST needs a same-origin `Origin`/`Sec-Fetch-Site`. A stale page is caught by the version check. | M: cross-site POST → 403; stale version → "changed since you loaded" |
 | 52 | HTML injection on the board (names, labels) | Every value is escaped, plus a strict CSP (`default-src 'none'`). | U `escapeHtml` |
 | 53 | PII in logs | Logs carry ids, codes, latencies and provider paths only. The phone is masked in tool output; the full number is shown only on the authenticated board. | Code review |
 | 54 | Cloudflare blocks unusual clients | `Python-urllib` gets Cloudflare error 1010 before the Worker runs. Chord's Java client and curl are fine. Scripts set their own User-Agent. | FIELD_NOTES #4 |
@@ -133,13 +133,17 @@ Every row names the code that handles the case and the evidence that it works.
 | B7 | Filter button "did nothing" | Root cause: the board was opened through a link with the password embedded in it (`https://user:pass@host/board`). The form's relative action inherits those credentials, and Chromium silently drops navigations to URLs with embedded credentials. *Fix:* a sign-in page with a cookie session, so no URL carries a password; status filters are plain links | M: reproduced (click → no request, no console error), then fixed; `?q=ada&status=paid` → 1 match in the browser (FIELD_NOTES #12) |
 | B8 | Auto-refresh wiped the search box mid-typing | Refresh is off by default; `live=1` turns it on and survives filters and actions | M |
 | B9 | Our own form posts refused as "cross-site" | Under `Referrer-Policy: no-referrer`, browsers send `Origin: null` on form posts. Now `Sec-Fetch-Site` is checked first, `Origin: null` is never trusted as same-site, and the policy is `same-origin` | U `crossSite`; M: sign-in in the browser |
-| B10 | Password guessing | 10 wrong tries per IP per 15 min → 429 + `Retry-After`; the 11th is not even checked; Basic-auth failures count too | U `lockedFor`; local run: 10 × 401, then 429 `Retry-After: 900`, a correct password from that IP also 429, another IP 200 |
+| B10 | Password guessing | 10 wrong tries per IP per 15 min → 429 + `Retry-After`; every attempt is counted atomically before the password is compared, so parallel guesses cannot slip under the limit and the 11th is not even checked; Basic auth counts too; a correct password clears the count | U `lockoutSeconds`; local run: 10 × 401, then 429 `Retry-After: 900`, a correct password from that IP also 429, another IP 200 |
 | B11 | Stolen or leftover cookie | Sign out deletes the row; sessions expire after 12 h; rotating `BOARD_TOKEN` voids all sessions; D1 holds only the hash | M: after sign-out, the job URL redirects to sign-in |
 | B12 | Open redirect through `next=` | Only `/board…` paths with safe characters; `//evil`, absolute URLs, `..`, backslashes → `/board` | U `safeNext` |
 | B13 | Session ends while a form is being submitted | No change is made; redirect to sign-in with "sign in and do it again" | Code path in `boardGate` |
-| B14 | Browser shows its own password popup | No `WWW-Authenticate` header is ever sent from `/board` | S ("board sends browsers to sign-in") |
+| B14 | Browser shows its own password popup | No `WWW-Authenticate` header is ever sent from `/board` | S ("browsers never get a password popup": wrong Basic credentials, header absent) |
 | B15 | Narrow phones | Rows become two-column cards; steps stack; no sideways scroll at 320/375/414/768 | M: `scrollWidth` = viewport at all four widths (a screen-reader-only table caused 17 px overflow at 320; fixed) |
 | B16 | Charts with no data / misleading counts | Empty states say so; "How payments were confirmed" counts only jobs currently paid or later (a paid-then-cancelled mismatch no longer inflates it) | U charts; M |
+| B17 | A crafted link puts words on the board (`/board?msg=Payment approved`) | The message after an action travels signed with a key derived from `BOARD_TOKEN`; unsigned or tampered messages are not shown | U `readFlash` |
+| B18 | Opening a board link from the sheet, chat or email | The cookie is `SameSite=Lax`, so a link from another site arrives signed in; cross-site POSTs still never carry it and are refused by the CSRF check | U cookie flags |
+| B19 | Approving a reviewed payment | Sets `paid_at` and records `via: dispatcher`, so the job counts in "Paid today" and the sheet's Paid at / Paid via columns | Code path in `boardAction` |
+| B20 | Odd form values (`action=constructor`) | Actions are looked up with `Object.hasOwn`, so unknown keys get "Unknown action." instead of a 500 | Code path |
 
 ## Google Sheet mirror
 
@@ -170,8 +174,7 @@ Every row names the code that handles the case and the evidence that it works.
 
 ## Known gaps (deliberately not built)
 
-- No Paystack webhook: payment is verified on demand and on the return page. A late payment is
-  noticed only when someone checks. That is the go-live item #1.
-- No proactive WhatsApp messages: the agent replies only when the customer writes.
+- No proactive WhatsApp message after a payment lands: the webhook updates the job and the board at once,
+  but Chord gives us no conversation id to message, so the agent tells the customer when they next write.
 - Rate limiting of our own endpoint relies on Cloudflare plus the bearer token. There is no per-sender quota.
 - The handover code is generated and shown but not verified at delivery.

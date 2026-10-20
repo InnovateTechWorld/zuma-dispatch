@@ -62,7 +62,7 @@ export function writesAllowed(env: MirrorEnv, origin: string): boolean {
 const wat = (ms: number | null | undefined) => (ms ? new Date(ms + 3_600_000).toISOString().slice(0, 16).replace('T', ' ') : '');
 const PAID_VIA: Record<string, string> = {
   paystack_webhook: 'Paystack notification', return_page: 'Checkout return page', verify: 'Customer check',
-  link_request: 'Link request', cancel: 'Cancel check',
+  link_request: 'Link request', cancel: 'Cancel check', dispatcher: 'Dispatcher approval',
 };
 
 interface JoinedJob {
@@ -174,7 +174,7 @@ export async function resyncAll(env: MirrorEnv, origin: string): Promise<{ ok: b
     await recordState(env.DB, false, problem);
     return { ok: false, detail: problem };
   }
-  const jobs = await env.DB.prepare(`${JOB_SQL} ORDER BY j.created_at ASC LIMIT 2000`).all<JoinedJob>();
+  const jobs = await env.DB.prepare(`SELECT * FROM (${JOB_SQL} ORDER BY j.created_at DESC LIMIT 2000) ORDER BY created_at ASC`).all<JoinedJob>();
   const clear = await sheets.clear(`${TAB}!A2:${LAST_COL}`);
   if (!clear.ok) {
     await recordState(env.DB, false, `clear: ${failure(clear)}`);

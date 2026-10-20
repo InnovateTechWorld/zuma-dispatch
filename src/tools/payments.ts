@@ -223,7 +223,11 @@ function afterPaymentTiming(now: number): string {
 export async function verifyPayment(args: { job_id: string }, ctx: ToolContext): Promise<Record<string, unknown>> {
   const job = await loadJob(ctx, args.job_id);
   if (job.status === 'dispatched' || job.status === 'delivered') {
-    return { job_id: job.id, payment_status: 'paid', job_status: job.status, what_to_do: 'It is paid. Tell the customer the delivery status instead (get_job_status).' };
+    return {
+      job_id: job.id, payment_status: 'paid', job_status: job.status,
+      pickup_timing: job.status === 'dispatched' ? 'A rider already has the package.' : 'The package has been delivered.',
+      what_to_do: 'It is paid. Tell the customer the delivery status instead (get_job_status).',
+    };
   }
 
   const check: PaymentCheck = await checkPayments(ctx, job, { allOpen: job.status === 'cancelled' });

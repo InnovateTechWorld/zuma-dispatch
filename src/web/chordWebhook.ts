@@ -38,6 +38,7 @@ export async function chordWebhook(request: Request, db: D1Database, secret: str
   } catch {
     return new Response('bad json', { status: 400 });
   }
+  if (!event || typeof event !== 'object' || Array.isArray(event)) return new Response('bad event', { status: 400 });
   const deliveryId = request.headers.get('X-Chord-Delivery-Id') ?? event.id ?? crypto.randomUUID();
   const type = String(event.type ?? request.headers.get('X-Chord-Event') ?? 'unknown');
   const data = event.data ?? {};

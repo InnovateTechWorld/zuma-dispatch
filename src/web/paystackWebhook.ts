@@ -66,6 +66,7 @@ export async function paystackWebhook(
   } catch {
     return new Response('bad json', { status: 400 });
   }
+  if (!e || typeof e !== 'object' || Array.isArray(e)) return new Response('bad event', { status: 400 });
   const event = String(e.event ?? 'unknown').slice(0, 64);
   const reference = eventReference(e);
   const ip = request.headers.get('CF-Connecting-IP') ?? '';

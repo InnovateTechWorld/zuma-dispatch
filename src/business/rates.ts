@@ -3,7 +3,7 @@ import { formatNaira, roundUpToNaira } from '../lib/money';
 /**
  * Zuma Dispatch rate card. The only place prices are defined. The skill reference
  * `references/rate-card.md` explains the same numbers in plain language, and
- * test/rates.test.ts checks the worked examples there against this code.
+ * test/units.test.ts checks the worked examples there against this code.
  */
 export const RATE_CARD_VERSION = '2026-10-A';
 

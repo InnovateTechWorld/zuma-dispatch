@@ -44,7 +44,7 @@ docs/, notes/               architecture, edge cases, field notes, research
 | `create_dispatch_job(quote_id, names, recipient_phone, customer_confirmed: true)` | Books the job; returns job id + handover code | Needs explicit yes; one job per quote; amount copied from quote; phone normalised |
 | `create_payment_link(job_id, method?)` | `link`: Paystack checkout (opens in WhatsApp; card, transfer, USSD). `bank_transfer`: one-time account number, bank and exact amount sent in the chat (30 min) | Reuses open details; checks Paystack first; timeout-safe references; warns if both methods are open |
 | `verify_payment(job_id)` | Asks Paystack; `paid` only if status + amount + currency + reference match | Compare-and-set; double payment / paid-after-cancel → human review |
-| `get_job_status(job_id)` | Status set by dispatchers, in plain words | Read-only |
+| `get_job_status(job_id \| recipient_phone + sender_name)` | Status set by dispatchers, in plain words; finds the customer's latest job without an id | Read-only; the lookup needs both phone and name and never returns the handover code |
 | `cancel_job(job_id, reason)` | Cancels an unpaid job | Verifies Paystack first; paid jobs go to a human |
 
 Every error carries a stable `code` and a `what_to_do` written for the model. Results are sent as
@@ -93,10 +93,10 @@ npm run dev             # http://127.0.0.1:8787
 Test it, no Chord credits needed:
 
 ```bash
-npm test                              # 84 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config
+npm test                              # 101 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config, board sign-in, charts, sheet mirror
 ```
 ```bash
-scripts/mcp-smoke.sh                  # protocol, auth, CSRF, webhook checks (18)
+scripts/mcp-smoke.sh                  # protocol, auth, board sign-in, CSRF, webhook checks (23)
 ```
 ```bash
 python3 scripts/e2e.py                # booking, payment, webhooks, lookup, lost-context guards and edge cases against real providers (42)
@@ -163,7 +163,7 @@ A local dev server never writes to the sheet (it would overwrite production rows
 ## Security
 
 - Bearer token on `/mcp`, checked in constant time. Any `Origin` header is refused (DNS-rebinding guard; Chord sends none).
-- `/board` has a sign-in page with server-side sessions (HttpOnly, Secure, SameSite=Strict cookie; 10-tries-per-15-min lockout), a same-origin check on POSTs (CSRF), escapes all output, and a CSP that allows no scripts.
+- `/board` has a sign-in page with server-side sessions (HttpOnly, Secure, SameSite=Lax cookie; 10-tries-per-15-min lockout), a same-origin check on POSTs (CSRF), escapes all output, and a CSP that allows no scripts.
 - Secrets live only in Worker secrets and `.env` (gitignored). Live keys are refused at runtime.
 - No PII in logs. Phones are masked in tool output, and the full number appears only on the board.
 - Paystack never receives the customer's phone or email (placeholder `zd-xxxxx@example.com`).

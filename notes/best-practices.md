@@ -340,7 +340,7 @@ Legend: ✅ in the code and verified · 🔜 planned for the tool-logic step · 
 | 28 | Accept new 11-char postcodes and legacy 6-digit codes | ✅ | resolve_address |
 | 29 | Normalise Nigerian phones to E.164; never log full numbers | ✅ | create_dispatch_job |
 | 30 | Unit test for wrong-amount verify; test cards documented | ✅ | `test/` + README |
-| 31 | Webhook HMAC-SHA512 + Paystack IPs + double-fulfilment guard | 📝 | Out of scope (on-demand verify); go-live note |
+| 31 | Webhook HMAC-SHA512 + Paystack IPs + double-fulfilment guard | ✅ | Built later: `/hooks/paystack` (docs/FEATURES.md §5) |
 | 32 | Paystack secret-key IP whitelisting impractical on Workers | 📝 | Go-live note |
 | 33 | Paystack fees 1.5% + ₦100 (waived < ₦2,500, cap ₦2,000) | 📝 | Go-live note (who absorbs fees) |
 | 34 | Nominatim forbids tracking apps on the public instance; OSRM demo is non-commercial | 📝 | README provider table + go-live |

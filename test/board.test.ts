@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { breakdown, lastSevenDays, percentiles, pipelineChart, watDayStart, weekChart } from '../src/web/charts';
-import { listHref, listQuery, progressSteps } from '../src/web/pages';
-import { cookieName, crossSite, LOGIN_MAX_FAILURES, LOGIN_WINDOW_MS, lockedFor, readCookie, safeNext, sessionCookie } from '../src/web/session';
+import { listHref, listQuery, progressSteps, readFlash } from '../src/web/pages';
+import { cookieName, crossSite, LOGIN_MAX_FAILURES, LOGIN_WINDOW_MS, lockoutSeconds, readCookie, safeNext, sessionCookie } from '../src/web/session';
 
 const HTTPS = new URL('https://zuma.example/board');
 const HTTP = new URL('http://127.0.0.1:8787/board');
@@ -16,10 +16,10 @@ describe('board sign-in', () => {
     }
   });
 
-  it('sets a host-only, HttpOnly, SameSite=Strict cookie; Secure and __Host- on HTTPS only', () => {
+  it('sets a host-only, HttpOnly, SameSite=Lax cookie; Secure and __Host- on HTTPS only', () => {
     expect(cookieName(HTTPS)).toBe('__Host-zd_board');
-    expect(sessionCookie(HTTPS, 'abc', 60)).toBe('__Host-zd_board=abc; Path=/; Max-Age=60; HttpOnly; SameSite=Strict; Secure');
-    expect(sessionCookie(HTTP, '', 0)).toBe('zd_board=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict');
+    expect(sessionCookie(HTTPS, 'abc', 60)).toBe('__Host-zd_board=abc; Path=/; Max-Age=60; HttpOnly; SameSite=Lax; Secure');
+    expect(sessionCookie(HTTP, '', 0)).toBe('zd_board=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax');
   });
 
   it('reads one cookie among several', () => {
@@ -37,14 +37,12 @@ describe('board sign-in', () => {
     expect(crossSite(post({}), HTTPS)).toBe(false); // curl / scripts
   });
 
-  it('locks a client out only after the limit, and only inside the 15-minute window', async () => {
-    const db = (row: { window_start: number; failures: number } | null) =>
-      ({ prepare: () => ({ bind: () => ({ first: async () => row }) }) }) as unknown as D1Database;
+  it('checks the first 10 attempts in a window, refuses the 11th unchecked, and forgets after 15 minutes', () => {
     const now = 10_000_000;
-    expect(await lockedFor(db(null), 'k', now)).toBe(0);
-    expect(await lockedFor(db({ window_start: now - 60_000, failures: LOGIN_MAX_FAILURES - 1 }), 'k', now)).toBe(0);
-    expect(await lockedFor(db({ window_start: now - 60_000, failures: LOGIN_MAX_FAILURES }), 'k', now)).toBe((LOGIN_WINDOW_MS - 60_000) / 1000);
-    expect(await lockedFor(db({ window_start: now - LOGIN_WINDOW_MS, failures: 99 }), 'k', now)).toBe(0);
+    expect(lockoutSeconds(null, now)).toBe(0);
+    expect(lockoutSeconds({ window_start: now - 60_000, failures: LOGIN_MAX_FAILURES }, now)).toBe(0); // 10th attempt is checked
+    expect(lockoutSeconds({ window_start: now - 60_000, failures: LOGIN_MAX_FAILURES + 1 }, now)).toBe((LOGIN_WINDOW_MS - 60_000) / 1000);
+    expect(lockoutSeconds({ window_start: now - LOGIN_WINDOW_MS + 100, failures: 50 }, now)).toBe(1); // never "0 seconds" while locked
   });
 });
 
@@ -110,5 +108,21 @@ describe('job progress', () => {
   });
   it('a cancelled job ends at the cancellation', () => {
     expect(progressSteps({ ...base, status: 'cancelled' }, []).map((s) => s.label)).toEqual(['Booked', 'Cancelled']);
+  });
+});
+
+describe('flash messages after an action', () => {
+  it('shows only messages the server signed (a crafted ?msg= link shows nothing)', async () => {
+    const secret = 'a-board-token-of-16+chars';
+    const forged = new URL('https://x/board?msg=Payment%20approved&sig=0000');
+    expect(await readFlash(forged, secret)).toBeNull();
+    expect(await readFlash(new URL('https://x/board?msg=hi'), secret)).toBeNull();
+    // Sign the way the server does, then tamper with the tone: rejected.
+    const { sha256Hex } = await import('../src/web/session');
+    const sig = (await sha256Hex(`zuma-board-flash:${secret}:i:ZD-AAAAA: mark dispatched.`)).slice(0, 24);
+    const good = new URL(`https://x/board?msg=${encodeURIComponent('ZD-AAAAA: mark dispatched.')}&sig=${sig}`);
+    expect(await readFlash(good, secret)).toEqual({ msg: 'ZD-AAAAA: mark dispatched.', error: false });
+    good.searchParams.set('tone', 'error');
+    expect(await readFlash(good, secret)).toBeNull();
   });
 });

@@ -28,7 +28,7 @@ so the model can never invent a location.
 4. **Service area:** within 40 km of the Central Business District. Anything outside comes back
    `out_of_area` (it is still resolved, so the customer is told what we found).
 5. **Stable answers:** the same text returns the same `place_id`s for 6 hours. Chord re-asks every turn
-   (see §9), so this keeps quotes and bookings stable.
+   (see §10), so this keeps quotes and bookings stable.
 
 **Statuses:** `confirmed` · `ambiguous` · `needs_detail` · `not_found` · `out_of_area`. Each carries a
 `what_to_do` for the model.
@@ -188,7 +188,7 @@ components) is written down in [`design.md`](../design.md).
 
 **Sign-in (`/board/login`).**
 - A real sign-in page, not the browser's Basic-auth popup. The password is the `BOARD_TOKEN` secret.
-- A session lasts 12 hours. The cookie is `__Host-zd_board`: HttpOnly, Secure, SameSite=Strict, 32 random
+- A session lasts 12 hours. The cookie is `__Host-zd_board`: HttpOnly, Secure, SameSite=Lax (so links from the sheet open signed in), 32 random
   bytes. D1 stores only its SHA-256 (`board_sessions`, migration 0007).
 - **Sign out** deletes the session row, so a copied cookie stops working at once.
 - **Rotating `BOARD_TOKEN` signs everyone out.** Each session stores a fingerprint of the password it was
@@ -221,6 +221,7 @@ components) is written down in [`design.md`](../design.md).
 - **Each row:** job id and time, status (and how it was paid), route, package and distance, amount,
   sender → recipient with phone and handover code, and the actions allowed for that status.
 - **After an action** you return to the same filtered view, with a one-line confirmation or problem.
+  The line is signed by the server, so a crafted `?msg=` link cannot show text on the board.
 - **Auto-refresh is off by default.** A 30 s refresh used to wipe whatever you were typing into the search
   box. "Turn on auto-refresh" adds `live=1`, which filters and actions keep.
 - **Panels:**
@@ -241,7 +242,8 @@ components) is written down in [`design.md`](../design.md).
   link or transfer account (with expiry), and when it was paid.
 - **Paystack notifications** for this job, and the **full timeline** (every event, who did it, the detail).
 
-**Actions:** mark dispatched → delivered, approve a reviewed payment, cancel.
+**Actions:** mark dispatched → delivered, approve a reviewed payment (records the paid time and
+"via dispatcher approval"), cancel.
 
 **Layout:**
 - Light and dark (follows the device setting).
@@ -310,6 +312,8 @@ tools no conversation or customer id. The server is built so this cannot cause w
 | `MCP_BEARER_TOKEN`, `BOARD_TOKEN` | secrets | required |
 | `CHORD_WEBHOOK_SECRET` | secret | optional (escalation alerts) |
 | `OPENROUTE_BASIC_KEY`, `GOOGLE_MAPS_API_KEY` | secrets | optional (provider skipped if unset) |
+| `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON` | secrets | optional (sheet mirror, §12) |
+| `SHEET_MIRROR_ALLOW_LOCAL` | `.env` | unset (local servers never write to the sheet) |
 
 ## 12. Google Sheet mirror (owner's view on the phone)
 

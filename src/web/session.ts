@@ -35,7 +35,9 @@ export function readCookie(request: Request, name: string): string | null {
 
 export function sessionCookie(url: URL, value: string, maxAgeSeconds: number): string {
   const secure = url.protocol === 'https:' ? '; Secure' : '';
-  return `${cookieName(url)}=${value}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Strict${secure}`;
+  // Lax, not Strict: a link from the sheet, chat or email is a cross-site navigation and must arrive
+  // signed in. Lax still withholds the cookie from cross-site POSTs, and crossSite() refuses them anyway.
+  return `${cookieName(url)}=${value}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Lax${secure}`;
 }
 
 /** Only same-site board paths may be a post-login destination (no open redirect). */
@@ -85,7 +87,7 @@ export async function endSession(db: D1Database, request: Request, url: URL): Pr
  *   ("none" means the user typed or reloaded it themselves).
  * - Otherwise a real Origin must match. "Origin: null" is what browsers send under a strict
  *   referrer policy or from sandboxed frames, so it is not trusted as same-site.
- * - Neither header (curl, scripts): allowed; the session cookie is SameSite=Strict anyway.
+ * - Neither header (curl, scripts): allowed; the session cookie is SameSite=Lax (never sent on cross-site posts).
  */
 export function crossSite(request: Request, url: URL): boolean {
   const site = request.headers.get('Sec-Fetch-Site');
@@ -100,27 +102,30 @@ export async function clientKey(request: Request): Promise<string> {
   return sha256Hex(`zuma-board-ip:${request.headers.get('CF-Connecting-IP') ?? 'unknown'}`);
 }
 
-/** Seconds until this client may try again, or 0 if it may try now. */
-export async function lockedFor(db: D1Database, key: string, now: number): Promise<number> {
+/**
+ * Counts this sign-in attempt and says whether it may be checked. The count is one atomic UPSERT
+ * made BEFORE the password is compared, so parallel guesses cannot all slip under the limit.
+ * A window older than 15 minutes starts again at 1. A correct password clears the count.
+ * Returns the seconds until this client may try again, or 0 if this attempt may be checked.
+ */
+export async function countAttempt(db: D1Database, key: string, now: number): Promise<number> {
   const row = await db
-    .prepare('SELECT window_start, failures FROM board_login_failures WHERE ip_hash = ?')
-    .bind(key)
-    .first<{ window_start: number; failures: number }>();
-  if (!row || now - row.window_start >= LOGIN_WINDOW_MS || row.failures < LOGIN_MAX_FAILURES) return 0;
-  return Math.ceil((row.window_start + LOGIN_WINDOW_MS - now) / 1000);
-}
-
-/** Counts a failure; a window older than 15 minutes starts again at 1. */
-export async function recordFailure(db: D1Database, key: string, now: number): Promise<void> {
-  await db
     .prepare(
       `INSERT INTO board_login_failures (ip_hash, window_start, failures) VALUES (?1, ?2, 1)
        ON CONFLICT (ip_hash) DO UPDATE SET
          failures     = CASE WHEN ?2 - window_start >= ?3 THEN 1 ELSE failures + 1 END,
-         window_start = CASE WHEN ?2 - window_start >= ?3 THEN ?2 ELSE window_start END`,
+         window_start = CASE WHEN ?2 - window_start >= ?3 THEN ?2 ELSE window_start END
+       RETURNING window_start, failures`,
     )
     .bind(key, now, LOGIN_WINDOW_MS)
-    .run();
+    .first<{ window_start: number; failures: number }>();
+  return lockoutSeconds(row, now);
+}
+
+/** Pure part of countAttempt: this is attempt number `failures` in a window that began at `window_start`. */
+export function lockoutSeconds(row: { window_start: number; failures: number } | null, now: number): number {
+  if (!row || row.failures <= LOGIN_MAX_FAILURES) return 0;
+  return Math.max(1, Math.ceil((row.window_start + LOGIN_WINDOW_MS - now) / 1000));
 }
 
 export async function clearFailures(db: D1Database, key: string, now: number): Promise<void> {

@@ -6,7 +6,7 @@ import { log } from '../lib/log';
 import { footLine, page } from './layout';
 import { board } from './pages';
 import {
-  clearFailures, clientKey, createSession, crossSite, endSession, LOGIN_MAX_FAILURES, lockedFor, recordFailure,
+  clearFailures, clientKey, countAttempt, createSession, crossSite, endSession, LOGIN_MAX_FAILURES,
   safeNext, SESSION_TTL_MS, sessionCookie, sessionValid,
 } from './session';
 
@@ -40,14 +40,14 @@ export async function boardGate(request: Request, url: URL, env: Env, config: Co
   let viaBasic = false;
   if (basic !== null) {
     const key = await clientKey(request);
-    const wait = await lockedFor(env.DB, key, now);
+    const wait = await countAttempt(env.DB, key, now);
     if (wait > 0) return plain(429, 'Too many wrong passwords. Try again later.', { 'Retry-After': String(wait) });
     viaBasic = await secretsMatch(basic, config.boardToken);
     if (!viaBasic) {
-      await recordFailure(env.DB, key, now);
       log('warn', 'board_basic_failed', { request_id: requestId });
       return plain(401, 'Wrong board password.');
     }
+    await clearFailures(env.DB, key, now);
   }
   if (!viaBasic && !(await sessionValid(env.DB, request, url, config.boardToken, now))) {
     if (request.method === 'GET' || request.method === 'HEAD') {
@@ -84,7 +84,7 @@ async function signIn(request: Request, url: URL, env: Env, config: Config, now:
   }
   const next = safeNext(String(form.get('next') ?? ''));
   const key = await clientKey(request);
-  const wait = await lockedFor(env.DB, key, now);
+  const wait = await countAttempt(env.DB, key, now);
   if (wait > 0) {
     log('warn', 'board_login_locked', { request_id: requestId });
     return loginPage(config, {
@@ -97,7 +97,6 @@ async function signIn(request: Request, url: URL, env: Env, config: Config, now:
   }
   const password = String(form.get('password') ?? '').slice(0, 256);
   if (!password || !(await secretsMatch(password, config.boardToken))) {
-    await recordFailure(env.DB, key, now);
     log('warn', 'board_login_failed', { request_id: requestId, empty: !password });
     return loginPage(config, { next, error: password ? 'That password is not right.' : 'Enter the board password.', status: 401 });
   }

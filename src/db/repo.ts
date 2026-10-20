@@ -141,17 +141,19 @@ export async function transitionJob(
   extraBinds: unknown[] = [],
 ): Promise<boolean> {
   const placeholders = from.map(() => '?').join(', ');
-  // One transaction: the event row is written only if the UPDATE actually changed a row
-  // (changes() refers to the previous statement on the same connection inside a batch).
-  const [update] = await db.batch([
+  // One transaction (a D1 batch). The event row is inserted first, under exactly the UPDATE's
+  // condition, so it is written only when the update will change the row, and it records the
+  // job's real previous status (not the list of statuses it was allowed to come from).
+  const [, update] = await db.batch([
+    db
+      .prepare(
+        `INSERT INTO job_events (job_id, type, from_status, to_status, actor, detail_json, created_at)
+         SELECT id, 'status_changed', status, ?, ?, ?, ? FROM jobs WHERE id = ? AND status IN (${placeholders})`,
+      )
+      .bind(to, actor, detail === undefined ? null : JSON.stringify(detail), now, jobId, ...from),
     db
       .prepare(`UPDATE jobs SET status = ?, version = version + 1, updated_at = ?${extraSet} WHERE id = ? AND status IN (${placeholders})`)
       .bind(to, now, ...extraBinds, jobId, ...from),
-    db
-      .prepare(
-        'INSERT INTO job_events (job_id, type, from_status, to_status, actor, detail_json, created_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1',
-      )
-      .bind(jobId, 'status_changed', from.join('|'), to, actor, detail === undefined ? null : JSON.stringify(detail), now),
   ]);
   return update?.meta.changes === 1;
 }
