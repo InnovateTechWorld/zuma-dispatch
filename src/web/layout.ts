@@ -207,3 +207,13 @@ export function topBar(businessName: string, end: string): string {
 export function footLine(text: string): string {
   return `<footer class="wrap"><p class="foot">${text}</p></footer>`;
 }
+
+/** The board's top bar: wordmark, test-mode chip, Handovers link and Sign out (session users only). */
+export function boardBar(businessName: string, signedIn: boolean): string {
+  return topBar(
+    businessName,
+    `<a href="/board/handovers">Handovers</a><span class="chip hide-sm">Test mode</span>${
+      signedIn ? '<form class="inline" method="post" action="/board/logout"><button class="btn btn--sm btn--ghost" type="submit">Sign out</button></form>' : ''
+    }`,
+  );
+}

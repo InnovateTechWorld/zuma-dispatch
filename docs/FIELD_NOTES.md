@@ -653,3 +653,27 @@ did not hold.
 
 **Lesson.** The scripted tests passed; a person typing naturally ("my bank app is acting up", "i have
 sent it") found four product gaps in nine messages. Test with real phrasing, not only the happy path.
+
+## 20. Can we choose the AI model? And answering handovers from our own board
+
+**The question (from the user).** "Does Chord allow us to choose the AI models we use?"
+
+**What Chord's docs say** (read 2026-10-21):
+- No. Model routing is operator-owned. `docs/usage`: "The public model request field is retired. Omit it:
+  a nonblank value returns 400 MODEL_OVERRIDE_RETIRED". Chat replies omit `model_used`, and the
+  OpenAI-compatible endpoint answers with the label `chord-managed`.
+- `docs/workspace-governance`: "operator pricing, model routing and provider costs remain in the
+  platform admin".
+- Usage reports give tokens and credits per teammate, key and day, but never model names or provider
+  costs.
+- *Consequence for us:* behaviour has to be steered with the skill and tool results (#13, #18), not by
+  picking a model. Credits are the only cost lever: about 0.11 per AI turn here.
+
+**Handover console on the board.** Chord's threads API is designed for exactly this ("If you are building an
+operator console, those five are your surface": take-over, hand-back, pause, resume, messages).
+- The board now reads the whole conversation and replies as the team.
+- **Key detail:** an operator message is only accepted while the chat is human-held; otherwise `409
+  INVALID_STATE`. So the board shows a Take over button instead of a reply box when Zuma holds the chat.
+- Chord's own handover notice ("One moment — connecting you with a teammate.") is in the transcript as a
+  system turn marked `sent`, though the simulator did not display it (#19). That is why we also post our
+  own acknowledgement.

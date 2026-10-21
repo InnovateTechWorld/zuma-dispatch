@@ -451,6 +451,47 @@ and the browser runs in `docs/EDGE_CASES.md` B1–B16.
 - *The skill* also tells the agent to say "I'm connecting you to our support team now" in its own reply,
   before calling the handover tool.
 
+**Replying from the board** (`/board/handovers`, `src/web/handovers.ts`; Chord scopes `thread:read` and
+`thread:write`).
+- **Inbox:**
+  - Every chat waiting for a person, live from Chord (`GET /v1/threads?control_state=human_active,paused`),
+    with the customer, channel, last message and why Zuma handed over.
+  - Earlier handovers below.
+  - The board's "Handed to a human" panel and the "waiting on you" strip link here.
+- **Conversation page:** the whole transcript (`GET /v1/threads/{id}/turns`, 40 at a time, "Show earlier
+  messages" pages back), labelled Customer / Zuma (AI) / Team / Notice, with times. A side panel shows the
+  state, customer, channel, the linked job (from the handover reason or the chat) and whether the customer
+  was told.
+- **Actions** (each a form, no JavaScript):
+
+  | Button | Chord call | When it shows |
+  |---|---|---|
+  | Send | `POST /messages {text, operator_user_id: "zuma-board-dispatcher"}` | a person holds the chat |
+  | Send and hand back | messages, then `hand-back` (never hands back if the send failed) | a person holds the chat |
+  | Hand back to Zuma without replying | `hand-back` | a person holds the chat |
+  | Take over | `take-over` (the customer sees Chord's "connecting you with a teammate") | Zuma holds it, or it is paused |
+  | Resume Zuma | `resume` | paused |
+
+- **Edge cases:**
+
+  | Case | What happens |
+  |---|---|
+  | Double click or refresh | A server-issued nonce per form is claimed in `board_replies` (migration 0012) before anything is sent: "Already done: that form was submitted twice" |
+  | Reply while Zuma holds the chat | Chord's 409 becomes "Take it over first" |
+  | Already handed back | 409 → "already handed back" |
+  | Empty reply, or over 4,000 characters (Chord's limit) | Refused before sending; Windows line endings normalised |
+  | The channel refused the message (`delivery_status: failed`) | Says so; the bubble shows "Not delivered" |
+  | Key without `thread:write` | "The key lacks thread:write" |
+  | Unknown chat | 404 |
+  | Chord down | Inbox falls back to the webhook log; nothing changes |
+  | A form posted from another site | Refused (same CSRF check as the board) |
+  | A local dev server | Never posts into real chats (`CHORD_NOTICES_ALLOW_LOCAL`) |
+  | Two dispatchers | Each action reads Chord's answer; a 409 explains the current state |
+
+- After an action you land back on the reply box with the result beside it.
+- **Cost:** a person's reply runs no AI, so it uses no model credits (verified below). A handed-back chat's
+  next customer message is a normal AI turn.
+
 ## 10. Conversation memory (Chord-specific behaviour)
 
 Chord gives the model only the text of the last 30 turns, not earlier tool results, and passes MCP

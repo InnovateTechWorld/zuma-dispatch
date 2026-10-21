@@ -14,7 +14,12 @@ import {
   breakdown, CHART_CSS, lastSevenDays, pct, percentiles, pipelineChart, STATUS_ORDER, watDayStart, weekChart,
   type DayRow,
 } from './charts';
-import { footLine, notice, page, statusPill, time, topBar } from './layout';
+import { boardBar as barFor, footLine, notice, page, statusPill, time } from './layout';
+import { backTo, readFlash } from './flash';
+import { handovers } from './handovers';
+import { chord, noticeConfig } from '../chord/notices';
+export { readFlash } from './flash';
+const bar = (config: Config, session: { signedIn: boolean }) => barFor(config.businessName, session.signedIn);
 import { crossSite, safeNext, sha256Hex } from './session';
 import { SERVICE_STATES, stateOf, type ServiceState } from '../business/states';
 import { assignRider, riderById } from '../business/riders';
@@ -195,6 +200,16 @@ const BOARD_CSS = `
 .jobs .route{min-width:14rem}
 .jobs td.act{white-space:nowrap}
 .panels .section:first-child{border-top:0}
+.hand-list{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-2xs)}
+.hand-list a{display:grid;gap:var(--space-3xs);padding:var(--space-xs) var(--space-sm);border:1px solid var(--color-rule);border-radius:var(--radius-lg);background:var(--color-surface);color:var(--color-ink-2);text-decoration:none}
+.hand-list a:hover{border-color:var(--color-rule-2)}
+.hand-list__top{display:flex;flex-wrap:wrap;gap:var(--space-2xs) var(--space-xs);align-items:center;font-size:var(--text-xs)}
+.hand-list__reason{font-size:var(--text-sm);color:var(--color-ink);overflow-wrap:anywhere}
+.hand-list__told{font-size:var(--text-xs)}
+.state{display:inline-flex;align-items:center;gap:var(--space-3xs);height:1.5rem;padding:0 var(--space-2xs);border:1px solid currentColor;border-radius:999px;font:500 var(--text-xs)/1 var(--font-body);white-space:nowrap}
+.state::before{content:"";width:.375rem;height:.375rem;border-radius:50%;background:currentColor}
+.state--human_active{color:var(--color-accent-text)}
+.state--agent_active{color:var(--color-muted)}
 @media (max-width:48rem){
   .head{align-items:flex-start}
   .search{flex-wrap:wrap}.search .input{flex-basis:100%}
@@ -216,6 +231,10 @@ ${CHART_CSS}`;
 interface Counted { status: string; n: number }
 
 export async function board(request: Request, url: URL, env: Env, config: Config, execCtx: ExecutionContext, session: { signedIn: boolean }): Promise<Response> {
+  if (url.pathname.startsWith('/board/handovers')) {
+    const r = await handovers(request, url, env, config, session);
+    if (r) return r;
+  }
   if (request.method === 'POST' && url.pathname === '/board/sheet/resync') return sheetResync(request, url, env);
   if (request.method === 'POST') return boardAction(request, url, env, execCtx);
   const detail = /^\/board\/jobs\/(ZD-[0-9A-Z]{5})$/.exec(url.pathname)?.[1];
@@ -305,12 +324,18 @@ export async function board(request: Request, url: URL, env: Env, config: Config
 
   const noticeCounts = (noticeRows2?.results ?? []) as unknown as { state: string; n: number }[];
   // ---- what needs a person
-  const recentEscalations = escalationRows.filter((e) => now - e.received_at < 86_400_000).length;
+  // Chats waiting for a person right now, live from Chord (2.5 s budget); the webhook log is the fallback.
+  const ncfg = noticeConfig(env);
+  const live = ncfg
+    ? await chord<{ threads?: { id: string }[] }>(ncfg, `/v1/threads?${new URLSearchParams({ workspace_id: ncfg.workspaceId, control_state: 'human_active,paused', limit: '50' })}`, 2500)
+    : null;
+  const waitingIds = live?.ok ? new Set((live.data.threads ?? []).map((t) => t.id)) : null;
+  const recentEscalations = waitingIds ? waitingIds.size : escalationRows.filter((e) => now - e.received_at < 86_400_000).length;
   const attention = [
     { n: statusCounts.paid ?? 0, label: 'paid, ready to dispatch', href: listHref({ status: 'paid', live: f.live }), urgent: false },
     { n: statusCounts.dispatched ?? 0, label: 'out for delivery', href: listHref({ status: 'dispatched', live: f.live }), urgent: false },
     { n: statusCounts.amount_mismatch ?? 0, label: 'amount mismatch to review', href: listHref({ status: 'amount_mismatch', live: f.live }), urgent: true },
-    { n: recentEscalations, label: 'handed to a human today', href: '#handovers', urgent: true },
+    { n: recentEscalations, label: waitingIds ? (recentEscalations === 1 ? 'chat waiting for a person' : 'chats waiting for a person') : 'handed to a human today', href: '/board/handovers', urgent: true },
     { n: noticeCounts.find((c) => c.state === 'stuck')?.n ?? 0, label: 'chat left with a human after a payment notice (hand it back in Chord)', href: '#cnp-h', urgent: true },
   ].filter((a) => a.n > 0);
   const attentionHtml = attention.length
@@ -383,9 +408,16 @@ ${resultLine}
   // ---- secondary panels
   const panelTable = (head: string[], body: string) =>
     `<div class="table-wrap"><table><thead><tr>${head.map((x) => `<th>${x}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
-  const handoverHtml = `<section class="section" id="handovers" aria-labelledby="handovers-h"><div class="section__head"><h3 id="handovers-h">Handed to a human</h3><p class="muted">From Chord's webhook. Reply in Chord → Teammates → Zuma → Escalated.</p></div>${
+  const handoverHtml = `<section class="section" id="handovers" aria-labelledby="handovers-h"><div class="section__head"><h3 id="handovers-h">Handed to a human</h3><p class="muted">Read the conversation, reply as the team and hand back to Zuma. <a href="/board/handovers">All handovers →</a></p></div>${
     escalationRows.length
-      ? panelTable(['When', 'Thread', 'By', 'Reason', 'Customer told'], escalationRows.map((e) => `<tr><td>${time(e.received_at)}</td><td><code>${h(e.thread_id ?? '?')}</code></td><td>${h(e.initiator ?? '')}</td><td>${h(e.reason ?? '')}</td><td>${e.ack === 'sent' ? 'yes' : h(e.ack ?? '—')}</td></tr>`).join(''))
+      ? `<ul class="hand-list">${escalationRows
+          .slice(0, 5)
+          .map((e) => {
+            const waiting = waitingIds ? (e.thread_id ? waitingIds.has(e.thread_id) : false) : null;
+            const job = /\bZD-[0-9A-Z]{5}\b/.exec(e.reason ?? '')?.[0];
+            return `<li><a href="/board/handovers/${h(e.thread_id ?? '')}#reply"><span class="hand-list__top"><span class="${waiting ? 'state state--human_active' : 'state state--agent_active'}">${waiting === null ? 'Handed over' : waiting ? 'Waiting for you' : 'Back with Zuma'}</span><span class="muted">${time(e.received_at)}${job ? ` · ${h(job)}` : ''}</span></span><span class="hand-list__reason">${h((e.reason ?? '').slice(0, 160))}${(e.reason ?? '').length > 160 ? '…' : ''}</span><span class="muted hand-list__told">Customer told: ${e.ack === 'sent' ? 'yes' : h(e.ack ?? '—')}</span></a></li>`;
+          })
+          .join('')}</ul>`
       : `<p class="muted">${env.CHORD_WEBHOOK_SECRET ? 'No handovers yet.' : 'Chord webhook not configured (CHORD_WEBHOOK_SECRET).'}</p>`
   }</section>`;
   const reviewHtml = `<section class="section" aria-labelledby="review-h"><div class="section__head"><h3 id="review-h">Payments needing review</h3><p class="muted">Paystack said success but the amount, currency or reference did not match.</p></div>${
@@ -450,44 +482,11 @@ function safeReason(detailJson: string | null): string {
   }
 }
 
-function bar(config: Config, session: { signedIn: boolean }): string {
-  return topBar(
-    config.businessName,
-    `<span class="chip hide-sm">Test mode</span>${
-      session.signedIn ? '<form class="inline" method="post" action="/board/logout"><button class="btn btn--sm btn--ghost" type="submit">Sign out</button></form>' : ''
-    }`,
-  );
-}
 
 function blocked(): Response {
   return page({ title: 'Forbidden', status: 403, body: '<main class="wrap head"><div><h1>Request blocked</h1><p class="muted">This form was submitted from another site. Open the board directly and try again.</p></div></main>' });
 }
 
-/**
- * The one-line message shown after an action travels in the redirect URL, signed with a key derived
- * from BOARD_TOKEN. A crafted link (?msg=Approved…) therefore cannot put words on the signed-in board.
- */
-async function flashSig(secret: string, msg: string, error: boolean): Promise<string> {
-  return (await sha256Hex(`zuma-board-flash:${secret}:${error ? 'e' : 'i'}:${msg}`)).slice(0, 24);
-}
-
-/** The verified flash message for this page, or null if absent or unsigned. */
-export async function readFlash(url: URL, secret: string): Promise<{ msg: string; error: boolean } | null> {
-  const msg = url.searchParams.get('msg');
-  const sig = url.searchParams.get('sig');
-  if (!msg || !sig || msg.length > 300) return null;
-  const error = url.searchParams.get('tone') === 'error';
-  return sig === (await flashSig(secret, msg, error)) ? { msg, error } : null;
-}
-
-async function backTo(url: URL, env: Env, path: string, msg: string, error: boolean): Promise<Response> {
-  const target = new URL(path, url.origin);
-  const text = msg.slice(0, 300);
-  target.searchParams.set('msg', text);
-  if (error) target.searchParams.set('tone', 'error');
-  target.searchParams.set('sig', await flashSig(env.BOARD_TOKEN?.trim() ?? '', text, error));
-  return Response.redirect(target.toString(), 303);
-}
 
 async function sheetResync(request: Request, url: URL, env: Env): Promise<Response> {
   if (crossSite(request, url)) return blocked();
@@ -628,6 +627,9 @@ async function jobDetail(id: string, url: URL, env: Env, config: Config, session
     pickup_place_id: string; dropoff_place_id: string;
   }>();
   const place = (pid?: string) => (pid ? env.DB.prepare('SELECT * FROM places WHERE id = ?').bind(pid).first<PlaceDetail>() : Promise.resolve(null));
+  const handover = await env.DB.prepare(
+    `SELECT thread_id, received_at FROM chord_events WHERE type = 'conversation.escalated' AND thread_id IS NOT NULL AND reason LIKE ? ORDER BY received_at DESC LIMIT 1`,
+  ).bind(`%${id}%`).first<{ thread_id: string; received_at: number }>().catch(() => null);
   const [pickup, dropoff, payments, events, notices, chatNotice] = await Promise.all([
     place(quote?.pickup_place_id),
     place(quote?.dropoff_place_id),
@@ -720,6 +722,7 @@ ${flash ? `<div class="flash" style="margin-bottom:var(--space-md)">${notice(fla
 ${quoteHtml}
 ${placeBlock('Pickup', pickup)}${placeBlock('Drop-off', dropoff)}
 </div>
+${handover ? `<section class="section" aria-labelledby="hv-h"><div class="section__head"><h3 id="hv-h">Handed to a human</h3><p class="muted">Zuma handed this customer to the team ${time(handover.received_at)}.</p></div><a class="btn" href="/board/handovers/${h(handover.thread_id)}#reply">Open the conversation</a></section>` : ''}
 ${chatNoticeSection(job, chatNotice, noticeStatus(env) === 'enabled')}
 <section class="section" aria-labelledby="pay-h"><div class="section__head"><h3 id="pay-h">Payment attempts</h3></div>${
       payRows

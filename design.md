@@ -77,6 +77,17 @@ Headings are never italic. Display line-height is 1.1. Numbers use tabular figur
   text or table equivalent. Empty data gets a sentence, never a row of zeros pretending to be a chart.
 - **Tables:** mono uppercase heads. On phones (< 48 rem) the jobs table becomes two-column cards with
   labels.
+- **Handover conversation** (`src/web/handovers.ts`): chat bubbles on `--color-paper-2`.
+  - Customer: left, surface.
+  - Zuma (AI): right, surface.
+  - Team: right, `--color-accent-wash` with an accent border, the one accent in the transcript.
+  - Notices (Chord's and ours): centred, dashed, muted.
+  - Each bubble has a mono meta line (who · time WAT) and pre-wrapped text. An undelivered message gets a
+    red border and a "Not delivered" line.
+  - The composer is a textarea plus two buttons: Send (primary) and Send and hand back (secondary).
+  - A side panel (state chip, customer, channel, job link) comes first on narrow screens.
+- **State chips** (`.state`): Waiting for you (accent text), Back with Zuma (muted), Paused (amber).
+  Same shape as status pills.
 - **Progress steps:** Booked → Paid → Dispatched → Delivered, horizontal on desktop and vertical on phones.
   A stopped state (payment failed, amount mismatch, cancelled) is shown in red.
 

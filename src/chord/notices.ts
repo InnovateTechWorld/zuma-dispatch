@@ -140,7 +140,7 @@ export function platformFor(thread: ThreadRow): string {
 }
 
 // ------------------------------------------------------------------ Chord API
-function chordError(r: HttpResult<unknown>): string {
+export function chordError(r: HttpResult<unknown>): string {
   if (r.ok) return '';
   if (r.failure !== 'http') return `chord_${r.failure}`;
   let msg = '';
@@ -152,7 +152,7 @@ function chordError(r: HttpResult<unknown>): string {
   return `chord_http_${r.status}${msg ? `: ${msg.slice(0, 120)}` : ''}`;
 }
 
-async function chord<T>(cfg: NoticeConfig, path: string, timeoutMs: number, body?: unknown): Promise<HttpResult<T>> {
+export async function chord<T>(cfg: NoticeConfig, path: string, timeoutMs: number, body?: unknown): Promise<HttpResult<T>> {
   // POSTs here always carry a JSON body (Chord's transition endpoints accept {} as "no options").
   return fetchJson<T>(`${cfg.base}${path}`, {
     method: body === undefined ? 'GET' : 'POST',

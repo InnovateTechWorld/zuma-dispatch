@@ -67,6 +67,13 @@ Every row names the code that handles the case and the evidence that it works.
 | P3 | Customer asks after payment "when will the rider come?" | Rider assigned at payment; confirmation names rider, vehicle, plate and gives the code | U `chooseRider`, message tests; local approve run (Tunde, LSD 553 XA) |
 | P4 | `verify_payment` on a job already paid (e.g. a dispatcher approved it) | Returns the paid confirmation; never "no link, send one" or "under review" | Local: was `NO_PAYMENT_LINK`, now paid + rider + code |
 | P5 | Two paths confirm the same payment at once | One rider (`WHERE rider_id IS NULL`), one `rider_assigned` event | Code |
+| H2 | Dispatcher double-clicks Send or refreshes after sending | Form nonce claimed in `board_replies` first; the second submit sends nothing | U |
+| H3 | Reply to a chat Zuma holds | Chord 409 → "Take it over first"; a Take over button is shown | U |
+| H4 | Message refused by the channel | "Not delivered" shown with Chord's reason | U |
+| H5 | Send and hand back, send fails | Never hands back | U |
+| H6 | Empty / over-4,000-character reply | Refused before any Chord call | U |
+| H7 | Reply from a local dev server | Refused (local guard) | U; local browser run |
+| H8 | Already handed back by someone else | 409 → explained, nothing changes | U |
 | H1 | Handed to a human but the customer sees nothing | Server posts "You're now connected to the Zuma Dispatch support team…" on the escalation webhook; board column "Customer told" | Local signed webhook: agent → attempted (skipped locally), human take-over → not sent |
 | C7 | The agent retracts or apologises for correct earlier answers (it can't see earlier tool results) | `history_note` in every tool result (context only, never mentioned); "Quote ref Q-…" in the quote text; skill: no unneeded apologies, never talk about tools or earlier messages | Simulator: v6–v8 retracted or apologised; v9 clean on the same 3 turns (FIELD_NOTES #18) |
 | ST1 | Lagos → Abuja (or Abuja → Lagos) | `quote_delivery` → `INTERSTATE_NOT_SUPPORTED`; the agent offers a human | E; simulator: declined before quoting, human offered |
