@@ -1,9 +1,10 @@
 import { pickupWindow, watTime } from '../business/profile';
-import { eventStmt, getPayment, listPayments, type JobRow, type PaymentRow } from '../db/repo';
+import { eventStmt, getJob, getPayment, listPayments, type JobRow, type PaymentRow } from '../db/repo';
 import { paymentReference } from '../lib/ids';
 import { log } from '../lib/log';
 import { formatNaira } from '../lib/money';
 import { afterPaymentTiming, paymentReceivedMessage } from '../business/messages';
+import { assignRider, riderView } from '../business/riders';
 import { ToolError, type ToolContext } from '../mcp/tooling';
 import { chargeBankTransfer, initializeTransaction } from '../payments/paystack';
 import { checkPayments, isAwaitingTransfer, type PaymentCheck } from '../payments/service';
@@ -217,12 +218,22 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
 /** Pickup timing worded for after payment (the quote-time wording says "as soon as payment is confirmed"). */
 // ------------------------------------------------------------------ verify_payment
 export async function verifyPayment(args: { job_id: string }, ctx: ToolContext): Promise<Record<string, unknown>> {
-  const job = await loadJob(ctx, args.job_id);
-  if (job.status === 'dispatched' || job.status === 'delivered') {
+  let job = await loadJob(ctx, args.job_id);
+  // Already paid by our records (webhook, return page, an earlier check, or a dispatcher's approval):
+  // never re-ask Paystack and risk "no link, send one" or "under review" to a customer who has paid.
+  // A second payment for the same job is still caught by the Paystack webhook.
+  if (job.status === 'paid' || job.status === 'dispatched' || job.status === 'delivered') {
+    if (!job.rider_id && job.status === 'paid') {
+      await assignRider(ctx.db, job.id, ctx.now()); // jobs paid before riders existed
+      job = (await getJob(ctx.db, job.id)) ?? job;
+    }
     return {
-      job_id: job.id, payment_status: 'paid', job_status: job.status,
-      pickup_timing: job.status === 'dispatched' ? 'A rider already has the package.' : 'The package has been delivered.',
-      what_to_do: 'It is paid. Tell the customer the delivery status instead (get_job_status).',
+      job_id: job.id, payment_status: 'paid', job_status: job.status, amount: formatNaira(job.amount_kobo),
+      pickup_timing: job.status === 'paid' ? afterPaymentTiming(ctx.now(), Boolean(job.rider_id)) : job.status === 'dispatched' ? 'A rider already has the package.' : 'The package has been delivered.',
+      handover_code: job.handover_code,
+      rider: riderView(job.rider_id),
+      message_for_customer: paymentReceivedMessage(job, ctx.now()),
+      what_to_do: 'It is paid. Send message_for_customer, then answer their question (get_job_status for the latest).',
     };
   }
 
@@ -251,11 +262,12 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
         ...base,
         payment_status: 'paid',
         handover_code: check.job.handover_code,
-        pickup_timing: afterPaymentTiming(now),
+        rider: riderView(check.job.rider_id),
+        pickup_timing: afterPaymentTiming(now, Boolean(check.job.rider_id)),
         // Ready-to-send text: in a live test the model once dropped the confirmation and the timing
         // and replied only "keep the envelope ready" (FIELD_NOTES #13). A full sentence to pass on is harder to drop.
         message_for_customer: paymentReceivedMessage(check.job, now),
-        what_to_do: 'Payment confirmed. Send message_for_customer (you may adjust the wording, but keep the payment confirmation, the pickup timing and the code), then answer anything else they asked.',
+        what_to_do: 'Payment confirmed. Send message_for_customer (you may adjust the wording, but keep the payment confirmation, the rider, the pickup timing and the handover code: this is the first time the customer gets the code), then answer anything else they asked.',
       };
     case 'in_progress':
       if (openTransfer) {
@@ -266,10 +278,16 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
           account_number: openTransfer.transfer_account_number,
           amount_exact: formatNaira(openTransfer.amount_kobo),
           expires_at_wat: watTime(openTransfer.transfer_expires_at ?? now),
-          what_to_do: `Paystack has not received the transfer yet. Bank transfers usually confirm within a few minutes. If they have not sent it, remind them: exactly ${formatNaira(openTransfer.amount_kobo)} to ${openTransfer.transfer_bank} ${openTransfer.transfer_account_number} before ${watTime(openTransfer.transfer_expires_at ?? now)}. If they have sent it, ask them to message again in 2–3 minutes. Never say it is paid.`,
+          message_for_customer: `Thanks. The bank hasn't confirmed your ${formatNaira(openTransfer.amount_kobo)} transfer yet; transfers usually land within a few minutes. I'll confirm here as soon as it does, or message me again in 2–3 minutes. If you haven't sent it yet: exactly ${formatNaira(openTransfer.amount_kobo)} to ${openTransfer.transfer_bank} ${openTransfer.transfer_account_number} before ${watTime(openTransfer.transfer_expires_at ?? now)}.`,
+          what_to_do: 'Send message_for_customer. Never say it is paid.',
         };
       }
-      return { ...base, payment_status: 'in_progress', what_to_do: 'Paystack is still processing it (OTP or bank step). Ask the customer to complete it and message again; check again then. Do not say it is paid.' };
+      return {
+        ...base,
+        payment_status: 'in_progress',
+        message_for_customer: `Thanks, I can see your ${base.amount} payment started, and Paystack is still processing it. Finish any OTP or bank step; I'll confirm here as soon as it lands, or message me again in a minute.`,
+        what_to_do: 'Send message_for_customer. Do not say it is paid.',
+      };
     case 'failed':
       return { ...base, payment_status: 'failed', what_to_do: 'The payment failed. Offer a new link or bank transfer details with create_payment_link.' };
     case 'not_paid_yet':
@@ -278,8 +296,9 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
         payment_status: 'not_paid_yet',
         payment_url: latestLink?.authorization_url ?? null,
         checked_seconds_ago: check.throttled ? 'under 10' : 0,
+        message_for_customer: `I don't see a completed payment for ${job.id} yet.${latestLink?.authorization_url ? ` You can pay ${base.amount} here:\n${latestLink.authorization_url}` : ''} I'll confirm as soon as it lands.`,
         what_to_do:
-          'Paystack has no completed payment yet. Politely say so and offer the link again (or fresh bank transfer details if an earlier transfer account expired). Ask them to reply once it shows success. Never say it is paid.',
+          'Send message_for_customer (or fresh bank transfer details if an earlier transfer account expired). Never say it is paid.',
       };
     default:
       return { ...base, payment_status: 'needs_review', what_to_do: 'The payment state is unclear. Hand the conversation to a human dispatcher.' };

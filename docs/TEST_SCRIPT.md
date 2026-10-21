@@ -35,12 +35,12 @@ Example quotes (small package):
 
 | # | Type this | What should happen |
 |---|---|---|
-| 1 | "Send a phone charger from LA-11-ZDM-PS-01 to LA-19-ZDM-UL-01" | Both read back (Paystack office, UNILAG) → quote ₦3,000 → "Shall I book it?" |
-| 2 | "yes. I'm Ada Obi, recipient Bola Musa 0803 123 4567, I'll pay by link" | Job id, handover code, Paystack link |
+| 1 | "Send a phone charger from LA-11-ZDM-PS-01 to LA-19-ZDM-UL-01" | Both read back (Paystack office, UNILAG) → quote ₦3,000 with "Quote ref Q-…" → "Shall I book it?" |
+| 2 | "yes. I'm Ada Obi, recipient Bola Musa 0803 123 4567, I'll pay by link" | **Reserved** (job id), Paystack link. **No handover code yet** |
 | 3 | Pay the link (test card `4084 0840 8408 4081`, CVV `408`, PIN `0000`, OTP `123456`) and **don't type** | The job turns paid within seconds (board: "paid via Paystack notification"); the chat notice is recorded |
-| 4 | "when will the rider come?" | Payment confirmed, pickup timing; it does not ask you to say "paid" |
+| 4 | "i have sent it" (or "when will the rider come?") | Payment received, **rider's name, vehicle and plate**, pickup timing and **the handover code**. If the card is still processing: "Thanks … still processing … I'll confirm" |
 | 5 | New conversation: "where is my package to Bola Musa, 0803 123 4567? I'm Ada Obi" | Found without a job id |
-| 6 | "cancel it and refund me" | Handed to a human (paid job); shows under *Handed to a human* on the board |
+| 6 | "cancel it and refund me" | "I'm connecting you to our support team", then "You're now connected to the Zuma Dispatch support team…"; on the board under *Handed to a human*, "Customer told: yes" |
 | 7 | "From Ikeja City Mall to Jabi Lake Mall" | Refused: we deliver within one state; a human offered |
 | 8 | "Pick up at Shoprite, drop at the National Stadium" | "Is this in Abuja or Lagos?" |
 | 9 | "From Wuse Market to Mararaba" | Mararaba is in Nasarawa: out of area, human offered |

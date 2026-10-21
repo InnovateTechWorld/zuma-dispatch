@@ -17,6 +17,7 @@ import {
 import { footLine, notice, page, statusPill, time, topBar } from './layout';
 import { crossSite, safeNext, sha256Hex } from './session';
 import { SERVICE_STATES, stateOf, type ServiceState } from '../business/states';
+import { assignRider, riderById } from '../business/riders';
 
 const stateLabel = (p: { lat: number; lng: number }) => {
   const st = stateOf(p);
@@ -261,7 +262,7 @@ export async function board(request: Request, url: URL, env: Env, config: Config
     // Our own momentary take-overs (to post "payment received") also fire conversation.escalated; they are
     // not real handovers. Recognised by our reason text, or by a chat notice on that thread at that moment.
     db.prepare(
-      `SELECT thread_id, initiator, reason, received_at FROM chord_events c
+      `SELECT thread_id, initiator, reason, received_at, ack FROM chord_events c
         WHERE type = 'conversation.escalated' AND COALESCE(reason, '') NOT LIKE ?
           AND NOT EXISTS (SELECT 1 FROM chat_notices n WHERE n.thread_id = c.thread_id AND n.state IN ('sent', 'failed', 'pending')
                            AND abs(n.updated_at - c.received_at) < 120000)
@@ -294,7 +295,7 @@ export async function board(request: Request, url: URL, env: Env, config: Config
   const totalJobs = Object.values(statusCounts).reduce((a, b) => a + b, 0);
   const toolRows = calls!.results as unknown as { tool: string; ok: number; error_code: string | null; latency_ms: number; detail: string | null; created_at: number }[];
   const reviewRows = reviews!.results as unknown as { job_id: string; detail_json: string | null; created_at: number }[];
-  const escalationRows = escalations!.results as unknown as { thread_id: string | null; initiator: string | null; reason: string | null; received_at: number }[];
+  const escalationRows = escalations!.results as unknown as { thread_id: string | null; initiator: string | null; reason: string | null; received_at: number; ack: string | null }[];
   const noticeRows = notices!.results as unknown as { event: string; reference: string | null; job_id: string | null; outcome: string; ip_trusted: number; received_at: number }[];
   const days = lastSevenDays(daily!.results as unknown as DayRow[], now);
   const todayRow = days[days.length - 1]!;
@@ -346,7 +347,7 @@ ${figures}
       const actions = actionForms(j, back, true);
       return `<tr>
 <td data-label="Job"><a href="/board/jobs/${h(j.id)}">${h(j.id)}</a><span class="sub">${time(j.created_at)}</span></td>
-<td data-label="Status">${statusPill(j.status)}${j.paid_via ? `<span class="sub">via ${h((PAID_VIA[j.paid_via] ?? j.paid_via).toLowerCase())}</span>` : ''}</td>
+<td data-label="Status">${statusPill(j.status)}${j.paid_via ? `<span class="sub">via ${h((PAID_VIA[j.paid_via] ?? j.paid_via).toLowerCase())}</span>` : ''}${riderById(j.rider_id) ? `<span class="sub">rider ${h(riderById(j.rider_id)!.name)}</span>` : ''}</td>
 <td data-label="City">${h(city ? CITY_LABEL[city] : '—')}</td>
 <td data-label="Route" class="route">${h(j.pickup_label ?? '?')}<span class="sub">→ ${h(j.dropoff_label ?? '?')}</span></td>
 <td data-label="Package">${h(j.package_size ?? '')}${km ? `<span class="sub num">${km}</span>` : ''}</td>
@@ -384,7 +385,7 @@ ${resultLine}
     `<div class="table-wrap"><table><thead><tr>${head.map((x) => `<th>${x}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
   const handoverHtml = `<section class="section" id="handovers" aria-labelledby="handovers-h"><div class="section__head"><h3 id="handovers-h">Handed to a human</h3><p class="muted">From Chord's webhook. Reply in Chord → Teammates → Zuma → Escalated.</p></div>${
     escalationRows.length
-      ? panelTable(['When', 'Thread', 'By', 'Reason'], escalationRows.map((e) => `<tr><td>${time(e.received_at)}</td><td><code>${h(e.thread_id ?? '?')}</code></td><td>${h(e.initiator ?? '')}</td><td>${h(e.reason ?? '')}</td></tr>`).join(''))
+      ? panelTable(['When', 'Thread', 'By', 'Reason', 'Customer told'], escalationRows.map((e) => `<tr><td>${time(e.received_at)}</td><td><code>${h(e.thread_id ?? '?')}</code></td><td>${h(e.initiator ?? '')}</td><td>${h(e.reason ?? '')}</td><td>${e.ack === 'sent' ? 'yes' : h(e.ack ?? '—')}</td></tr>`).join(''))
       : `<p class="muted">${env.CHORD_WEBHOOK_SECRET ? 'No handovers yet.' : 'Chord webhook not configured (CHORD_WEBHOOK_SECRET).'}</p>`
   }</section>`;
   const reviewHtml = `<section class="section" aria-labelledby="review-h"><div class="section__head"><h3 id="review-h">Payments needing review</h3><p class="muted">Paystack said success but the amount, currency or reference did not match.</p></div>${
@@ -538,8 +539,12 @@ async function boardAction(request: Request, url: URL, env: Env, execCtx: Execut
     ? await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', now, { action: actionKey, via: 'dispatcher' }, ', paid_at = COALESCE(paid_at, ?)', [now])
     : await transitionJob(env.DB, id, action.from, action.to, 'dispatcher', now, { action: actionKey });
   if (ok) queueSheetSync(env, (p) => execCtx.waitUntil(p), url.origin, id);
-  // The customer was told "a dispatcher will check"; tell them in the chat once it is approved.
-  if (ok && actionKey === 'approve') queueChatNotice(env, (p) => execCtx.waitUntil(p), id, url.origin);
+  // An approved payment is a paid job: assign a rider, then tell the customer in the chat
+  // (they were told "a dispatcher will check").
+  if (ok && actionKey === 'approve') {
+    await assignRider(env.DB, id, now);
+    queueChatNotice(env, (p) => execCtx.waitUntil(p), id, url.origin);
+  }
   return ok
     ? backTo(url, env, back, `${id}: ${action.label.toLowerCase()}.`, false)
     : backTo(url, env, back, `${id} could not change from ${job.status.replaceAll('_', ' ')}.`, true);
@@ -709,7 +714,8 @@ ${flash ? `<div class="flash" style="margin-bottom:var(--space-md)">${notice(fla
 <section class="section" aria-labelledby="booking-h"><div class="section__head"><h3 id="booking-h">Booking</h3></div>
 <dl class="facts"><dt>Sender</dt><dd>${h(job.sender_name)}</dd><dt>Recipient</dt><dd>${h(job.recipient_name)} · ${h(phone.ok ? phone.display : job.recipient_phone)}</dd>
 <dt>Package</dt><dd>${h(quote?.package_size ?? '?')}${job.package_note ? ` · “${h(job.package_note)}”` : ''}</dd><dt>Amount</dt><dd><b class="num">${formatNaira(job.amount_kobo)}</b></dd>
-<dt>Handover code</dt><dd><span class="mono">${h(job.handover_code)}</span> <span class="muted">(rider asks the recipient for it)</span></dd></dl>
+<dt>Handover code</dt><dd><span class="mono">${h(job.handover_code)}</span> <span class="muted">(sent to the customer only after payment; the rider asks the recipient for it)</span></dd>
+<dt>Rider</dt><dd>${riderById(job.rider_id) ? `${h(riderById(job.rider_id)!.name)} · ${h(riderById(job.rider_id)!.vehicle)} · <span class="mono">${h(riderById(job.rider_id)!.plate)}</span>${job.rider_assigned_at ? ` <span class="muted">(assigned ${time(job.rider_assigned_at)})</span>` : ''}` : '<span class="muted">Assigned when paid</span>'}</dd></dl>
 <div class="actions" style="margin-top:var(--space-md)">${actions || '<span class="muted">No dispatcher actions for this status.</span>'}</div></section>
 ${quoteHtml}
 ${placeBlock('Pickup', pickup)}${placeBlock('Drop-off', dropoff)}

@@ -617,3 +617,39 @@ Paystack office → National Stadium, "yes" (quote ₦2,850), then change the dr
 **What would help (Chord).** Give the model at least a summary of earlier turns' tool calls (name +
 key result). Every agent on Chord that calls tools across turns can hit this. Skill instructions alone
 did not hold.
+
+## 19. The owner's own test: four gaps a demo script would not have found
+
+**What happened (simulator, 2026-10-21 10:43–10:52, the owner typing).**
+- Paystack office → UNILAG, bank transfer, then "i prefer card now my bank app is acting up", then
+  "i have sent it", "when will the rider come", and "actually cancel it and refund me".
+- *Gap 1:* "Booked!" plus the handover code *before payment*.
+- *Gap 2:* "i have sent it" got "Is there anything else you'd like to send?".
+  - The D1 log shows `verify_payment` was called and answered `in_progress` (card still processing). The
+    model then misread "sent" as "send another package".
+- *Gap 3:* no rider. The confirmation said "a dispatcher is assigning a rider".
+- *Gap 4:* after "cancel it and refund me" the simulator showed only "No reply yet …".
+  - The escalation did reach the board via Chord's webhook (10:52:11, with a precise reason).
+  - Chord's own "connecting you with a teammate" notice did not appear.
+
+**Fixes (server first, skill second).**
+1. *Code only after payment, enforced by the server.*
+   - `create_dispatch_job` no longer returns it; only `verify_payment`'s paid result and the paid notice do.
+   - Booking wording is "reserved, awaiting payment".
+2. *Payment claims.*
+   - Every `verify_payment` result has a `message_for_customer`, including `in_progress` and
+     `awaiting_transfer` ("Thanks … still processing … I'll confirm").
+   - The skill lists "sent / I have sent it / done / I don pay" as payment claims.
+3. *Rider at payment.*
+   - A made-up roster, auto-assigned (state, vehicle, least busy) inside the same code path that marks
+     the job paid. Once only.
+   - The confirmation names the rider, vehicle and plate, and gives the code.
+   - While testing this, a real bug turned up: `verify_payment` on an approved (paid) job answered
+     "no payment link, send one". Paid jobs now short-circuit to the paid confirmation.
+4. *Handover acknowledgement.*
+   - On the escalation webhook (agent-initiated only), the server posts an operator message: "You're now
+     connected to the Zuma Dispatch support team…". The thread is already human-held, so no take-over.
+   - The result is shown on the board.
+
+**Lesson.** The scripted tests passed; a person typing naturally ("my bank app is acting up", "i have
+sent it") found four product gaps in nine messages. Test with real phrasing, not only the happy path.

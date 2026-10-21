@@ -112,7 +112,12 @@ rate card examples checked against `skill/.../rate-card.md`.
 ## 3. Booking (`create_dispatch_job`)
 
 **What it does.** Creates the job from a quote after an explicit yes (`customer_confirmed: true`).
-Returns the job id (`ZD-XXXXX`) and a 4-digit handover code.
+Returns the job id (`ZD-XXXXX`), **reserved, awaiting payment**.
+
+**No handover code at booking.** The 4-digit code is generated now, but it is returned only once payment
+is confirmed: by `verify_payment`'s paid result, or by the "Payment received" chat notice. So a code always
+means "this delivery is paid for", and an abandoned booking never has a live code. Dispatch is gated too:
+the board only offers "Mark dispatched" for `paid` jobs.
 
 **Safeguards.**
 - **One job per quote:** retries and double "yes" return the same job.
@@ -390,6 +395,30 @@ components) is written down in [`design.md`](../design.md).
 `test/units.test.ts` (search parsing), smoke (sign-in redirect, wrong password, CSRF, Basic for scripts),
 and the browser runs in `docs/EDGE_CASES.md` B1–B16.
 
+## 5b. A rider is assigned the moment payment is confirmed
+
+- **Roster:** a made-up roster in `src/business/riders.ts`, three per city: two motorbikes and one car.
+  Small and medium packages go by motorbike, large by car.
+- **Who gets the job:** the rider in the pickup's state with the right vehicle and the fewest active
+  (paid or dispatched) jobs; on a tie, the one assigned least recently.
+- **When it happens:**
+  - Inside `checkPayments` as soon as a job turns paid, before any message is written, whichever path
+    confirmed it (webhook, return page, the customer asking).
+  - When a dispatcher approves a reviewed payment.
+  - For jobs paid before this existed, at the next `verify_payment`.
+- **Once only:** `UPDATE … WHERE rider_id IS NULL`, and the `rider_assigned` event is written only if
+  that update won. So two paths confirming the same payment cannot assign two riders.
+- **What the customer is told:**
+  - The paid confirmation (`message_for_customer` and the chat notice): "Your rider is Tunde (motorbike,
+    LSD 553 XA). Pickup is usually within 45 minutes. The recipient gives the rider handover code
+    1493…".
+  - `get_job_status` also returns the rider (first name, vehicle, plate; never a phone).
+  - Outside rider hours the timing says when pickup starts.
+- **Board:** the list shows "rider …" under the status, and the job page shows the rider, vehicle, plate
+  and assignment time.
+- **No rider:** if the roster has nobody suitable, the message falls back to "a dispatcher is assigning
+  a rider".
+
 ## 9. Human handover and alerts
 
 - **Handover:** Zuma calls Chord's built-in `handover_to_human` when an address fails twice, a payment
@@ -404,6 +433,23 @@ and the browser runs in `docs/EDGE_CASES.md` B1–B16.
   `CHORD_WEBHOOK_SECRET`.
 - **Go-live extra:** Chord can also email a transcript on handover (`escalation-notifications`; needs a
   Chord API key).
+
+**The customer is told when they are handed over.**
+- *The problem:* Chord's own handover notice ("One moment — connecting you with a teammate") did not
+  reach the simulator in the latest test, so the customer saw nothing.
+- *What happens now:* when the `conversation.escalated` webhook says the **agent** handed over,
+  `acknowledgeHandover` posts an operator message into that chat. The chat is human-held at that point,
+  so no take-over is needed. The text:
+  - in hours: "You're now connected to the Zuma Dispatch support team. A team member has your booking
+    details and will reply here shortly."
+  - out of hours: "... will reply here from 7am (Monday to Saturday)."
+- *When it is not sent:* when a human took over themselves (they will write), and for our own momentary
+  take-overs.
+- *Once only:* once per webhook delivery.
+- *Visibility:* the result is stored in `chord_events.ack` and shown on the board ("Customer told").
+- *Local servers* never send it.
+- *The skill* also tells the agent to say "I'm connecting you to our support team now" in its own reply,
+  before calling the handover tool.
 
 ## 10. Conversation memory (Chord-specific behaviour)
 

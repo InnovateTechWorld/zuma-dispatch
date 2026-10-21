@@ -151,6 +151,7 @@ check("no explicit yes -> refused with read-back hint", err and "Read back" in j
 x, err, ms = call("create_dispatch_job", **{**base, "recipient_phone": "12345"}, customer_confirmed=True)
 check("bad phone -> INVALID_DETAILS", err and x["error"]["code"] == "INVALID_DETAILS", x, ms)
 j, err, ms = call("create_dispatch_job", **base, customer_confirmed=True)
+check("booking is reserved without a handover code (code only after payment)", not err and "handover_code" not in j and "Reserved" in j.get("what_to_do", ""), j, ms)
 check("job created from quote amount", not err and j["status"] == "awaiting_payment" and j["amount_due"] == q["total"], j, ms)
 job = j["job_id"]
 j2, err, ms = call("create_dispatch_job", **base, customer_confirmed=True)

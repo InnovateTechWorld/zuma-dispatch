@@ -50,6 +50,9 @@ export interface JobRow {
   currency: 'NGN';
   status: JobStatus;
   handover_code: string;
+  /** Assigned at payment (migration 0011); see src/business/riders.ts. */
+  rider_id?: string | null;
+  rider_assigned_at?: number | null;
   version: number;
   created_at: number;
   updated_at: number;

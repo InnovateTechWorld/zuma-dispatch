@@ -221,14 +221,32 @@ describe('notifyPaymentReceived', () => {
   });
 });
 
-describe('the message itself', () => {
+describe('the message itself', async () => {
+  const { RIDERS, chooseRider, riderLine } = await import('../src/business/riders');
+  const { handoverMessage } = await import('../src/chord/notices');
+  const tunde = RIDERS.find((r) => r.id === 'R-LA1')!;
+
+  it('after payment: amount, job, the rider, timing, and (only now) the handover code', () => {
+    expect(paymentReceivedMessage({ ...JOB, rider_id: 'R-LA1' }, NOW)).toBe(
+      'Payment received: ₦1,950 for ZD-H01G4. Your rider is Tunde (motorbike, LSD 553 XA). Pickup is usually within 45 minutes. The recipient gives the rider handover code 8960; please share it with them.',
+    );
+    expect(paymentReceivedMessage(JOB, NOW)).toContain('A dispatcher is assigning a rider now');
+  });
   it('stays true when re-sent after dispatch or delivery', () => {
-    expect(paymentReceivedMessage({ ...JOB, status: 'dispatched' }, NOW)).toBe('Payment received: ₦1,950 for ZD-H01G4. A rider already has the package. The recipient gives the rider code 8960.');
+    expect(paymentReceivedMessage({ ...JOB, status: 'dispatched', rider_id: 'R-LA1' }, NOW)).toBe(
+      `Payment received: ₦1,950 for ZD-H01G4. ${riderLine(tunde)} has the package. The recipient gives the rider handover code 8960; please share it with them.`,
+    );
     expect(paymentReceivedMessage({ ...JOB, status: 'delivered' }, NOW)).toBe('Payment received: ₦1,950 for ZD-H01G4. It has been delivered.');
   });
-  it('confirms the amount and job, gives the pickup timing and the handover code', () => {
-    expect(paymentReceivedMessage(JOB, NOW)).toBe(
-      'Payment received: ₦1,950 for ZD-H01G4. A dispatcher is assigning a rider now; pickup is usually within 45 minutes. The recipient gives the rider code 8960.',
-    );
+  it('picks a rider in the right state and vehicle, the least busy first', () => {
+    expect(chooseRider('LA', 'small', [])?.id).toBe('R-LA1');
+    expect(chooseRider('LA', 'large', [])?.vehicle).toBe('car');
+    expect(chooseRider('FC', 'medium', [])?.state).toBe('FC');
+    expect(chooseRider('LA', 'small', [{ rider_id: 'R-LA1', active: 2, last_assigned: 5 }])?.id).toBe('R-LA2');
+    expect(chooseRider('LA', 'small', [{ rider_id: 'R-LA1', active: 1, last_assigned: 9 }, { rider_id: 'R-LA2', active: 1, last_assigned: 3 }])?.id).toBe('R-LA2');
+  });
+  it('tells a handed-over customer who will answer, and when (closed: from 7am)', () => {
+    expect(handoverMessage(NOW)).toContain('will reply here shortly');
+    expect(handoverMessage(Date.UTC(2026, 9, 25, 10, 0))).toContain('from 7am'); // a Sunday
   });
 });

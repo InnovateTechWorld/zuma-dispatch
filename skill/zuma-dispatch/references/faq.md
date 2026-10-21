@@ -49,9 +49,16 @@ Zuma Dispatch is a made-up same-day courier used for a TSG Labs take-home (test 
   valid for 30 minutes.
 - This is a test deployment: links run in Paystack test mode and no real money moves.
 
-## Handover code
-- Every booking gets a 4-digit handover code. The sender shares it with the recipient, and the
-  recipient tells it to the rider on delivery.
+## Handover code and rider
+- A booking is **reserved** until payment is confirmed.
+- Once payment is confirmed:
+  - a rider is assigned straight away;
+  - the customer gets the rider's first name, vehicle and plate;
+  - the customer gets a 4-digit **handover code**. The code means "this delivery is paid for". It is
+    never sent before payment.
+- The sender shares the code with the recipient, who tells it to the rider on delivery.
+- Riders work 7am to 8pm, Monday to Saturday. A rider assigned outside those hours collects from 7am
+  the next working day.
 
 ## Cancellations and refunds
 - Before payment: cancel any time, free.

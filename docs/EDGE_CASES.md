@@ -62,6 +62,12 @@ Every row names the code that handles the case and the evidence that it works.
 | 23 | Legacy 6-digit code (`900288`) | Recognised and not sent to NIPOST (no API). The rest of the text is geocoded. A code alone → `needs_detail`. | U |
 | 24 | Phone numbers mistaken for postcodes | Runs of 7+ digits are not treated as legacy codes. | U |
 | 25 | Lagos address ("Ikeja City Mall") | In coverage, labelled `state: "Lagos"`; Lagos → Lagos quotes and books | E (Lagos quote, booking, cancel) |
+| P1 | Handover code shown before payment ("Booked!") | Booking returns no code; it says "reserved"; the code comes only with the paid confirmation | E ("booking is reserved without a handover code") |
+| P2 | Customer says "I have sent it" while the card is still processing | `verify_payment` → `in_progress` with a ready message ("Thanks, … still processing … I'll confirm"); skill: "sent / done / I don pay" are payment claims, never "send another package" | Simulator (2026-10-21): it replied "Is there anything else you'd like to send?"; fixed in skill v10 |
+| P3 | Customer asks after payment "when will the rider come?" | Rider assigned at payment; confirmation names rider, vehicle, plate and gives the code | U `chooseRider`, message tests; local approve run (Tunde, LSD 553 XA) |
+| P4 | `verify_payment` on a job already paid (e.g. a dispatcher approved it) | Returns the paid confirmation; never "no link, send one" or "under review" | Local: was `NO_PAYMENT_LINK`, now paid + rider + code |
+| P5 | Two paths confirm the same payment at once | One rider (`WHERE rider_id IS NULL`), one `rider_assigned` event | Code |
+| H1 | Handed to a human but the customer sees nothing | Server posts "You're now connected to the Zuma Dispatch support team…" on the escalation webhook; board column "Customer told" | Local signed webhook: agent → attempted (skipped locally), human take-over → not sent |
 | C7 | The agent retracts or apologises for correct earlier answers (it can't see earlier tool results) | `history_note` in every tool result (context only, never mentioned); "Quote ref Q-…" in the quote text; skill: no unneeded apologies, never talk about tools or earlier messages | Simulator: v6–v8 retracted or apologised; v9 clean on the same 3 turns (FIELD_NOTES #18) |
 | ST1 | Lagos → Abuja (or Abuja → Lagos) | `quote_delivery` → `INTERSTATE_NOT_SUPPORTED`; the agent offers a human | E; simulator: declined before quoting, human offered |
 | ST2 | An Abuja place named during a Lagos booking | `what_to_do` carries an interstate note before quoting | E |

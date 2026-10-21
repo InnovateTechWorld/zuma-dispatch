@@ -1,4 +1,5 @@
 import { paymentReceivedMessage } from '../business/messages';
+import { pickupWindow } from '../business/profile';
 import { eventStmt, getJob } from '../db/repo';
 import type { Env } from '../env';
 import { fetchJson, type HttpResult } from '../lib/http';
@@ -308,4 +309,32 @@ export async function notifyPaymentReceived(env: Env, jobId: string, opts: { man
 export function queueChatNotice(env: Env, waitUntil: (p: Promise<unknown>) => void, jobId: string, origin: string): void {
   if (noticeStatus(env) !== 'enabled' || !sendsAllowed(env, origin)) return;
   waitUntil(notifyPaymentReceived(env, jobId, { origin }));
+}
+
+// ------------------------------------------------------------------ handover acknowledgement
+/** What the customer reads when the agent hands them to a person (Chord's own notice may not reach them). */
+export function handoverMessage(now: number): string {
+  const open = pickupWindow(now).now; // dispatchers work rider hours: 7am–8pm, Monday to Saturday
+  return open
+    ? "You're now connected to the Zuma Dispatch support team. A team member has your booking details and will reply here shortly."
+    : "You're now connected to the Zuma Dispatch support team. We're closed right now; a team member has your booking details and will reply here from 7am (Monday to Saturday).";
+}
+
+/**
+ * After Chord's conversation.escalated webhook (the agent handed over), post the message above into the
+ * chat. The thread is human-held at that point, so an operator message needs no take-over and Chord sends
+ * it down the chat's own channel. Returns what happened, for chord_events.ack. Never throws.
+ */
+export async function acknowledgeHandover(env: Env, threadId: string, origin: string, now = Date.now()): Promise<string> {
+  const cfg = noticeConfig(env);
+  if (!cfg) return 'skipped: CHORD_API_KEY not set';
+  if (!sendsAllowed(env, origin)) return 'skipped: local server';
+  if (!/^[0-9a-f]{24}$/.test(threadId)) return 'skipped: no thread id';
+  try {
+    const r = await chord<{ delivery_status?: string; delivery_error?: string | null }>(cfg, `/v1/threads/${threadId}/messages`, 6000, { text: handoverMessage(now) });
+    if (!r.ok) return r.failure === 'http' && r.status === 409 ? 'skipped: no longer human-held' : `failed: ${chordError(r)}`;
+    return r.data.delivery_status === 'failed' ? `failed: undelivered ${(r.data.delivery_error ?? '').slice(0, 80)}` : 'sent';
+  } catch (e) {
+    return `failed: ${e instanceof Error ? e.message.slice(0, 80) : String(e)}`;
+  }
 }

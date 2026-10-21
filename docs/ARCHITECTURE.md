@@ -29,9 +29,10 @@
 
 ```
 customer text ──► resolve_address ×2 ──► place_id (P-…) ──► quote_delivery ──► quote_id (Q-…, price frozen 30 min)
-     "yes" ──► create_dispatch_job (customer_confirmed:true) ──► job_id (ZD-…, amount copied from quote)
+     "yes" ──► create_dispatch_job (customer_confirmed:true) ──► job_id (ZD-…, reserved; amount from quote; no code yet)
            ──► create_payment_link ──► Paystack checkout (reference ZD-…-n, amount from job)
  "paid" ──► verify_payment ──► Paystack verify ──► status/amount/currency/reference all match? ──► job paid
+                                                                    ──► rider assigned ──► code + rider to the customer
                                     ▲
             Paystack redirect ──► /pay/return (same verify code path)
 dispatcher ──► /board ──► dispatched ──► delivered      customer ──► get_job_status
@@ -97,14 +98,14 @@ Payment attempts have their own states: `initializing` (row written before calli
 
 ## Data model
 
-See `migrations/0001_init.sql` … `0010_place_state.sql`. Money is integer kobo,
+See `migrations/0001_init.sql` … `0011_riders_and_handover_ack.sql`. Money is integer kobo,
 times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 
 | Table | Holds | Key constraints |
 |---|---|---|
 | `places` | every resolved candidate (label, lat/lng, precision, postcode status, provider, in-area flag, `state` FC/LA) | lat/lng ranges |
 | `quotes` | frozen price, breakdown, distance source, approximate flag, expiry | `amount_kobo > 0`, `currency = 'NGN'` |
-| `jobs` | sender/recipient, amount (from quote), status, handover code, version | `UNIQUE(quote_id)` |
+| `jobs` | sender/recipient, amount (from quote), status, handover code (released after payment), rider (assigned at payment), version | `UNIQUE(quote_id)` |
 | `payments` | one row per Paystack attempt (reference `ZD-xxxxx-n`) | `UNIQUE(job_id, attempt)` |
 | `job_events` | append-only audit trail (actor: agent / system / dispatcher) | n/a |
 | `geocode_cache` | provider answers keyed by provider + normalised query | n/a |

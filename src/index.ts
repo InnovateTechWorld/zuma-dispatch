@@ -117,7 +117,7 @@ async function route(request: Request, url: URL, env: Env, ctx: ExecutionContext
   }
 
   if (url.pathname === '/hooks/chord' && request.method === 'POST') {
-    return chordWebhook(request, env.DB, env.CHORD_WEBHOOK_SECRET?.trim() || null, requestId);
+    return chordWebhook(request, env.DB, env.CHORD_WEBHOOK_SECRET?.trim() || null, requestId, { env, waitUntil: (p) => ctx.waitUntil(p), origin: url.origin });
   }
 
   if (url.pathname === '/pay/return' && request.method === 'GET') {

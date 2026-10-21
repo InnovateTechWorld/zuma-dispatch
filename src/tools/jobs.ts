@@ -1,3 +1,4 @@
+import { riderView } from '../business/riders';
 import { pickupWindow } from '../business/profile';
 import { eventStmt, getJob, getJobByQuote, getPlace, getQuote, transitionJob, type JobRow, type QuoteRow } from '../db/repo';
 import { haversineMeters } from '../lib/geo';
@@ -57,7 +58,6 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
   if (existing) {
     return jobView(existing, {
       already_booked: true,
-      handover_code: existing.handover_code,
       what_to_do: 'This quote is already booked; do not book again. Continue with create_payment_link for this job_id if it is unpaid.',
     });
   }
@@ -71,7 +71,6 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
     if (twin) {
       return jobView(twin, {
         already_booked: true,
-        handover_code: twin.handover_code,
         what_to_do: `This trip is already booked as ${twin.id} (same route, size and recipient, not yet paid). Do not book again: tell the customer it is the same booking and continue with create_payment_link for ${twin.id}.`,
       });
     }
@@ -138,7 +137,7 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
   } catch (e) {
     // Two concurrent bookings of the same quote: UNIQUE(quote_id) lets only one win.
     const winner = await getJobByQuote(ctx.db, quote.id);
-    if (winner) return jobView(winner, { already_booked: true, handover_code: winner.handover_code });
+    if (winner) return jobView(winner, { already_booked: true });
     throw e;
   }
 
@@ -147,9 +146,10 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
   return jobView(job, {
     pickup: pickup?.label,
     dropoff: dropoff?.label,
-    handover_code: job.handover_code,
     pickup_timing: pickupWindow(now).note,
-    what_to_do: `Booked as ${job.id}. Tell the customer the job id and handover code (${job.handover_code}): the recipient gives this code to the rider. Then call create_payment_link with this job_id.`,
+    // No handover code here on purpose: it is released only once payment is confirmed (verify_payment,
+    // or the "Payment received" notice), so a code always means "this delivery is paid for".
+    what_to_do: `Reserved as ${job.id}, awaiting payment. Tell the customer the delivery is reserved (job id ${job.id}) and will be confirmed once payment lands; the rider and the handover code come after payment. Do not say "booked" or "confirmed" yet. Then ask how they want to pay (or call create_payment_link if they already said).`,
   });
 }
 
@@ -186,8 +186,8 @@ async function findTwinJob(ctx: ToolContext, quote: QuoteRow, recipientE164: str
 
 // ------------------------------------------------------------------ get_job_status
 const STATUS_TEXT: Record<JobRow['status'], string> = {
-  awaiting_payment: 'Booked, waiting for payment.',
-  paid: 'Paid. A dispatcher is assigning a rider.',
+  awaiting_payment: 'Reserved, waiting for payment.',
+  paid: 'Paid. The rider is on the way to the pickup.',
   dispatched: 'A rider is on the way.',
   delivered: 'Delivered.',
   cancelled: 'Cancelled.',
@@ -271,8 +271,10 @@ export async function getJobStatus(args: JobStatusArgs, ctx: ToolContext): Promi
     .prepare('SELECT type, to_status, actor, created_at FROM job_events WHERE job_id = ? ORDER BY id DESC LIMIT 1')
     .bind(job.id)
     .first<{ type: string; to_status: string | null; actor: string; created_at: number }>();
+  const rider = riderView(job.rider_id);
   return jobView(job, {
-    status_text: STATUS_TEXT[job.status],
+    status_text: job.status === 'paid' && !rider ? 'Paid. A dispatcher is assigning a rider.' : STATUS_TEXT[job.status],
+    ...(rider && ['paid', 'dispatched', 'delivered'].includes(job.status) ? { rider } : {}),
     pickup: pickup?.label,
     dropoff: dropoff?.label,
     last_update_minutes_ago: last ? Math.round((ctx.now() - last.created_at) / 60000) : null,

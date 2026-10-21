@@ -1,3 +1,5 @@
+import type { Env } from '../env';
+import { acknowledgeHandover, TAKEOVER_REASON } from '../chord/notices';
 import { secretsMatch } from '../lib/auth';
 import { log } from '../lib/log';
 
@@ -18,7 +20,14 @@ export async function bodySignature(secret: string, rawBody: ArrayBuffer): Promi
 
 const MAX_BODY = 256 * 1024;
 
-export async function chordWebhook(request: Request, db: D1Database, secret: string | null, requestId: string): Promise<Response> {
+export async function chordWebhook(
+  request: Request,
+  db: D1Database,
+  secret: string | null,
+  requestId: string,
+  // Optional so tests can call it without Chord API access; when given, handovers are acknowledged in the chat.
+  ack?: { env: Env; waitUntil: (p: Promise<unknown>) => void; origin: string },
+): Promise<Response> {
   if (!secret) return new Response('webhook receiver not configured', { status: 503 });
   if (request.headers.get('X-Chord-Timestamp')) {
     // Timestamped signatures belong to the external-chat bridge, which we do not use. Never try both schemes.
@@ -50,5 +59,20 @@ export async function chordWebhook(request: Request, db: D1Database, secret: str
     .bind(deliveryId.slice(0, 100), String(event.id ?? '').slice(0, 100), type.slice(0, 100), str(data['thread_id']), str(data['initiator']), str(data['reason']), JSON.stringify(data).slice(0, 4000), Date.now())
     .run();
   log('info', 'chord_webhook', { request_id: requestId, type, duplicate: res.meta.changes === 0 });
+  // The agent handed the customer to a person: tell the customer, once per delivery. Skip a human's own
+  // take-over (they will write) and our own momentary take-overs (TAKEOVER_REASON).
+  const threadId = str(data['thread_id']);
+  const initiator = str(data['initiator']);
+  const reason = str(data['reason']) ?? '';
+  if (ack && res.meta.changes === 1 && type === 'conversation.escalated' && threadId && initiator === 'agent' && !reason.startsWith(TAKEOVER_REASON.slice(0, 40))) {
+    const dId = deliveryId.slice(0, 100);
+    ack.waitUntil(
+      acknowledgeHandover(ack.env, threadId, ack.origin).then((outcome) =>
+        db.prepare('UPDATE chord_events SET ack = ? WHERE delivery_id = ?').bind(outcome.slice(0, 200), dId).run().then(() =>
+          log(outcome === 'sent' ? 'info' : 'warn', 'handover_ack', { request_id: requestId, thread_id: threadId, outcome }),
+        ),
+      ),
+    );
+  }
   return new Response(null, { status: 204 });
 }
