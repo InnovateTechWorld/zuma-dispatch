@@ -714,6 +714,14 @@ operator console, those five are your surface": take-over, hand-back, pause, res
 - Our server-side acknowledgement is therefore the only wording we control. It arrived as an operator
   message in every run (`ack: sent`).
 
+**What was real and what was scripted.**
+- The customer messages in these runs ("ok thanks. can I also send a small parcel…") were typed by the
+  tester in the simulator.
+- The simulator never showed the customer the team's reply, so "ok thanks" was a scripted follow-up to
+  test the hand-back, not a reaction to the reply.
+- In a real WhatsApp chat the customer would see the reply.
+- Until a number is connected, the dispatcher's replies can only be checked in the board transcript.
+
 **Cost, measured.**
 - 4.79 → 4.41 credits, 46 → 50 AI requests, over 4 AI turns (≈0.09 each).
 - The 7 board actions and our 3 acknowledgements added no requests. **A person's reply costs 0 credits.**
