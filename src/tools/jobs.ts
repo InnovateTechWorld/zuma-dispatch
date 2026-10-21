@@ -1,4 +1,5 @@
 import { riderView } from '../business/riders';
+import { reservedMessage } from '../business/messages';
 import { pickupWindow } from '../business/profile';
 import { eventStmt, getJob, getJobByQuote, getPlace, getQuote, transitionJob, type JobRow, type QuoteRow } from '../db/repo';
 import { haversineMeters } from '../lib/geo';
@@ -149,7 +150,8 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
     pickup_timing: pickupWindow(now).note,
     // No handover code here on purpose: it is released only once payment is confirmed (verify_payment,
     // or the "Payment received" notice), so a code always means "this delivery is paid for".
-    what_to_do: `Reserved as ${job.id}, awaiting payment. Tell the customer the delivery is reserved (job id ${job.id}) and will be confirmed once payment lands; the rider and the handover code come after payment. Do not say "booked" or "confirmed" yet. Then ask how they want to pay (or call create_payment_link if they already said).`,
+    message_for_customer: reservedMessage(job),
+    what_to_do: `Reserved as ${job.id}, awaiting payment. Send message_for_customer. If the customer already said how they want to pay, skip its question and call create_payment_link now. The rider and the handover code come only after payment.`,
   });
 }
 

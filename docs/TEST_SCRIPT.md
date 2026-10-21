@@ -35,7 +35,7 @@ Example quotes (small package):
 
 | # | Type this | What should happen |
 |---|---|---|
-| 1 | "Send a phone charger from LA-11-ZDM-PS-01 to LA-19-ZDM-UL-01" | One message: Pickup: Paystack office… / Drop-off: UNILAG… / small / ₦3,000 / "Quote ref Q-…", ending "Please check both addresses. Are they correct? Reply YES to continue, or tell me which one is wrong." (no separate address question: demo postcodes are exact). Reply "yes" → "Thanks! To book it, I need: 1. Your name 2. The recipient's name 3. The recipient's phone number" |
+| 1 | "Send a phone charger from LA-11-ZDM-PS-01 to LA-19-ZDM-UL-01" | One message: Pickup: Paystack office… / Drop-off: UNILAG… / small / ₦3,000 / "Quote ref Q-…", ending "Are both addresses right? If yes, just reply YES. If one is wrong, tell me which one and I'll fix it." (no separate address question: demo postcodes are exact). Reply "yes" → "Perfect! To book it, I just need: 1. Your name 2. The recipient's name 3. The recipient's phone number" → "Great, <name>! Your delivery to <recipient> is reserved as ZD-… How would you like to pay…" → "bank transfer" gives bank, account number, account name, exact amount and expiry |
 | 1b | Instead: "from Ikeja City Mall to LA-19-ZDM-UL-01" | Zuma first asks "Pickup: Ikeja City Mall… Is that right?"; after yes, the same one-message quote |
 | 1c | After the quote: "the pickup is wrong" | Zuma asks for the right pickup and sends a new quote; nothing is booked |
 | 2 | "I'm Ada Obi, recipient Bola Musa 0803 123 4567, I'll pay by link" | **Reserved** (job id), Paystack link. **No handover code yet** |

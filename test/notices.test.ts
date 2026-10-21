@@ -228,15 +228,15 @@ describe('the message itself', async () => {
 
   it('after payment: amount, job, the rider, timing, and (only now) the handover code', () => {
     expect(paymentReceivedMessage({ ...JOB, rider_id: 'R-LA1' }, NOW)).toBe(
-      'Payment received: ₦1,950 for ZD-H01G4. Your rider is Tunde (motorbike, LSD 553 XA). Pickup is usually within 45 minutes. The recipient gives the rider handover code 8960; please share it with them.',
+      'Payment received: ₦1,950 for ZD-H01G4. Thank you! Your rider is Tunde (motorbike, LSD 553 XA). Pickup is usually within 45 minutes. Your handover code is 8960. Please share it with the recipient; the rider will ask for it at drop-off.',
     );
     expect(paymentReceivedMessage(JOB, NOW)).toContain('A dispatcher is assigning a rider now');
   });
   it('stays true when re-sent after dispatch or delivery', () => {
     expect(paymentReceivedMessage({ ...JOB, status: 'dispatched', rider_id: 'R-LA1' }, NOW)).toBe(
-      `Payment received: ₦1,950 for ZD-H01G4. ${riderLine(tunde)} has the package. The recipient gives the rider handover code 8960; please share it with them.`,
+      `Payment received: ₦1,950 for ZD-H01G4. Thank you! ${riderLine(tunde)} has the package. Your handover code is 8960. Please share it with the recipient; the rider will ask for it at drop-off.`,
     );
-    expect(paymentReceivedMessage({ ...JOB, status: 'delivered' }, NOW)).toBe('Payment received: ₦1,950 for ZD-H01G4. It has been delivered.');
+    expect(paymentReceivedMessage({ ...JOB, status: 'delivered' }, NOW)).toBe('Payment received: ₦1,950 for ZD-H01G4. Thank you! It has been delivered.');
   });
   it('picks a rider in the right state and vehicle, the least busy first', () => {
     expect(chooseRider('LA', 'small', [])?.id).toBe('R-LA1');

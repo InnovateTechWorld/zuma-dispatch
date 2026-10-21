@@ -51,13 +51,40 @@ describe('fast path: demo postcodes are confirmed in the quote message', () => {
 describe('order and wording', () => {
   it('the quote question only confirms; it never promises to book', () => {
     for (const q of [ADDRESS_CHECK_QUESTION, BOOK_QUESTION]) {
-      expect(q).toContain('Reply YES to continue');
+      expect(q).toMatch(/reply YES/i);
       expect(q.toLowerCase()).not.toContain('book');
     }
-    expect(ADDRESS_CHECK_QUESTION).toContain('Are they correct?');
+    expect(ADDRESS_CHECK_QUESTION).toContain('Are both addresses right?');
   });
   it('every tool result tells the model not to narrate its re-checks', async () => {
     const { HISTORY_NOTE } = await import('../src/mcp/tooling');
     expect(HISTORY_NOTE).toContain('never mention checks or re-run tools'); expect(HISTORY_NOTE.length).toBeLessThan(260);
+  });
+});
+
+describe('ready-to-send customer messages', () => {
+  it('bank transfer details always carry bank, account number, name, exact amount and expiry', async () => {
+    const { transferMessage } = await import('../src/business/messages');
+    const m = transferMessage({ amount_kobo: 300000, bank: 'Test Bank', account_number: '1234567890', account_name: 'Zuma Dispatch', expires: '1:26 PM' });
+    for (const part of ['Bank: Test Bank', 'Account number: 1234567890', 'Account name: Zuma Dispatch', 'Amount: exactly ₦3,000', 'expires at 1:26 PM', 'reply "sent"']) expect(m).toContain(part);
+  });
+  it('expiry reads as a 12-hour time', async () => {
+    const { twelveHour } = await import('../src/business/messages');
+    expect(twelveHour('13:34')).toBe('1:34 PM');
+    expect(twelveHour('00:05')).toBe('12:05 AM');
+    expect(twelveHour('12:00')).toBe('12:00 PM');
+    expect(twelveHour('soon')).toBe('soon');
+  });
+  it('the link sits on its own line', async () => {
+    const { linkMessage } = await import('../src/business/messages');
+    expect(linkMessage(300000, 'https://checkout.paystack.com/abc').split('\n')).toContain('https://checkout.paystack.com/abc');
+  });
+  it('reserved: first name, recipient, job id, amount, and the payment question', async () => {
+    const { reservedMessage } = await import('../src/business/messages');
+    const m = reservedMessage({ id: 'ZD-FE1ST', sender_name: 'joshua', recipient_name: 'bola ahmed', amount_kobo: 300000 });
+    expect(m).toContain('Great, Joshua!');
+    expect(m).toContain('to Bola Ahmed is reserved as ZD-FE1ST (₦3,000)');
+    expect(m).toContain('How would you like to pay');
+    expect(m).not.toMatch(/handover code/i);
   });
 });

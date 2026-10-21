@@ -3,7 +3,7 @@ import { eventStmt, getJob, getPayment, listPayments, type JobRow, type PaymentR
 import { paymentReference } from '../lib/ids';
 import { log } from '../lib/log';
 import { formatNaira } from '../lib/money';
-import { afterPaymentTiming, paymentReceivedMessage } from '../business/messages';
+import { afterPaymentTiming, linkMessage, paymentReceivedMessage, transferMessage } from '../business/messages';
 import { assignRider, riderView } from '../business/riders';
 import { ToolError, type ToolContext } from '../mcp/tooling';
 import { chargeBankTransfer, initializeTransaction } from '../payments/paystack';
@@ -189,9 +189,8 @@ function linkView(job: JobRow, p: PaymentRow, now: number, reused: boolean): Rec
     valid_for_minutes: Math.max(1, Math.round((p.created_at + LINK_TTL_MS - now) / 60000)),
     reused_existing_link: reused,
     test_mode: true,
-    what_to_do:
-      `Send the link on its own line with the amount (${formatNaira(p.amount_kobo)}); it opens inside WhatsApp and accepts card, bank transfer and USSD. Ask the customer to reply "paid" once done, then call verify_payment.` +
-      (reused ? ' This is the same link as before, so either message works.' : ''),
+    message_for_customer: linkMessage(p.amount_kobo, p.authorization_url ?? ''),
+    what_to_do: 'Send message_for_customer as it is (the link must stay on its own line). When they reply "paid", call verify_payment.' + (reused ? ' It is the same link as before.' : ''),
   };
 }
 
@@ -209,9 +208,8 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
     reference: p.reference,
     reused_existing_details: reused,
     test_mode: true,
-    what_to_do:
-      `Send these as separate short lines: Bank: ${p.transfer_bank}, Account number: ${p.transfer_account_number}, Account name: ${p.transfer_account_name}, Amount: exactly ${formatNaira(p.amount_kobo)}. ` +
-      `Say the account is for this booking only and expires at ${watTime(expires)} (WAT); the amount must be exact or the bank will reverse it. Ask them to reply "sent" after transferring, then call verify_payment.`,
+    message_for_customer: transferMessage({ amount_kobo: p.amount_kobo, bank: p.transfer_bank ?? '', account_number: p.transfer_account_number ?? '', account_name: p.transfer_account_name ?? '', expires: watTime(expires) }),
+    what_to_do: 'Send message_for_customer as it is. Never leave out the bank, account number, account name or exact amount. When they reply "sent", call verify_payment.',
   };
 }
 

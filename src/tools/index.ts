@@ -90,7 +90,7 @@ export const createDispatchJob = defineTool({
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   fieldHints: {
     customer_confirmed:
-      'Do not book yet. Read back the pickup, drop-off, package size and price, ask "Shall I book it?", and call again only after the customer clearly says yes.',
+      'Do not book yet. Send the quote (pickup, drop-off, package size, price) ending with its closing_question, and call again only after the customer clearly says yes.',
   },
   handler: createJobHandler,
 });

@@ -147,7 +147,7 @@ check("model tries to pass a price -> rejected", err and x["error"]["code"] == "
 section("Booking")
 base = dict(quote_id=q["quote_id"], sender_name=SENDER, recipient_name=RECIPIENT, recipient_phone=PHONE_A)
 x, err, ms = call("create_dispatch_job", **base, customer_confirmed=False)
-check("no explicit yes -> refused with read-back hint", err and "Read back" in json.dumps(x), x, ms)
+check("no explicit yes -> refused with read-back hint", err and "Send the quote" in json.dumps(x) and "customer_confirmed" in json.dumps(x), x, ms)
 x, err, ms = call("create_dispatch_job", **{**base, "recipient_phone": "12345"}, customer_confirmed=True)
 check("bad phone -> INVALID_DETAILS", err and x["error"]["code"] == "INVALID_DETAILS", x, ms)
 j, err, ms = call("create_dispatch_job", **base, customer_confirmed=True)

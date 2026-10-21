@@ -35,10 +35,10 @@ export const confirmedInQuote = (p: Pick<PlaceRow, 'postcode_status' | 'precisio
  * details, so it never says "I will book it". When an address has not been checked on its own yet,
  * it asks about the addresses too.
  */
-export const ADDRESS_CHECK_QUESTION = 'Please check both addresses. Are they correct? Reply YES to continue, or tell me which one is wrong.';
-export const BOOK_QUESTION = 'Is this correct? Reply YES to continue.';
+export const ADDRESS_CHECK_QUESTION = 'Are both addresses right? If yes, just reply YES. If one is wrong, tell me which one and I\'ll fix it.';
+export const BOOK_QUESTION = 'Does this look right? Just reply YES to continue.';
 /** What to ask after the YES: one short list, only the items still missing. */
-export const DETAILS_ASK = 'Thanks! To book it, I need:\n1. Your name\n2. The recipient\'s name\n3. The recipient\'s phone number';
+export const DETAILS_ASK = 'Perfect! To book it, I just need:\n1. Your name\n2. The recipient\'s name\n3. The recipient\'s phone number';
 
 export function quoteView(q: QuoteRow, pickup: PlaceRow, dropoff: PlaceRow, now: number, reused: boolean): Record<string, unknown> {
   const size = SIZES[q.package_size];

@@ -68,8 +68,8 @@ so the model can never invent a location.
 
 **Confirming the address (fast path, 2026-10-21).** A `confirmed` result also carries `confirm`:
 - `in_quote` (demo postcodes only, which are one exact place): Zuma does not ask about it separately. The
-  quote message reads both addresses back on their own lines and ends with *"Please check both
-  addresses. Are they correct? Reply YES to continue, or tell me which one is wrong."* It never says
+  quote message reads both addresses back on their own lines and ends with *"Are both addresses
+  right? If yes, just reply YES. If one is wrong, tell me which one and I'll fix it."* It never says
   "I will book it", because booking needs the names and phone first. This saves a turn (about 0.1
   credit).
 - `ask_first` (every map result: landmarks, streets, areas): Zuma reads the label back and waits for the
@@ -78,11 +78,11 @@ so the model can never invent a location.
 - A demo postcode in the other state is `ask_first`, with the interstate note.
 - `quote_delivery` returns `closing_question` (the exact line to end with) and
   `addresses_confirmed_in_this_message`. The address-check question is used whenever either place was a
-  demo postcode; otherwise it is "Is this correct? Reply YES to continue.".
+  demo postcode; otherwise it is "Does this look right? Just reply YES to continue.".
 - **Order, one step per message:**
   1. Addresses and price.
-  2. After the YES, only the missing details, as one short list (`details_question`: "Thanks! To book
-     it, I need: 1. Your name 2. The recipient's name 3. The recipient's phone number").
+  2. After the YES, only the missing details, as one short list (`details_question`: "Perfect! To book
+     it, I just need: 1. Your name 2. The recipient's name 3. The recipient's phone number").
   3. Reserve as soon as all three are in, with no second yes.
   4. Payment.
 - The answer to that question:
