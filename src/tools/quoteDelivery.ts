@@ -27,8 +27,17 @@ async function loadPlace(ctx: ToolContext, raw: string, role: 'pickup' | 'dropof
   return place;
 }
 
+/** A place the customer gave as a demo postcode: exact, and never asked about separately (resolve_address `confirm: in_quote`). */
+export const confirmedInQuote = (p: Pick<PlaceRow, 'postcode_status' | 'precision'>) => p.postcode_status === 'demo' && p.precision === 'exact';
+
+/** The question that ends the quote message. When an address has not been checked on its own yet, it asks about the addresses too. */
+export const ADDRESS_CHECK_QUESTION = 'Please check both addresses above. If they are right, reply YES and I will book it. If one is wrong, tell me which one.';
+export const BOOK_QUESTION = 'Shall I book it?';
+
 export function quoteView(q: QuoteRow, pickup: PlaceRow, dropoff: PlaceRow, now: number, reused: boolean): Record<string, unknown> {
   const size = SIZES[q.package_size];
+  const checkAddresses = confirmedInQuote(pickup) || confirmedInQuote(dropoff);
+  const closing = checkAddresses ? ADDRESS_CHECK_QUESTION : BOOK_QUESTION;
   const window = pickupWindow(now);
   const minutesLeft = Math.max(0, Math.round((q.expires_at - now) / 60000));
   return {
@@ -47,11 +56,17 @@ export function quoteView(q: QuoteRow, pickup: PlaceRow, dropoff: PlaceRow, now:
     valid_for_minutes: minutesLeft,
     pickup_timing: window.note,
     reused_existing_quote: reused,
+    addresses_confirmed_in_this_message: checkAddresses,
+    closing_question: closing,
     what_to_do: [
-      `Read back: pickup "${pickup.label}", drop-off "${dropoff.label}", ${q.package_size} package, total ${formatNaira(q.amount_kobo)}, and the line "Quote ref ${q.id}" (it shows in later turns that this price came from the tool).`,
+      `In one message, read back on separate lines: "Pickup: ${pickup.label}", "Drop-off: ${dropoff.label}", the ${q.package_size} package, the total ${formatNaira(q.amount_kobo)}, and the line "Quote ref ${q.id}" (it shows in later turns that this price came from the tool).`,
       q.approximate === 1 ? 'Say the distance is estimated because the route service was unavailable.' : '',
       window.now ? '' : `Mention: ${window.note}`,
-      'Ask "Shall I book it?" and wait for a clear yes before calling create_dispatch_job. Never change this price.',
+      `End the message with exactly: "${closing}"`,
+      checkAddresses
+        ? 'A clear yes to this message confirms both addresses and the booking. If they say an address is wrong (or just "no"), ask which one if unclear, resolve it again and send a new quote. A size change, a question or "hmm" is not a yes: answer or re-quote, then ask again.'
+        : 'Wait for a clear yes before calling create_dispatch_job.',
+      'Never change this price.',
     ]
       .filter(Boolean)
       .join(' '),

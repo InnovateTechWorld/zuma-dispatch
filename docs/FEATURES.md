@@ -60,11 +60,28 @@ so the model can never invent a location.
    - If an address turns out to be in the other state anyway, `what_to_do` carries an interstate note.
    - Identical labels are merged. When every match is outside both states, the answer is a single
      `out_of_area` instead of "which one?".
-5. **Stable answers:** the same text returns the same `place_id`s for 6 hours. Chord re-asks every turn
+5. **Stable answers:** the same text returns the same `place_id`s for 6 hours (cache key `resolve:v5:`). Chord re-asks every turn
    (see §10), so this keeps quotes and bookings stable.
 
 **Statuses:** `confirmed` · `ambiguous` · `needs_detail` · `not_found` · `out_of_area`. Each carries a
 `what_to_do` for the model.
+
+**Confirming the address (fast path, 2026-10-21).** A `confirmed` result also carries `confirm`:
+- `in_quote` (demo postcodes only, which are one exact place): Zuma does not ask about it separately. The
+  quote message reads both addresses back on their own lines and ends with *"Please check both addresses
+  above. If they are right, reply YES and I will book it. If one is wrong, tell me which one."* One yes
+  confirms the addresses and the booking. This saves a turn (about 0.1 credit).
+- `ask_first` (every map result: landmarks, streets, areas): Zuma reads the label back and waits for the
+  answer before quoting. Two providers can agree on the wrong place with the right name ("Yaba Market" →
+  Yaba College), so map results never take the fast path.
+- A demo postcode in the other state is `ask_first`, with the interstate note.
+- `quote_delivery` returns `closing_question` (the exact line to end with) and
+  `addresses_confirmed_in_this_message`. The address-check question is used whenever either place was a
+  demo postcode; otherwise it is "Shall I book it?".
+- The answer to that question:
+  - "no" or "the pickup is wrong" → ask which address if unclear, resolve it again and send a new quote.
+  - A size change or a question → re-quote or answer, then ask again.
+  - Only a clear yes books.
 
 **Fallbacks.**
 

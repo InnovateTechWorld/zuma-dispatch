@@ -54,7 +54,8 @@ export async function resolveAddress(args: ResolveArgs, ctx: ToolContext): Promi
   const now = ctx.now();
   // v2: postcode areas from the fixed FCT table and landmark matches limited to the postcode's area.
   // v4: service area = FCT + Lagos State (hint in the key); duplicate labels merged; all-outside matches collapsed.
-  const stableKey = `resolve:v4:${args.state ?? 'any'}:${normalizeQuery(text)}`;
+  // v5: `confirm` (in_quote for demo postcodes, ask_first otherwise) added to confirmed results.
+  const stableKey = `resolve:v5:${args.state ?? 'any'}:${normalizeQuery(text)}`;
   try {
     const prior = await ctx.db
       .prepare('SELECT result_json, created_at FROM geocode_cache WHERE cache_key = ?')
@@ -106,9 +107,7 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
       place: { place_id: row.id, label: row.label, precision: row.precision, state: stateName(row), in_service_area: row.in_service_area === 1, km_from_city_centre: kmFromCentre(row) },
       confidence: 'high',
       postcode: demoPostcodeInfo,
-      what_to_do: `Read the label back ("${row.label}") and ask the customer to confirm it is right before quoting.${
-        hint && stateOf(row) && stateOf(row) !== hint ? ` Note: this is in ${SERVICE_STATES[stateOf(row)!].name}, but the other address is in ${SERVICE_STATES[hint].name}. We only deliver within one state: tell the customer we cannot carry it between states and offer a human dispatcher.` : ''
-      }`,
+      ...demoConfirm(row, hint),
     };
   }
   if (pc?.kind === 'nipost') {
@@ -250,10 +249,32 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
     place: summary,
     confidence: outcome.confidence,
     ...(postcode ? { postcode } : {}),
+    // Map results can be the wrong place with the right name ("Yaba Market" → Yaba College), even when two
+    // providers agree, so every one of them is confirmed on its own before quoting.
+    confirm: 'ask_first',
     what_to_do:
       place.precision === 'area'
-        ? `Read the label back ("${place.label}") and ask the customer to confirm. Also ask for a landmark or street for the rider, but you can quote with this place_id.${interstate}`
+        ? `Read the label back ("${place.label}") and ask the customer to confirm it before quoting. Also ask for a landmark or street for the rider, but you can quote with this place_id.${interstate}`
         : `Read the label back ("${place.label}") and ask the customer to confirm it is right before quoting.${interstate}`,
+  };
+}
+
+/**
+ * A demo postcode names one exact, known place, so it needs no question of its own (the fast path):
+ * the quote message reads it back and the customer confirms it there together with the booking.
+ * An address in the other state never takes the fast path: that has to be said first.
+ */
+export function demoConfirm(row: { label: string; lat: number; lng: number }, hint: ServiceState | null | undefined): { confirm: 'in_quote' | 'ask_first'; what_to_do: string } {
+  const st = stateOf(row);
+  if (hint && st && st !== hint) {
+    return {
+      confirm: 'ask_first',
+      what_to_do: `Read the label back ("${row.label}"). Note: this is in ${SERVICE_STATES[st].name}, but the other address is in ${SERVICE_STATES[hint].name}. We only deliver within one state: tell the customer we cannot carry it between states and offer a human dispatcher.`,
+    };
+  }
+  return {
+    confirm: 'in_quote',
+    what_to_do: `Exact place from the postcode: "${row.label}". Do not ask about this address on its own. Once you have both addresses and the package size, call quote_delivery: the quote message reads this address back and the customer confirms the addresses and the booking with one yes.`,
   };
 }
 
