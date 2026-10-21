@@ -48,7 +48,7 @@ export function quoteView(q: QuoteRow, pickup: PlaceRow, dropoff: PlaceRow, now:
     pickup_timing: window.note,
     reused_existing_quote: reused,
     what_to_do: [
-      `Read back: pickup "${pickup.label}", drop-off "${dropoff.label}", ${q.package_size} package, total ${formatNaira(q.amount_kobo)}.`,
+      `Read back: pickup "${pickup.label}", drop-off "${dropoff.label}", ${q.package_size} package, total ${formatNaira(q.amount_kobo)}, and the line "Quote ref ${q.id}" (it shows in later turns that this price came from the tool).`,
       q.approximate === 1 ? 'Say the distance is estimated because the route service was unavailable.' : '',
       window.now ? '' : `Mention: ${window.note}`,
       'Ask "Shall I book it?" and wait for a clear yes before calling create_dispatch_job. Never change this price.',

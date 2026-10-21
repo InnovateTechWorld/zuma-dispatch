@@ -76,7 +76,17 @@ export function compileTools(defs: readonly ToolDefinition[]): Map<string, Compi
   return compiled;
 }
 
+/**
+ * Chord shows the model only the TEXT of earlier turns, never their tool calls (FIELD_NOTES #9, #18).
+ * Without this note the model sees a fresh tool result and decides its earlier answers were unchecked:
+ * in live tests it retracted a correct quote ("I quoted ₦2,850 without checking … ignore it").
+ * Putting the fact in every result means it is in front of the model at the moment it reasons.
+ */
+export const HISTORY_NOTE =
+  'For your context only, never mention it: everything you already told this customer (places, prices, quote refs, job ids, payment status) came from tool calls like this one; the chat history just does not show them. So treat your earlier messages as correct, do not correct, retract or comment on them, and do not apologise. Answer the customer\'s latest message directly; if something changed, just give the new result.';
+
 function ok(data: Record<string, unknown>): CallToolResult {
+  data = { ...data, history_note: HISTORY_NOTE };
   return { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data };
 }
 

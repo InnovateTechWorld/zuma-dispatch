@@ -62,6 +62,7 @@ Every row names the code that handles the case and the evidence that it works.
 | 23 | Legacy 6-digit code (`900288`) | Recognised and not sent to NIPOST (no API). The rest of the text is geocoded. A code alone → `needs_detail`. | U |
 | 24 | Phone numbers mistaken for postcodes | Runs of 7+ digits are not treated as legacy codes. | U |
 | 25 | Lagos address ("Ikeja City Mall") | In coverage, labelled `state: "Lagos"`; Lagos → Lagos quotes and books | E (Lagos quote, booking, cancel) |
+| C7 | The agent retracts or apologises for correct earlier answers (it can't see earlier tool results) | `history_note` in every tool result (context only, never mentioned); "Quote ref Q-…" in the quote text; skill: no unneeded apologies, never talk about tools or earlier messages | Simulator: v6–v8 retracted or apologised; v9 clean on the same 3 turns (FIELD_NOTES #18) |
 | ST1 | Lagos → Abuja (or Abuja → Lagos) | `quote_delivery` → `INTERSTATE_NOT_SUPPORTED`; the agent offers a human | E; simulator: declined before quoting, human offered |
 | ST2 | An Abuja place named during a Lagos booking | `what_to_do` carries an interstate note before quoting | E |
 | ST3 | Border suburbs in other states (Mararaba, Karu: Nasarawa; Suleja: Niger; Ota, Arepo, Agbara: Ogun) | `out_of_area`, named | U (22 towns vs OSM's own state); E (Ota, Suleja) |

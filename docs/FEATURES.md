@@ -418,6 +418,12 @@ tools no conversation or customer id. The server is built so this cannot cause w
 | Forgets job ids | Memory + phone/name lookup |
 | Might disown an id it sent | Skill rule: ids already sent are real |
 
+**Earlier answers stay trusted.**
+- Chord hides earlier tool calls from the model, which led it to retract correct quotes (FIELD_NOTES #18).
+- Every tool result therefore carries a `history_note`: earlier places, prices, refs and ids came from
+  tools; don't correct or comment on them; never mention the note.
+- The quote message includes "Quote ref Q-…" as visible evidence.
+
 ## 11. Configuration and safety
 
 **Config.** Everything is validated on every request (`src/config.ts`):

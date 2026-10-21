@@ -587,3 +587,33 @@ need level 5: a live key with business verification (KYB).
 
 **What would help (NIPOST).** Sandbox codes that resolve at L1, with coordinates, in each state, would make
 all of this unnecessary.
+
+## 18. The agent kept retracting correct answers; skill text alone could not stop it
+
+**What happened (simulator, 2026-10-21, skill v6–v9).** Same three turns each time: demo postcodes
+Paystack office → National Stadium, "yes" (quote ₦2,850), then change the drop-off to Abuja.
+
+| Skill / server | Turn 2 or 3 reply |
+|---|---|
+| v6 (rule: "never apologise for or take back an earlier answer…") | Turn 2: "Sorry about the mix-up earlier." There was no mix-up |
+| v7 (+ "don't apologise unless something went wrong; never open with sorry") | Turn 3: "I quoted ₦2,850 without checking either address or the price… That quote isn't valid, so please ignore it." All false; the quote came from `quote_delivery` |
+| v8 (+ `history_note` in every tool result, + "Quote ref Q-…" in the quote message) | Turn 3: "The tool notes say my earlier messages did come from real lookups, so my last correction was wrong." It reversed itself mid-turn and narrated it |
+| **v9** (note says "for your context only, never mention it; don't correct, retract or comment"; skill: "never talk to the customer about tools, notes, lookups or your own earlier messages") | **Clean on all three turns**: read-back, quote with ref, a plain interstate refusal with options |
+
+**How we found the cause.**
+- Every tool call in those turns succeeded (D1 `tool_calls`: no errors, no retries).
+- Chord's transcript had no hidden message.
+- The customer memories were neutral booking facts.
+- So the model invented the problem. It sees only the *text* of its earlier turns (#9). When a new tool
+  result arrives, it concludes the earlier text was unverified, and its honesty instincts make it retract.
+
+**Fix: where the model reads, not just the skill.**
+- A short `history_note` is added to **every** tool result (`src/mcp/tooling.ts`), so the fact is in front
+  of the model at the moment it reasons. It is marked "for your context only, never mention it".
+- The quote message now carries visible evidence ("Quote ref Q-3X91BREZ"). The model has trusted ids it
+  sees in its own text since #9.
+- Cost: 11 simulator turns, 1.19 credits (≈0.11 per turn); balance 5.64.
+
+**What would help (Chord).** Give the model at least a summary of earlier turns' tool calls (name +
+key result). Every agent on Chord that calls tools across turns can hit this. Skill instructions alone
+did not hold.
