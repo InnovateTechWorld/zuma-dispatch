@@ -35,10 +35,10 @@ Example quotes (small package):
 
 | # | Type this | What should happen |
 |---|---|---|
-| 1 | "Send a phone charger from LA-11-ZDM-PS-01 to LA-19-ZDM-UL-01" | One message: Pickup: Paystack office… / Drop-off: UNILAG… / small / ₦3,000 / "Quote ref Q-…", ending "Please check both addresses above. If they are right, reply YES and I will book it. If one is wrong, tell me which one." (no separate address question: demo postcodes are exact) |
+| 1 | "Send a phone charger from LA-11-ZDM-PS-01 to LA-19-ZDM-UL-01" | One message: Pickup: Paystack office… / Drop-off: UNILAG… / small / ₦3,000 / "Quote ref Q-…", ending "Please check both addresses. Are they correct? Reply YES to continue, or tell me which one is wrong." (no separate address question: demo postcodes are exact). Reply "yes" → "Thanks! To book it, I need: 1. Your name 2. The recipient's name 3. The recipient's phone number" |
 | 1b | Instead: "from Ikeja City Mall to LA-19-ZDM-UL-01" | Zuma first asks "Pickup: Ikeja City Mall… Is that right?"; after yes, the same one-message quote |
 | 1c | After the quote: "the pickup is wrong" | Zuma asks for the right pickup and sends a new quote; nothing is booked |
-| 2 | "yes. I'm Ada Obi, recipient Bola Musa 0803 123 4567, I'll pay by link" | **Reserved** (job id), Paystack link. **No handover code yet** |
+| 2 | "I'm Ada Obi, recipient Bola Musa 0803 123 4567, I'll pay by link" | **Reserved** (job id), Paystack link. **No handover code yet** |
 | 3 | Pay the link (test card `4084 0840 8408 4081`, CVV `408`, PIN `0000`, OTP `123456`) and **don't type** | The job turns paid within seconds (board: "paid via Paystack notification"); the chat notice is recorded |
 | 4 | "i have sent it" (or "when will the rider come?") | Payment received, **rider's name, vehicle and plate**, pickup timing and **the handover code**. If the card is still processing: "Thanks … still processing … I'll confirm" |
 | 5 | New conversation: "where is my package to Bola Musa, 0803 123 4567? I'm Ada Obi" | Found without a job id |

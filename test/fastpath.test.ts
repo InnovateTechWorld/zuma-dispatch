@@ -36,12 +36,28 @@ describe('fast path: demo postcodes are confirmed in the quote message', () => {
     expect(v.closing_question).toBe(ADDRESS_CHECK_QUESTION);
     expect(v.addresses_confirmed_in_this_message).toBe(true);
     expect(String(v.what_to_do)).toContain('"Pickup: Paystack office');
-    expect(String(v.what_to_do)).toContain('confirms both addresses and the booking');
+    expect(String(v.what_to_do)).toContain('confirms both addresses and the price');
+    expect(v.details_question).toContain('1. Your name');
+    expect(String(v.what_to_do)).toContain('ask only for the missing ones');
     expect(String(v.what_to_do)).toContain('Quote ref Q-REDZJ92N');
   });
   it('landmarks confirmed one by one keep the plain booking question', () => {
     const v = quoteView(quote, place({}), place({ id: 'P-BBBBBBBB' }), NOON, false);
     expect(v.closing_question).toBe(BOOK_QUESTION);
     expect(v.addresses_confirmed_in_this_message).toBe(false);
+  });
+});
+
+describe('order and wording', () => {
+  it('the quote question only confirms; it never promises to book', () => {
+    for (const q of [ADDRESS_CHECK_QUESTION, BOOK_QUESTION]) {
+      expect(q).toContain('Reply YES to continue');
+      expect(q.toLowerCase()).not.toContain('book');
+    }
+    expect(ADDRESS_CHECK_QUESTION).toContain('Are they correct?');
+  });
+  it('every tool result tells the model not to narrate its re-checks', async () => {
+    const { HISTORY_NOTE } = await import('../src/mcp/tooling');
+    expect(HISTORY_NOTE).toContain('Never mention that you checked or re-ran a tool');
   });
 });

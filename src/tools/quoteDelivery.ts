@@ -30,9 +30,15 @@ async function loadPlace(ctx: ToolContext, raw: string, role: 'pickup' | 'dropof
 /** A place the customer gave as a demo postcode: exact, and never asked about separately (resolve_address `confirm: in_quote`). */
 export const confirmedInQuote = (p: Pick<PlaceRow, 'postcode_status' | 'precision'>) => p.postcode_status === 'demo' && p.precision === 'exact';
 
-/** The question that ends the quote message. When an address has not been checked on its own yet, it asks about the addresses too. */
-export const ADDRESS_CHECK_QUESTION = 'Please check both addresses above. If they are right, reply YES and I will book it. If one is wrong, tell me which one.';
-export const BOOK_QUESTION = 'Shall I book it?';
+/**
+ * The question that ends the quote message. It only confirms; booking comes after the customer's
+ * details, so it never says "I will book it". When an address has not been checked on its own yet,
+ * it asks about the addresses too.
+ */
+export const ADDRESS_CHECK_QUESTION = 'Please check both addresses. Are they correct? Reply YES to continue, or tell me which one is wrong.';
+export const BOOK_QUESTION = 'Is this correct? Reply YES to continue.';
+/** What to ask after the YES: one short list, only the items still missing. */
+export const DETAILS_ASK = 'Thanks! To book it, I need:\n1. Your name\n2. The recipient\'s name\n3. The recipient\'s phone number';
 
 export function quoteView(q: QuoteRow, pickup: PlaceRow, dropoff: PlaceRow, now: number, reused: boolean): Record<string, unknown> {
   const size = SIZES[q.package_size];
@@ -58,14 +64,16 @@ export function quoteView(q: QuoteRow, pickup: PlaceRow, dropoff: PlaceRow, now:
     reused_existing_quote: reused,
     addresses_confirmed_in_this_message: checkAddresses,
     closing_question: closing,
+    details_question: DETAILS_ASK,
     what_to_do: [
       `In one message, read back on separate lines: "Pickup: ${pickup.label}", "Drop-off: ${dropoff.label}", the ${q.package_size} package, the total ${formatNaira(q.amount_kobo)}, and the line "Quote ref ${q.id}" (it shows in later turns that this price came from the tool).`,
       q.approximate === 1 ? 'Say the distance is estimated because the route service was unavailable.' : '',
       window.now ? '' : `Mention: ${window.note}`,
       `End the message with exactly: "${closing}"`,
       checkAddresses
-        ? 'A clear yes to this message confirms both addresses and the booking. If they say an address is wrong (or just "no"), ask which one if unclear, resolve it again and send a new quote. A size change, a question or "hmm" is not a yes: answer or re-quote, then ask again.'
-        : 'Wait for a clear yes before calling create_dispatch_job.',
+        ? 'A clear yes confirms both addresses and the price. If they say an address is wrong (or just "no"), ask which one if unclear, resolve it again and send a new quote. A size change, a question or "hmm" is not a yes: answer or re-quote, then ask again.'
+        : 'A clear yes confirms the price. A size change, a question or "hmm" is not a yes: answer or re-quote, then ask again.',
+      `After the yes, if you do not yet have the sender's name, the recipient's name and the recipient's phone, ask only for the missing ones in one short numbered list, like: "${DETAILS_ASK.replaceAll('\n', ' / ')}". When you have all three, call create_dispatch_job (customer_confirmed: true) without asking again.`,
       'Never change this price.',
     ]
       .filter(Boolean)
