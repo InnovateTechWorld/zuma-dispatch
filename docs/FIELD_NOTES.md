@@ -677,3 +677,48 @@ operator console, those five are your surface": take-over, hand-back, pause, res
 - Chord's own handover notice ("One moment — connecting you with a teammate.") is in the transcript as a
   system turn marked `sent`, though the simulator did not display it (#19). That is why we also post our
   own acknowledgement.
+
+## 21. End-to-end handover test: three things only a live run shows
+
+**Run (2026-10-21 11:25–11:32, production board + simulator).**
+- Chat: "my rider was rude, I want a person" → handover → board reply → hand back → a new request.
+
+**1. The simulator does not display any message from a person.**
+- Chord recorded these with `delivery_status: sent`:
+  - its own "One moment — connecting you with a teammate.";
+  - our acknowledgement;
+  - the board reply.
+- The simulator's own `/state` endpoint returned only the customer's message. So Chord, the board and our
+  server work, but the simulator page never shows operator messages.
+- On WhatsApp, operator messages go out over WhatsApp (Chord docs, threads §7).
+- Asked TSG about it.
+
+**2. Chord shows operator messages to the AI as its own.**
+- After the first hand-back, the customer asked for a new delivery and Zuma **handed over again**. Its
+  reason: "Note: the assistant wrongly introduced itself as 'Shola' from the team in an earlier message
+  and has corrected this."
+- It took the dispatcher's reply for its own mistake, saw the rider complaint as still open, and
+  re-escalated.
+- *Fix:*
+  - Board replies are signed "— Zuma Dispatch team".
+  - Handing back first posts "Thanks for your patience. Zuma, our booking assistant, will help you from
+    here."
+  - Skill v11: messages signed by the team come from a person, not you; never correct them; after the
+    closing line the handled issue is done, so help with the latest request.
+- *Re-run:* in a fresh chat Zuma went straight to the new request ("Both places are in Lagos … Are both
+  correct?").
+
+**3. The agent's own handover sentence never reaches the customer.**
+- When the agent calls the handover tool, Chord replaces that turn's text with its system notice. The
+  skill's "I'm connecting you…" never made it into the transcript.
+- Our server-side acknowledgement is therefore the only wording we control. It arrived as an operator
+  message in every run (`ack: sent`).
+
+**Cost, measured.**
+- 4.79 → 4.41 credits, 46 → 50 AI requests, over 4 AI turns (≈0.09 each).
+- The 7 board actions and our 3 acknowledgements added no requests. **A person's reply costs 0 credits.**
+
+**What would help (Chord / TSG).**
+- Show operator and system messages in the simulator.
+- Mark operator turns as such in the model's context (or document that they appear as assistant turns).
+- Keep the agent's last text when it calls handover, or let the skill set the handover notice.

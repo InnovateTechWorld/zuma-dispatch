@@ -74,6 +74,8 @@ Every row names the code that handles the case and the evidence that it works.
 | H6 | Empty / over-4,000-character reply | Refused before any Chord call | U |
 | H7 | Reply from a local dev server | Refused (local guard) | U; local browser run |
 | H8 | Already handed back by someone else | 409 → explained, nothing changes | U |
+| H9 | After a hand-back the AI "corrects" the team's reply and re-escalates | Replies signed "— Zuma Dispatch team"; closing line on hand-back; skill v11 rule | Live: re-escalated before the fix; after it, Zuma took the new request |
+| H10 | The simulator hides messages from people | Known simulator limit (its `/state` feed has none); Chord marks them sent; WhatsApp shows them | Live, `/state` inspected |
 | H1 | Handed to a human but the customer sees nothing | Server posts "You're now connected to the Zuma Dispatch support team…" on the escalation webhook; board column "Customer told" | Local signed webhook: agent → attempted (skipped locally), human take-over → not sent |
 | C7 | The agent retracts or apologises for correct earlier answers (it can't see earlier tool results) | `history_note` in every tool result (context only, never mentioned); "Quote ref Q-…" in the quote text; skill: no unneeded apologies, never talk about tools or earlier messages | Simulator: v6–v8 retracted or apologised; v9 clean on the same 3 turns (FIELD_NOTES #18) |
 | ST1 | Lagos → Abuja (or Abuja → Lagos) | `quote_delivery` → `INTERSTATE_NOT_SUPPORTED`; the agent offers a human | E; simulator: declined before quoting, human offered |

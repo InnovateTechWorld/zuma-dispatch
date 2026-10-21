@@ -60,6 +60,17 @@ Example quotes (small package):
 
 For each of these, say "no" and give a nearby landmark or a demo postcode.
 
+## Handovers from the board
+
+1. In the simulator: "my rider was rude, I want to talk to a person". Zuma hands over.
+2. Board → **Handovers** → open the chat. The whole conversation is there.
+3. Type a reply and press **Send and hand back**. The reply is signed "— Zuma Dispatch team", and a
+   closing line is posted.
+4. In the simulator, ask for a delivery. Zuma takes it up.
+   - The simulator does **not** show the team's messages: its own message feed only carries customer and
+     AI turns.
+   - The board transcript shows they were delivered.
+
 ## After the run
 
 - **Board** (`/board`, password `BOARD_TOKEN`): the job under the right city tab, its payment path, its

@@ -22,6 +22,17 @@ import { crossSite } from './session';
  */
 
 export const OPERATOR_ID = 'zuma-board-dispatcher';
+/** Appended to every board reply. Chord shows operator messages to the AI as if it had written them; in a
+ *  live test Zuma "corrected" a dispatcher's reply as its own mistake and re-escalated (FIELD_NOTES #21).
+ *  A signature tells the customer and the AI that a person wrote it. */
+export const TEAM_SIGNATURE = '— Zuma Dispatch team';
+/** Posted just before a hand-back: tells the customer who answers next, and tells the AI the person is done. */
+export const HANDBACK_LINE = 'Thanks for your patience. Zuma, our booking assistant, will help you from here.';
+
+/** The text actually sent: the reply, signed unless the person already signed it. */
+export function signed(text: string): string {
+  return /zuma dispatch team/i.test(text) ? text : `${text}\n${TEAM_SIGNATURE}`;
+}
 export const MAX_REPLY = 4000; // Chord's limit for an operator message
 const THREAD_RE = /^[0-9a-f]{24}$/;
 const TIMEOUT_MS = 5000;
@@ -59,7 +70,7 @@ export function speakerOf(t: Turn): Speaker {
   if (kind === 'human_operator') {
     const text = t.content?.text ?? '';
     if (t.sender?.operator_user_id === OPERATOR_ID) return 'team';
-    return /^(You're now connected to the Zuma Dispatch support team|Payment received:)/.test(text) ? 'notice' : 'team';
+    return /^(You're now connected to the Zuma Dispatch support team|Payment received:|Thanks for your patience\. Zuma, our booking assistant)/.test(text) ? 'notice' : 'team';
   }
   return 'agent';
 }
@@ -81,7 +92,7 @@ export const STATE_LABEL: Record<ControlState, string> = {
 export function checkReply(raw: unknown): { ok: true; text: string } | { ok: false; problem: string } {
   const text = String(raw ?? '').replace(/\r\n/g, '\n').trim();
   if (!text) return { ok: false, problem: 'Write a message first.' };
-  if (text.length > MAX_REPLY) return { ok: false, problem: `That message is ${text.length} characters; Chord accepts up to ${MAX_REPLY}.` };
+  if (text.length + TEAM_SIGNATURE.length + 1 > MAX_REPLY) return { ok: false, problem: `That message is ${text.length} characters; with the team signature Chord accepts up to ${MAX_REPLY - TEAM_SIGNATURE.length - 1}.` };
   return { ok: true, text };
 }
 
@@ -259,7 +270,7 @@ async function conversation(threadId: string, url: URL, env: Env, config: Config
 <input type="hidden" name="nonce" value="${nonce}-reply">
 <label class="field"><span class="label">Reply as the Zuma Dispatch team</span>
 <textarea class="input textarea" name="text" maxlength="${MAX_REPLY}" required placeholder="Hi, this is the Zuma Dispatch team…"></textarea></label>
-<div class="composer__row"><span class="composer__hint">Sent to the customer's chat. People's replies use no AI credits.</span>
+<div class="composer__row"><span class="composer__hint">Signed “${TEAM_SIGNATURE}”. Handing back also posts “${HANDBACK_LINE}”. People's replies use no AI credits.</span>
 <div class="actions"><button class="btn" type="submit" name="action" value="reply_handback">Send and hand back</button><button class="btn btn--primary" type="submit" name="action" value="reply">Send</button></div></div>
 </form>
 <form class="inline" method="post" action="${h(self)}" style="display:block;margin-top:var(--space-xs)">${hidden('handback')}<button class="btn btn--ghost" type="submit">Hand back to Zuma without replying</button></form>`
@@ -358,26 +369,32 @@ async function act(request: Request, url: URL, env: Env, threadId: string): Prom
 async function perform(cfg: NoticeConfig, threadId: string, action: Action, text: string): Promise<{ ok: boolean; message: string; turnId?: string }> {
   const who = { operator_user_id: OPERATOR_ID };
   if (action === 'reply' || action === 'reply_handback') {
-    const r = await chord<{ id?: string; delivery_status?: string; delivery_error?: string | null }>(cfg, `/v1/threads/${threadId}/messages`, TIMEOUT_MS, { text, ...who });
+    const r = await chord<{ id?: string; delivery_status?: string; delivery_error?: string | null }>(cfg, `/v1/threads/${threadId}/messages`, TIMEOUT_MS, { text: signed(text), ...who });
     if (!r.ok) return { ok: false, message: explain('reply', r as never, chordError(r)) };
     if (r.data.delivery_status === 'failed') {
       return { ok: false, message: `Chord recorded the reply but the chat did not accept it${r.data.delivery_error ? ` (${r.data.delivery_error})` : ''}. It shows as “Not delivered”.`, turnId: r.data.id };
     }
     if (action === 'reply') return { ok: true, message: 'Sent to the customer.', turnId: r.data.id };
-    const back = await chord(cfg, `/v1/threads/${threadId}/hand-back`, TIMEOUT_MS, { ...who, reason: 'Resolved on the board' });
+    const back = await handBack(cfg, threadId);
     return back.ok || (back.failure === 'http' && back.status === 409)
       ? { ok: true, message: 'Sent, and handed back to Zuma.', turnId: r.data.id }
       : { ok: false, message: `Sent, but hand-back failed: ${explain('handback', back as never, chordError(back))}`, turnId: r.data.id };
   }
   const path = action === 'handback' ? 'hand-back' : action === 'takeover' ? 'take-over' : 'resume';
   const reason = action === 'handback' ? 'Resolved on the board' : action === 'takeover' ? 'Taken over from the board' : 'Resumed from the board';
-  const r = await chord<Thread>(cfg, `/v1/threads/${threadId}/${path}`, TIMEOUT_MS, { ...who, reason });
+  const r = action === 'handback' ? await handBack(cfg, threadId) : await chord<Thread>(cfg, `/v1/threads/${threadId}/${path}`, TIMEOUT_MS, { ...who, reason });
   if (!r.ok) return { ok: false, message: explain(action, r as never, chordError(r)) };
   const now = controlState(r.data.control_state);
   return {
     ok: true,
     message: action === 'handback' ? 'Handed back: Zuma answers this chat again.' : action === 'takeover' ? `You hold this chat now (${STATE_LABEL[now]}). Zuma stays quiet until you hand it back.` : 'Zuma is answering again.',
   };
+}
+
+/** Posts the closing line (best effort: a failure never blocks the hand-back), then hands back. */
+async function handBack(cfg: NoticeConfig, threadId: string) {
+  await chord(cfg, `/v1/threads/${threadId}/messages`, TIMEOUT_MS, { text: HANDBACK_LINE, operator_user_id: OPERATOR_ID });
+  return chord<Thread>(cfg, `/v1/threads/${threadId}/hand-back`, TIMEOUT_MS, { operator_user_id: OPERATOR_ID, reason: 'Resolved on the board' });
 }
 
 // ------------------------------------------------------------------ router

@@ -488,8 +488,17 @@ and the browser runs in `docs/EDGE_CASES.md` B1–B16.
   | A local dev server | Never posts into real chats (`CHORD_NOTICES_ALLOW_LOCAL`) |
   | Two dispatchers | Each action reads Chord's answer; a 409 explains the current state |
 
+- **Signed replies and a closing line.** Chord shows operator messages to the AI as if it wrote them, so in a
+  live test Zuma "corrected" a reply and re-escalated (FIELD_NOTES #21).
+  - Every board reply is signed "— Zuma Dispatch team", unless already signed.
+  - Every hand-back first posts "Thanks for your patience. Zuma, our booking assistant, will help you from
+    here."
+  - Skill v11 tells the agent what both mean.
 - After an action you land back on the reply box with the result beside it.
-- **Cost:** a person's reply runs no AI, so it uses no model credits (verified below). A handed-back chat's
+- **Simulator caveat:** the TSG simulator does not display operator or system messages; its own `/state`
+  feed carries only the customer's and the AI's messages. They reach WhatsApp normally.
+- **Cost:** a person's reply runs no AI, so it uses no model credits. Measured: 7 board actions plus 3
+  acknowledgements, 0 AI requests. A handed-back chat's
   next customer message is a normal AI turn.
 
 ## 10. Conversation memory (Chord-specific behaviour)

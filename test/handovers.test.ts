@@ -85,11 +85,16 @@ async function run(fields: Record<string, string>, db = fakeDb(), extraEnv: Part
 }
 
 describe('replying and handing back', () => {
+  it('signs replies (unless already signed) so the customer and the AI know a person wrote them', async () => {
+    const { signed } = await import('../src/web/handovers');
+    expect(signed('Hi')).toBe('Hi\n— Zuma Dispatch team');
+    expect(signed('Hi, this is Shola from the Zuma Dispatch team.')).toBe('Hi, this is Shola from the Zuma Dispatch team.');
+  });
   it('sends the reply as the board operator and reports it', async () => {
     const calls = chordApi({});
     const r = await run({ action: 'reply', nonce: NONCE, text: ' Hi, this is the team ' });
     expect(r).toMatchObject({ msg: 'Sent to the customer.', error: false });
-    expect(calls[0]!.body).toEqual({ text: 'Hi, this is the team', operator_user_id: OPERATOR_ID });
+    expect(calls[0]!.body).toEqual({ text: 'Hi, this is the team\n— Zuma Dispatch team', operator_user_id: OPERATOR_ID });
   });
   it('a double click or refresh never sends twice', async () => {
     const calls = chordApi({});
@@ -110,7 +115,9 @@ describe('replying and handing back', () => {
   it('send and hand back: both happen, in that order; a failed send never hands back', async () => {
     const calls = chordApi({});
     expect((await run({ action: 'reply_handback', nonce: NONCE, text: 'Done' })).msg).toBe('Sent, and handed back to Zuma.');
-    expect(calls.map((c) => c.url.split('/').pop())).toEqual(['messages', 'hand-back']);
+    // reply, closing line, hand-back
+    expect(calls.map((c) => c.url.split('/').pop())).toEqual(['messages', 'messages', 'hand-back']);
+    expect(calls[1]!.body!.text).toMatch(/^Thanks for your patience\. Zuma, our booking assistant/);
     const calls2 = chordApi({ message: () => new Response('{}', { status: 502 }) });
     await run({ action: 'reply_handback', nonce: NONCE.replace('reply', 'reply'), text: 'Done' }, fakeDb());
     expect(calls2.some((c) => c.url.endsWith('/hand-back'))).toBe(false);
