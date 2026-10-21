@@ -109,6 +109,11 @@ export async function clientKey(request: Request): Promise<string> {
  * Returns the seconds until this client may try again, or 0 if this attempt may be checked.
  */
 export async function countAttempt(db: D1Database, key: string, now: number): Promise<number> {
+  return (await countAttemptDetailed(db, key, now)).wait;
+}
+
+/** countAttempt plus how many attempts this window has used (for "N tries left" on the sign-in page). */
+export async function countAttemptDetailed(db: D1Database, key: string, now: number): Promise<{ wait: number; failures: number }> {
   const row = await db
     .prepare(
       `INSERT INTO board_login_failures (ip_hash, window_start, failures) VALUES (?1, ?2, 1)
@@ -119,7 +124,7 @@ export async function countAttempt(db: D1Database, key: string, now: number): Pr
     )
     .bind(key, now, LOGIN_WINDOW_MS)
     .first<{ window_start: number; failures: number }>();
-  return lockoutSeconds(row, now);
+  return { wait: lockoutSeconds(row, now), failures: row?.failures ?? 1 };
 }
 
 /** Pure part of countAttempt: this is attempt number `failures` in a window that began at `window_start`. */
@@ -133,4 +138,35 @@ export async function clearFailures(db: D1Database, key: string, now: number): P
     db.prepare('DELETE FROM board_login_failures WHERE ip_hash = ?').bind(key),
     db.prepare('DELETE FROM board_login_failures WHERE window_start < ?').bind(now - LOGIN_WINDOW_MS),
   ]);
+}
+
+// ------------------------------------------------------------------ theme preference
+const THEME_COOKIE = 'zd_theme';
+
+/** The person's saved theme; anything unexpected means "follow the device". */
+export function readTheme(request: Request): 'light' | 'dark' | 'auto' {
+  const v = readCookie(request, THEME_COOKIE);
+  return v === 'light' || v === 'dark' ? v : 'auto';
+}
+
+/** Saves light/dark for a year; "auto" deletes the cookie. Not a secret, but HttpOnly anyway. */
+export function themeCookie(url: URL, theme: 'light' | 'dark' | 'auto'): string {
+  const secure = url.protocol === 'https:' ? '; Secure' : '';
+  return theme === 'auto'
+    ? `${THEME_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`
+    : `${THEME_COOKIE}=${theme}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${secure}`;
+}
+
+/** Where the theme switch may return to: any safe board page, or the sign-in page (keeping its own safe `next`). */
+export function safeBack(raw: string | null): string {
+  if (raw && raw.startsWith('/board/login')) {
+    let next = '/board';
+    try {
+      next = safeNext(new URL(raw, 'https://x').searchParams.get('next'));
+    } catch {
+      next = '/board';
+    }
+    return next === '/board' ? '/board/login' : `/board/login?next=${encodeURIComponent(next)}`;
+  }
+  return safeNext(raw);
 }

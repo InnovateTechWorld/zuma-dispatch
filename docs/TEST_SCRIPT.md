@@ -73,6 +73,9 @@ For each of these, say "no" and give a nearby landmark or a demo postcode.
 
 ## After the run
 
-- **Board** (`/board`, password `BOARD_TOKEN`): the job under the right city tab, its payment path, its
-  chat notice, and the handover.
+- **Board** (`/board`, password `BOARD_TOKEN`):
+  - **Home** lists what needs you, such as the waiting handover and the paid job to dispatch.
+  - **Deliveries** has the job under the right city chip. Its page has Summary, Payment and Timeline views.
+  - **Payments › Chat notices** has the "Payment received" notice.
+  - **Handovers** has the conversation.
 - **Google Sheet:** the row, with the City column.

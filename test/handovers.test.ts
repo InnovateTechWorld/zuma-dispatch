@@ -79,7 +79,7 @@ function post(fields: Record<string, string>, headers: Record<string, string> = 
 }
 async function run(fields: Record<string, string>, db = fakeDb(), extraEnv: Partial<Env> = {}, headers?: Record<string, string>, origin?: string) {
   const { req, url } = post(fields, headers, origin);
-  const res = (await handovers(req, url, env(db, extraEnv), config, { signedIn: true }))!;
+  const res = (await handovers(req, url, env(db, extraEnv), config, { signedIn: true, theme: 'auto' }))!;
   const loc = new URL(res.headers.get('Location')!);
   return { msg: loc.searchParams.get('msg'), error: loc.searchParams.get('tone') === 'error', db };
 }
@@ -139,5 +139,34 @@ describe('replying and handing back', () => {
     chordApi({ handBack: () => Response.json({ error: { code: 'INVALID_STATE' } }, { status: 409 }) });
     expect((await run({ action: 'takeover', nonce: NONCE.replace('reply', 'takeover') })).msg).toMatch(/You hold this chat now/);
     expect((await run({ action: 'handback', nonce: NONCE.replace('reply', 'handback') })).msg).toMatch(/already handed back/);
+  });
+});
+
+describe('inbox labels', () => {
+  it('cuts previews at a word and marks the cut', async () => {
+    const { clip } = await import('../src/web/handovers');
+    expect(clip("You're now connected to the Zuma Dispatch support team. A team member has your back", 60)).toBe("You're now connected to the Zuma Dispatch support team. A…");
+    expect(clip('short', 80)).toBe('short');
+    expect(clip('x'.repeat(100), 10)).toBe('xxxxxxxxxx…');
+  });
+  it('names earlier handovers by job, else by chat id', async () => {
+    const { earlierTitle } = await import('../src/web/handovers');
+    expect(earlierTitle('aaaaaaaaaaaaaaaaaabc1234', 'wants to cancel paid job ZD-T30FJ')).toBe('Chat about ZD-T30FJ');
+    expect(earlierTitle('aaaaaaaaaaaaaaaaaabc1234', null)).toBe('Chat …bc1234');
+  });
+});
+
+describe('earlier handover names from Chord', () => {
+  it('prefers the customer name, then the contact, then the job, then the id', async () => {
+    const { earlierTitle } = await import('../src/web/handovers');
+    const id = 'aaaaaaaaaaaaaaaaaabc1234';
+    expect(earlierTitle(id, 'refund ZD-T30FJ', { id, remote_participant_metadata: { display_name: 'Ada Obi' } } as never)).toBe('Ada Obi · ZD-T30FJ');
+    expect(earlierTitle(id, null, { id, channel_id: 'external_chat' } as never)).toBe('Test chat (simulator)');
+  });
+});
+describe('earlier handover that Chord no longer has', () => {
+  it('says so instead of a bare id', async () => {
+    const { earlierTitle } = await import('../src/web/handovers');
+    expect(earlierTitle('aaaaaaaaaaaaaaaaaabc1234', null, 'gone')).toBe('Chat no longer in Chord (…bc1234)');
   });
 });

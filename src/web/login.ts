@@ -3,11 +3,11 @@ import type { Env } from '../env';
 import { basicPassword, secretsMatch } from '../lib/auth';
 import { escapeHtml as h } from '../lib/text';
 import { log } from '../lib/log';
-import { footLine, page } from './layout';
+import { announcement, announcementText, footLine, page, themeSwitch, topBar, type Theme } from './layout';
 import { board } from './pages';
 import {
-  clearFailures, clientKey, countAttempt, createSession, crossSite, endSession, LOGIN_MAX_FAILURES,
-  safeNext, SESSION_TTL_MS, sessionCookie, sessionValid,
+  clearFailures, clientKey, countAttempt, countAttemptDetailed, createSession, crossSite, endSession, LOGIN_MAX_FAILURES,
+  readTheme, safeBack, safeNext, SESSION_TTL_MS, sessionCookie, sessionValid, themeCookie,
 } from './session';
 
 function redirect(location: string, headers: Record<string, string> = {}): Response {
@@ -22,10 +22,20 @@ function redirect(location: string, headers: Record<string, string> = {}): Respo
  */
 export async function boardGate(request: Request, url: URL, env: Env, config: Config, ctx: ExecutionContext, requestId: string): Promise<Response> {
   const now = Date.now();
+  const theme = readTheme(request);
+  // The theme switch works signed in or not (the sign-in page has it too). It only sets a cookie.
+  if (url.pathname === '/board/theme') {
+    if (request.method !== 'POST') return redirect('/board');
+    const form = await request.formData().catch(() => new FormData());
+    const back = safeBack(String(form.get('back') ?? ''));
+    const choice = String(form.get('theme') ?? '');
+    if (crossSite(request, url) || !['light', 'dark', 'auto'].includes(choice)) return redirect(back);
+    return redirect(back, { 'Set-Cookie': themeCookie(url, choice as Theme) });
+  }
   if (url.pathname === '/board/login') {
-    if (request.method === 'POST') return signIn(request, url, env, config, now, requestId);
+    if (request.method === 'POST') return signIn(request, url, env, config, now, requestId, theme);
     if (await sessionValid(env.DB, request, url, config.boardToken, now)) return redirect(safeNext(url.searchParams.get('next')));
-    return loginPage(config, { next: safeNext(url.searchParams.get('next')), info: loginInfo(url.searchParams.get('msg')) });
+    return loginPage(env, config, { next: safeNext(url.searchParams.get('next')), info: loginInfo(url.searchParams.get('msg')), theme });
   }
   if (url.pathname === '/board/logout') {
     if (request.method !== 'POST') return redirect('/board');
@@ -56,7 +66,7 @@ export async function boardGate(request: Request, url: URL, env: Env, config: Co
     // A form posted after the session ended: nothing is changed; sign in and redo it.
     return redirect('/board/login?msg=expired');
   }
-  return board(request, url, env, config, ctx, { signedIn: !viaBasic });
+  return board(request, url, env, config, ctx, { signedIn: !viaBasic, theme });
 }
 
 function loginInfo(code: string | null): string | null {
@@ -71,23 +81,24 @@ function plain(status: number, text: string, headers: Record<string, string> = {
 }
 
 function forbidden(): Response {
-  return page({ title: 'Forbidden', status: 403, body: `<main class="wrap login"><h1>Request blocked</h1><p class="muted">This form was submitted from another site. Open the board directly and try again.</p></main>` });
+  return page({ title: 'Forbidden', status: 403, body: `<main class="wrap" style="padding-block:var(--space-xl)"><h1>Request blocked</h1><p class="muted" style="margin-top:var(--space-2xs)">This form was submitted from another site. <a href="/board/login">Open the board directly</a> and try again.</p></main>` });
 }
 
-async function signIn(request: Request, url: URL, env: Env, config: Config, now: number, requestId: string): Promise<Response> {
+async function signIn(request: Request, url: URL, env: Env, config: Config, now: number, requestId: string, theme: Theme): Promise<Response> {
   if (crossSite(request, url)) return forbidden();
   let form: FormData;
   try {
     form = await request.formData();
   } catch {
-    return loginPage(config, { next: '/board', error: 'Something went wrong reading the form. Try again.', status: 400 });
+    return loginPage(env, config, { next: '/board', error: 'Something went wrong reading the form. Try again.', status: 400, theme });
   }
   const next = safeNext(String(form.get('next') ?? ''));
   const key = await clientKey(request);
-  const wait = await countAttempt(env.DB, key, now);
+  const { wait, failures } = await countAttemptDetailed(env.DB, key, now);
   if (wait > 0) {
     log('warn', 'board_login_locked', { request_id: requestId });
-    return loginPage(config, {
+    return loginPage(env, config, {
+      theme,
       next,
       error: `Too many wrong passwords. Try again in ${Math.ceil(wait / 60)} minute${wait > 60 ? 's' : ''}.`,
       status: 429,
@@ -98,7 +109,15 @@ async function signIn(request: Request, url: URL, env: Env, config: Config, now:
   const password = String(form.get('password') ?? '').slice(0, 256);
   if (!password || !(await secretsMatch(password, config.boardToken))) {
     log('warn', 'board_login_failed', { request_id: requestId, empty: !password });
-    return loginPage(config, { next, error: password ? 'That password is not right.' : 'Enter the board password.', status: 401 });
+    const left = LOGIN_MAX_FAILURES - failures;
+    return loginPage(env, config, {
+      next,
+      theme,
+      error: password ? 'That password is not right.' : 'Enter the board password.',
+      warning: password && left <= 3 ? (left > 0 ? `${left} ${left === 1 ? 'try' : 'tries'} left before sign-in pauses for 15 minutes on this network.` : 'No tries left. Sign-in from this network is paused for 15 minutes.') : null,
+      disabled: Boolean(password) && left <= 0,
+      status: 401,
+    });
   }
   await clearFailures(env.DB, key, now);
   const token = await createSession(env.DB, config.boardToken, now);
@@ -108,8 +127,10 @@ async function signIn(request: Request, url: URL, env: Env, config: Config, now:
 
 interface LoginState {
   next: string;
+  theme: Theme;
   error?: string;
   info?: string | null;
+  warning?: string | null;
   status?: number;
   headers?: Record<string, string>;
   disabled?: boolean;
@@ -117,39 +138,60 @@ interface LoginState {
 
 const LOGIN_CSS = `
 .login{min-height:100dvh;display:grid;grid-template-rows:auto 1fr auto}
-.login__main{display:grid;grid-template-columns:minmax(0,26rem) minmax(0,1fr);gap:var(--space-xl);align-items:start;padding-block:clamp(2.5rem,10vh,6rem) clamp(3.5rem,14vh,8rem)}
-.login__form{display:grid;gap:var(--space-sm)}
+.login__main{display:grid;grid-template-columns:minmax(0,25rem) minmax(0,22rem);justify-content:space-between;gap:var(--space-xl);align-items:start;padding-block:clamp(2.5rem,10vh,6rem) clamp(3rem,12vh,7rem)}
+.login__form{display:grid;gap:var(--space-md)}
 .login__lede{max-width:44ch;color:var(--color-muted);margin-top:var(--space-2xs)}
-.login__note{align-self:end;max-width:48ch;padding-top:var(--space-sm);border-top:1px solid var(--color-rule);font-size:var(--text-sm);color:var(--color-muted)}
-.login__note p+p{margin-top:var(--space-2xs)}
-@media (max-width:48rem){.login__main{grid-template-columns:minmax(0,1fr);gap:var(--space-lg)}.login__note{align-self:start}}
+.login__notes{display:grid;gap:var(--space-2xs)}
+.login__notes:empty{display:none}
+.login__notes .announce{margin:0}
+.notice--warn{border-color:var(--color-warn);background:var(--color-warn-wash)}
+.login__fields{display:grid;gap:var(--space-sm)}
+.login__fields .btn{width:100%}
+.login__aside{display:grid;gap:var(--space-sm);padding-top:var(--space-sm);border-top:1px solid var(--color-rule);font-size:var(--text-sm);color:var(--color-ink-2)}
+.login__aside h2{font-size:var(--text-md)}
+.login__aside ul{margin:0;padding:0;list-style:none;display:grid;gap:var(--space-xs)}
+.login__aside li{display:grid;gap:.125rem}
+.login__aside li b{color:var(--color-ink);font-weight:600}
+@media (max-width:48rem){.login__main{grid-template-columns:minmax(0,1fr);gap:var(--space-lg);padding-block:var(--space-lg) var(--space-xl)}}
 `;
 
-function loginPage(config: Config, s: LoginState): Response {
+function loginPage(env: Env, config: Config, s: LoginState): Response {
   const error = s.error ?? '';
+  const back = `/board/login${s.next !== '/board' ? `?next=${encodeURIComponent(s.next)}` : ''}`;
+  const notes = [
+    announcement(announcementText(env.BOARD_ANNOUNCEMENT)),
+    s.info ? `<div class="notice" role="status"><span>${h(s.info)}</span></div>` : '',
+    s.warning ? `<div class="notice notice--warn" role="alert"><span>${h(s.warning)}</span></div>` : '',
+  ].join('');
   const body = `<div class="login">
-<header class="bar"><div class="wrap bar__in"><span class="brand"><span class="brand__mark" aria-hidden="true"></span>${h(config.businessName)}</span><span class="chip">Test mode</span></div></header>
-<main class="wrap login__main">
+${topBar(config.businessName, `<span class="chip">Test mode</span>${themeSwitch(s.theme, back)}`, null)}
+<main class="wrap login__main" id="main">
   <form class="login__form" method="post" action="/board/login" novalidate>
-    <div><h1>Sign in to the dispatcher board</h1><p class="login__lede">Every booking the WhatsApp agent takes, its payment checks, and the jobs waiting on you.</p></div>
-    ${s.info ? `<div class="notice" role="status"><span>${h(s.info)}</span></div>` : ''}
+    <div><h1>Sign in to the board</h1><p class="login__lede">Bookings Zuma takes on WhatsApp, their payments, and the chats handed to you.</p></div>
+    <div class="login__notes">${notes}</div>
     <input type="hidden" name="next" value="${h(s.next)}">
     <input type="text" name="username" value="dispatcher" autocomplete="username" hidden>
+    <div class="login__fields">
     <div class="field">
       <label for="password">Board password</label>
       <input class="input" id="password" name="password" type="password" autocomplete="current-password" required autofocus
         ${error ? 'aria-invalid="true" ' : ''}aria-describedby="password-help"${s.disabled ? ' disabled' : ''}>
       <p class="helper${error ? ' helper--error' : ''}" id="password-help"${error ? ' role="alert"' : ''}>${h(error)}</p>
     </div>
-    <div class="actions"><button class="btn btn--primary" type="submit"${s.disabled ? ' disabled' : ''}>Sign in</button></div>
+    <button class="btn btn--primary" type="submit"${s.disabled ? ' disabled' : ''}>Sign in</button>
+    </div>
   </form>
-  <aside class="login__note" aria-label="About this sign-in">
-    <p><span class="label">Who this is for</span></p>
-    <p>${h(config.businessName)} staff. The password is the <code>BOARD_TOKEN</code> secret on the server.</p>
-    <p>You stay signed in for 12 hours on this browser. ${LOGIN_MAX_FAILURES} wrong tries in 15 minutes pauses sign-in from your network.</p>
+  <aside class="login__aside" aria-labelledby="about-h">
+    <h2 id="about-h">Before you sign in</h2>
+    <ul>
+      <li><b>Test mode</b><span>Payments use Paystack test keys. No real money moves.</span></li>
+      <li><b>Home comes first</b><span>Chats waiting for a person, payments to review and anything broken are listed at the top.</span></li>
+      <li><b>Staying signed in</b><span>12 hours on this browser. ${LOGIN_MAX_FAILURES} wrong passwords in 15 minutes pauses sign-in from your network.</span></li>
+      <li><b>Password</b><span>The <code>BOARD_TOKEN</code> secret on the server. Ask the owner if you don’t have it.</span></li>
+    </ul>
   </aside>
 </main>
 ${footLine(`${h(config.businessName)} · dispatcher board · test mode`)}
 </div>`;
-  return page({ title: `Sign in · ${config.businessName}`, body, status: s.status, headers: s.headers, css: LOGIN_CSS });
+  return page({ title: `Sign in · ${config.businessName}`, body, status: s.status, headers: s.headers, css: LOGIN_CSS, theme: s.theme });
 }

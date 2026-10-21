@@ -1,0 +1,899 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-21T11:17:43+00:00",
+  "title": "Design System: Zuma Dispatch web pages",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Accent",
+        "canonical": "oklch(54% 0.2 257)",
+        "cssVar": "--color-accent",
+        "tonalRamp": [
+          "oklch(15% 0.2 257)",
+          "oklch(26% 0.2 257)",
+          "oklch(37% 0.2 257)",
+          "oklch(48% 0.2 257)",
+          "oklch(60% 0.2 257)",
+          "oklch(72% 0.2 257)",
+          "oklch(84% 0.2 257)",
+          "oklch(95% 0.2 257)"
+        ],
+        "dark": "oklch(68% 0.16 257)"
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Accent Hover",
+        "canonical": "oklch(48% 0.2 258)",
+        "cssVar": "--color-accent-hover",
+        "tonalRamp": [
+          "oklch(15% 0.2 258)",
+          "oklch(26% 0.2 258)",
+          "oklch(37% 0.2 258)",
+          "oklch(48% 0.2 258)",
+          "oklch(60% 0.2 258)",
+          "oklch(72% 0.2 258)",
+          "oklch(84% 0.2 258)",
+          "oklch(95% 0.2 258)"
+        ],
+        "dark": "oklch(74% 0.14 257)"
+      },
+      "accent-text": {
+        "role": "primary",
+        "displayName": "Accent Text",
+        "canonical": "oklch(50% 0.2 258)",
+        "cssVar": "--color-accent-text",
+        "tonalRamp": [
+          "oklch(15% 0.2 258)",
+          "oklch(26% 0.2 258)",
+          "oklch(37% 0.2 258)",
+          "oklch(48% 0.2 258)",
+          "oklch(60% 0.2 258)",
+          "oklch(72% 0.2 258)",
+          "oklch(84% 0.2 258)",
+          "oklch(95% 0.2 258)"
+        ],
+        "dark": "oklch(77% 0.13 257)"
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Accent Ink",
+        "canonical": "oklch(99% 0.003 250)",
+        "cssVar": "--color-accent-ink",
+        "tonalRamp": [
+          "oklch(15% 0.003 250)",
+          "oklch(26% 0.003 250)",
+          "oklch(37% 0.003 250)",
+          "oklch(48% 0.003 250)",
+          "oklch(60% 0.003 250)",
+          "oklch(72% 0.003 250)",
+          "oklch(84% 0.003 250)",
+          "oklch(95% 0.003 250)"
+        ],
+        "dark": "oklch(17% 0.02 260)"
+      },
+      "accent-wash": {
+        "role": "primary",
+        "displayName": "Accent Wash",
+        "canonical": "oklch(95% 0.03 256)",
+        "cssVar": "--color-accent-wash",
+        "tonalRamp": [
+          "oklch(15% 0.03 256)",
+          "oklch(26% 0.03 256)",
+          "oklch(37% 0.03 256)",
+          "oklch(48% 0.03 256)",
+          "oklch(60% 0.03 256)",
+          "oklch(72% 0.03 256)",
+          "oklch(84% 0.03 256)",
+          "oklch(95% 0.03 256)"
+        ],
+        "dark": "oklch(26% 0.05 258)"
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus",
+        "canonical": "oklch(58% 0.2 256)",
+        "cssVar": "--color-focus",
+        "tonalRamp": [
+          "oklch(15% 0.2 256)",
+          "oklch(26% 0.2 256)",
+          "oklch(37% 0.2 256)",
+          "oklch(48% 0.2 256)",
+          "oklch(60% 0.2 256)",
+          "oklch(72% 0.2 256)",
+          "oklch(84% 0.2 256)",
+          "oklch(95% 0.2 256)"
+        ],
+        "dark": "oklch(74% 0.15 256)"
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(98.5% 0.004 250)",
+        "cssVar": "--color-paper",
+        "tonalRamp": [
+          "oklch(15% 0.004 250)",
+          "oklch(26% 0.004 250)",
+          "oklch(37% 0.004 250)",
+          "oklch(48% 0.004 250)",
+          "oklch(60% 0.004 250)",
+          "oklch(72% 0.004 250)",
+          "oklch(84% 0.004 250)",
+          "oklch(95% 0.004 250)"
+        ],
+        "dark": "oklch(17% 0.014 258)"
+      },
+      "paper-2": {
+        "role": "neutral",
+        "displayName": "Paper 2",
+        "canonical": "oklch(96.2% 0.007 252)",
+        "cssVar": "--color-paper-2",
+        "tonalRamp": [
+          "oklch(15% 0.007 252)",
+          "oklch(26% 0.007 252)",
+          "oklch(37% 0.007 252)",
+          "oklch(48% 0.007 252)",
+          "oklch(60% 0.007 252)",
+          "oklch(72% 0.007 252)",
+          "oklch(84% 0.007 252)",
+          "oklch(95% 0.007 252)"
+        ],
+        "dark": "oklch(21% 0.016 258)"
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "oklch(99.4% 0.002 250)",
+        "cssVar": "--color-surface",
+        "tonalRamp": [
+          "oklch(15% 0.002 250)",
+          "oklch(26% 0.002 250)",
+          "oklch(37% 0.002 250)",
+          "oklch(48% 0.002 250)",
+          "oklch(60% 0.002 250)",
+          "oklch(72% 0.002 250)",
+          "oklch(84% 0.002 250)",
+          "oklch(95% 0.002 250)"
+        ],
+        "dark": "oklch(19.5% 0.015 258)"
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(24% 0.02 258)",
+        "cssVar": "--color-ink",
+        "tonalRamp": [
+          "oklch(15% 0.02 258)",
+          "oklch(26% 0.02 258)",
+          "oklch(37% 0.02 258)",
+          "oklch(48% 0.02 258)",
+          "oklch(60% 0.02 258)",
+          "oklch(72% 0.02 258)",
+          "oklch(84% 0.02 258)",
+          "oklch(95% 0.02 258)"
+        ],
+        "dark": "oklch(95% 0.006 250)"
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "oklch(34% 0.018 257)",
+        "cssVar": "--color-ink-2",
+        "tonalRamp": [
+          "oklch(15% 0.018 257)",
+          "oklch(26% 0.018 257)",
+          "oklch(37% 0.018 257)",
+          "oklch(48% 0.018 257)",
+          "oklch(60% 0.018 257)",
+          "oklch(72% 0.018 257)",
+          "oklch(84% 0.018 257)",
+          "oklch(95% 0.018 257)"
+        ],
+        "dark": "oklch(87% 0.01 252)"
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "oklch(48% 0.018 256)",
+        "cssVar": "--color-muted",
+        "tonalRamp": [
+          "oklch(15% 0.018 256)",
+          "oklch(26% 0.018 256)",
+          "oklch(37% 0.018 256)",
+          "oklch(48% 0.018 256)",
+          "oklch(60% 0.018 256)",
+          "oklch(72% 0.018 256)",
+          "oklch(84% 0.018 256)",
+          "oklch(95% 0.018 256)"
+        ],
+        "dark": "oklch(72% 0.014 255)"
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "oklch(90.5% 0.008 255)",
+        "cssVar": "--color-rule",
+        "tonalRamp": [
+          "oklch(15% 0.008 255)",
+          "oklch(26% 0.008 255)",
+          "oklch(37% 0.008 255)",
+          "oklch(48% 0.008 255)",
+          "oklch(60% 0.008 255)",
+          "oklch(72% 0.008 255)",
+          "oklch(84% 0.008 255)",
+          "oklch(95% 0.008 255)"
+        ],
+        "dark": "oklch(29% 0.016 258)"
+      },
+      "rule-2": {
+        "role": "neutral",
+        "displayName": "Rule 2",
+        "canonical": "oklch(82% 0.012 255)",
+        "cssVar": "--color-rule-2",
+        "tonalRamp": [
+          "oklch(15% 0.012 255)",
+          "oklch(26% 0.012 255)",
+          "oklch(37% 0.012 255)",
+          "oklch(48% 0.012 255)",
+          "oklch(60% 0.012 255)",
+          "oklch(72% 0.012 255)",
+          "oklch(84% 0.012 255)",
+          "oklch(95% 0.012 255)"
+        ],
+        "dark": "oklch(40% 0.018 258)"
+      },
+      "graphite": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "oklch(22% 0.016 260)",
+        "cssVar": "--color-graphite",
+        "tonalRamp": [
+          "oklch(15% 0.016 260)",
+          "oklch(26% 0.016 260)",
+          "oklch(37% 0.016 260)",
+          "oklch(48% 0.016 260)",
+          "oklch(60% 0.016 260)",
+          "oklch(72% 0.016 260)",
+          "oklch(84% 0.016 260)",
+          "oklch(95% 0.016 260)"
+        ],
+        "dark": "oklch(12.5% 0.012 260)"
+      },
+      "graphite-2": {
+        "role": "neutral",
+        "displayName": "Graphite 2",
+        "canonical": "oklch(27% 0.018 260)",
+        "cssVar": "--color-graphite-2",
+        "tonalRamp": [
+          "oklch(15% 0.018 260)",
+          "oklch(26% 0.018 260)",
+          "oklch(37% 0.018 260)",
+          "oklch(48% 0.018 260)",
+          "oklch(60% 0.018 260)",
+          "oklch(72% 0.018 260)",
+          "oklch(84% 0.018 260)",
+          "oklch(95% 0.018 260)"
+        ],
+        "dark": "oklch(16% 0.014 260)"
+      },
+      "graphite-rule": {
+        "role": "neutral",
+        "displayName": "Graphite Rule",
+        "canonical": "oklch(35% 0.018 260)",
+        "cssVar": "--color-graphite-rule",
+        "tonalRamp": [
+          "oklch(15% 0.018 260)",
+          "oklch(26% 0.018 260)",
+          "oklch(37% 0.018 260)",
+          "oklch(48% 0.018 260)",
+          "oklch(60% 0.018 260)",
+          "oklch(72% 0.018 260)",
+          "oklch(84% 0.018 260)",
+          "oklch(95% 0.018 260)"
+        ],
+        "dark": "oklch(27% 0.016 260)"
+      },
+      "graphite-ink": {
+        "role": "neutral",
+        "displayName": "Graphite Ink",
+        "canonical": "oklch(95% 0.006 250)",
+        "cssVar": "--color-graphite-ink",
+        "tonalRamp": [
+          "oklch(15% 0.006 250)",
+          "oklch(26% 0.006 250)",
+          "oklch(37% 0.006 250)",
+          "oklch(48% 0.006 250)",
+          "oklch(60% 0.006 250)",
+          "oklch(72% 0.006 250)",
+          "oklch(84% 0.006 250)",
+          "oklch(95% 0.006 250)"
+        ]
+      },
+      "graphite-muted": {
+        "role": "neutral",
+        "displayName": "Graphite Muted",
+        "canonical": "oklch(75% 0.014 255)",
+        "cssVar": "--color-graphite-muted",
+        "tonalRamp": [
+          "oklch(15% 0.014 255)",
+          "oklch(26% 0.014 255)",
+          "oklch(37% 0.014 255)",
+          "oklch(48% 0.014 255)",
+          "oklch(60% 0.014 255)",
+          "oklch(72% 0.014 255)",
+          "oklch(84% 0.014 255)",
+          "oklch(95% 0.014 255)"
+        ]
+      },
+      "bad": {
+        "role": "state",
+        "displayName": "Bad",
+        "canonical": "oklch(50% 0.19 27)",
+        "cssVar": "--color-bad",
+        "tonalRamp": [
+          "oklch(15% 0.19 27)",
+          "oklch(26% 0.19 27)",
+          "oklch(37% 0.19 27)",
+          "oklch(48% 0.19 27)",
+          "oklch(60% 0.19 27)",
+          "oklch(72% 0.19 27)",
+          "oklch(84% 0.19 27)",
+          "oklch(95% 0.19 27)"
+        ],
+        "dark": "oklch(72% 0.16 27)"
+      },
+      "bad-wash": {
+        "role": "state",
+        "displayName": "Bad Wash",
+        "canonical": "oklch(96% 0.025 27)",
+        "cssVar": "--color-bad-wash",
+        "tonalRamp": [
+          "oklch(15% 0.025 27)",
+          "oklch(26% 0.025 27)",
+          "oklch(37% 0.025 27)",
+          "oklch(48% 0.025 27)",
+          "oklch(60% 0.025 27)",
+          "oklch(72% 0.025 27)",
+          "oklch(84% 0.025 27)",
+          "oklch(95% 0.025 27)"
+        ],
+        "dark": "oklch(24% 0.05 27)"
+      },
+      "ok": {
+        "role": "state",
+        "displayName": "Ok",
+        "canonical": "oklch(48% 0.13 150)",
+        "cssVar": "--color-ok",
+        "tonalRamp": [
+          "oklch(15% 0.13 150)",
+          "oklch(26% 0.13 150)",
+          "oklch(37% 0.13 150)",
+          "oklch(48% 0.13 150)",
+          "oklch(60% 0.13 150)",
+          "oklch(72% 0.13 150)",
+          "oklch(84% 0.13 150)",
+          "oklch(95% 0.13 150)"
+        ],
+        "dark": "oklch(76% 0.14 150)"
+      },
+      "ok-wash": {
+        "role": "state",
+        "displayName": "Ok Wash",
+        "canonical": "oklch(96.5% 0.025 150)",
+        "cssVar": "--color-ok-wash",
+        "tonalRamp": [
+          "oklch(15% 0.025 150)",
+          "oklch(26% 0.025 150)",
+          "oklch(37% 0.025 150)",
+          "oklch(48% 0.025 150)",
+          "oklch(60% 0.025 150)",
+          "oklch(72% 0.025 150)",
+          "oklch(84% 0.025 150)",
+          "oklch(95% 0.025 150)"
+        ],
+        "dark": "oklch(23% 0.04 150)"
+      },
+      "warn": {
+        "role": "state",
+        "displayName": "Warn",
+        "canonical": "oklch(51% 0.13 62)",
+        "cssVar": "--color-warn",
+        "tonalRamp": [
+          "oklch(15% 0.13 62)",
+          "oklch(26% 0.13 62)",
+          "oklch(37% 0.13 62)",
+          "oklch(48% 0.13 62)",
+          "oklch(60% 0.13 62)",
+          "oklch(72% 0.13 62)",
+          "oklch(84% 0.13 62)",
+          "oklch(95% 0.13 62)"
+        ],
+        "dark": "oklch(83% 0.12 75)"
+      },
+      "warn-wash": {
+        "role": "state",
+        "displayName": "Warn Wash",
+        "canonical": "oklch(96.5% 0.03 75)",
+        "cssVar": "--color-warn-wash",
+        "tonalRamp": [
+          "oklch(15% 0.03 75)",
+          "oklch(26% 0.03 75)",
+          "oklch(37% 0.03 75)",
+          "oklch(48% 0.03 75)",
+          "oklch(60% 0.03 75)",
+          "oklch(72% 0.03 75)",
+          "oklch(84% 0.03 75)",
+          "oklch(95% 0.03 75)"
+        ],
+        "dark": "oklch(25% 0.045 75)"
+      },
+      "st-awaiting-payment": {
+        "role": "state",
+        "displayName": "St Awaiting Payment",
+        "canonical": "oklch(48% 0.03 256)",
+        "cssVar": "--st-awaiting_payment",
+        "tonalRamp": [
+          "oklch(15% 0.03 256)",
+          "oklch(26% 0.03 256)",
+          "oklch(37% 0.03 256)",
+          "oklch(48% 0.03 256)",
+          "oklch(60% 0.03 256)",
+          "oklch(72% 0.03 256)",
+          "oklch(84% 0.03 256)",
+          "oklch(95% 0.03 256)"
+        ],
+        "dark": "oklch(76% 0.03 256)"
+      },
+      "st-paid": {
+        "role": "state",
+        "displayName": "St Paid",
+        "canonical": "oklch(50% 0.2 258)",
+        "cssVar": "--st-paid",
+        "tonalRamp": [
+          "oklch(15% 0.2 258)",
+          "oklch(26% 0.2 258)",
+          "oklch(37% 0.2 258)",
+          "oklch(48% 0.2 258)",
+          "oklch(60% 0.2 258)",
+          "oklch(72% 0.2 258)",
+          "oklch(84% 0.2 258)",
+          "oklch(95% 0.2 258)"
+        ],
+        "dark": "oklch(76% 0.14 257)"
+      },
+      "st-dispatched": {
+        "role": "state",
+        "displayName": "St Dispatched",
+        "canonical": "oklch(48% 0.1 215)",
+        "cssVar": "--st-dispatched",
+        "tonalRamp": [
+          "oklch(15% 0.1 215)",
+          "oklch(26% 0.1 215)",
+          "oklch(37% 0.1 215)",
+          "oklch(48% 0.1 215)",
+          "oklch(60% 0.1 215)",
+          "oklch(72% 0.1 215)",
+          "oklch(84% 0.1 215)",
+          "oklch(95% 0.1 215)"
+        ],
+        "dark": "oklch(80% 0.1 210)"
+      },
+      "st-delivered": {
+        "role": "state",
+        "displayName": "St Delivered",
+        "canonical": "oklch(47% 0.13 150)",
+        "cssVar": "--st-delivered",
+        "tonalRamp": [
+          "oklch(15% 0.13 150)",
+          "oklch(26% 0.13 150)",
+          "oklch(37% 0.13 150)",
+          "oklch(48% 0.13 150)",
+          "oklch(60% 0.13 150)",
+          "oklch(72% 0.13 150)",
+          "oklch(84% 0.13 150)",
+          "oklch(95% 0.13 150)"
+        ],
+        "dark": "oklch(80% 0.14 152)"
+      },
+      "st-payment-failed": {
+        "role": "state",
+        "displayName": "St Payment Failed",
+        "canonical": "oklch(51% 0.13 62)",
+        "cssVar": "--st-payment_failed",
+        "tonalRamp": [
+          "oklch(15% 0.13 62)",
+          "oklch(26% 0.13 62)",
+          "oklch(37% 0.13 62)",
+          "oklch(48% 0.13 62)",
+          "oklch(60% 0.13 62)",
+          "oklch(72% 0.13 62)",
+          "oklch(84% 0.13 62)",
+          "oklch(95% 0.13 62)"
+        ],
+        "dark": "oklch(83% 0.12 75)"
+      },
+      "st-amount-mismatch": {
+        "role": "state",
+        "displayName": "St Amount Mismatch",
+        "canonical": "oklch(50% 0.19 27)",
+        "cssVar": "--st-amount_mismatch",
+        "tonalRamp": [
+          "oklch(15% 0.19 27)",
+          "oklch(26% 0.19 27)",
+          "oklch(37% 0.19 27)",
+          "oklch(48% 0.19 27)",
+          "oklch(60% 0.19 27)",
+          "oklch(72% 0.19 27)",
+          "oklch(84% 0.19 27)",
+          "oklch(95% 0.19 27)"
+        ],
+        "dark": "oklch(74% 0.16 27)"
+      },
+      "st-cancelled": {
+        "role": "state",
+        "displayName": "St Cancelled",
+        "canonical": "oklch(53% 0.01 256)",
+        "cssVar": "--st-cancelled",
+        "tonalRamp": [
+          "oklch(15% 0.01 256)",
+          "oklch(26% 0.01 256)",
+          "oklch(37% 0.01 256)",
+          "oklch(48% 0.01 256)",
+          "oklch(60% 0.01 256)",
+          "oklch(72% 0.01 256)",
+          "oklch(84% 0.01 256)",
+          "oklch(95% 0.01 256)"
+        ],
+        "dark": "oklch(68% 0.01 256)"
+      },
+      "viz-awaiting-payment": {
+        "role": "data-viz",
+        "displayName": "Viz Awaiting Payment",
+        "canonical": "oklch(72% 0.03 256)",
+        "cssVar": "--viz-awaiting_payment",
+        "tonalRamp": [
+          "oklch(15% 0.03 256)",
+          "oklch(26% 0.03 256)",
+          "oklch(37% 0.03 256)",
+          "oklch(48% 0.03 256)",
+          "oklch(60% 0.03 256)",
+          "oklch(72% 0.03 256)",
+          "oklch(84% 0.03 256)",
+          "oklch(95% 0.03 256)"
+        ]
+      },
+      "viz-paid": {
+        "role": "data-viz",
+        "displayName": "Viz Paid",
+        "canonical": "oklch(66% 0.18 257)",
+        "cssVar": "--viz-paid",
+        "tonalRamp": [
+          "oklch(15% 0.18 257)",
+          "oklch(26% 0.18 257)",
+          "oklch(37% 0.18 257)",
+          "oklch(48% 0.18 257)",
+          "oklch(60% 0.18 257)",
+          "oklch(72% 0.18 257)",
+          "oklch(84% 0.18 257)",
+          "oklch(95% 0.18 257)"
+        ]
+      },
+      "viz-dispatched": {
+        "role": "data-viz",
+        "displayName": "Viz Dispatched",
+        "canonical": "oklch(75% 0.11 210)",
+        "cssVar": "--viz-dispatched",
+        "tonalRamp": [
+          "oklch(15% 0.11 210)",
+          "oklch(26% 0.11 210)",
+          "oklch(37% 0.11 210)",
+          "oklch(48% 0.11 210)",
+          "oklch(60% 0.11 210)",
+          "oklch(72% 0.11 210)",
+          "oklch(84% 0.11 210)",
+          "oklch(95% 0.11 210)"
+        ]
+      },
+      "viz-delivered": {
+        "role": "data-viz",
+        "displayName": "Viz Delivered",
+        "canonical": "oklch(75% 0.15 152)",
+        "cssVar": "--viz-delivered",
+        "tonalRamp": [
+          "oklch(15% 0.15 152)",
+          "oklch(26% 0.15 152)",
+          "oklch(37% 0.15 152)",
+          "oklch(48% 0.15 152)",
+          "oklch(60% 0.15 152)",
+          "oklch(72% 0.15 152)",
+          "oklch(84% 0.15 152)",
+          "oklch(95% 0.15 152)"
+        ]
+      },
+      "viz-payment-failed": {
+        "role": "data-viz",
+        "displayName": "Viz Payment Failed",
+        "canonical": "oklch(80% 0.13 75)",
+        "cssVar": "--viz-payment_failed",
+        "tonalRamp": [
+          "oklch(15% 0.13 75)",
+          "oklch(26% 0.13 75)",
+          "oklch(37% 0.13 75)",
+          "oklch(48% 0.13 75)",
+          "oklch(60% 0.13 75)",
+          "oklch(72% 0.13 75)",
+          "oklch(84% 0.13 75)",
+          "oklch(95% 0.13 75)"
+        ]
+      },
+      "viz-amount-mismatch": {
+        "role": "data-viz",
+        "displayName": "Viz Amount Mismatch",
+        "canonical": "oklch(67% 0.18 27)",
+        "cssVar": "--viz-amount_mismatch",
+        "tonalRamp": [
+          "oklch(15% 0.18 27)",
+          "oklch(26% 0.18 27)",
+          "oklch(37% 0.18 27)",
+          "oklch(48% 0.18 27)",
+          "oklch(60% 0.18 27)",
+          "oklch(72% 0.18 27)",
+          "oklch(84% 0.18 27)",
+          "oklch(95% 0.18 27)"
+        ]
+      },
+      "viz-cancelled": {
+        "role": "data-viz",
+        "displayName": "Viz Cancelled",
+        "canonical": "oklch(55% 0.012 256)",
+        "cssVar": "--viz-cancelled",
+        "tonalRamp": [
+          "oklch(15% 0.012 256)",
+          "oklch(26% 0.012 256)",
+          "oklch(37% 0.012 256)",
+          "oklch(48% 0.012 256)",
+          "oklch(60% 0.012 256)",
+          "oklch(72% 0.012 256)",
+          "oklch(84% 0.012 256)",
+          "oklch(95% 0.012 256)"
+        ]
+      },
+      "viz-track": {
+        "role": "data-viz",
+        "displayName": "Viz Track",
+        "canonical": "oklch(31% 0.016 260)",
+        "cssVar": "--viz-track",
+        "tonalRamp": [
+          "oklch(15% 0.016 260)",
+          "oklch(26% 0.016 260)",
+          "oklch(37% 0.016 260)",
+          "oklch(48% 0.016 260)",
+          "oklch(60% 0.016 260)",
+          "oklch(72% 0.016 260)",
+          "oklch(84% 0.016 260)",
+          "oklch(95% 0.016 260)"
+        ],
+        "dark": "oklch(24% 0.016 260)"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page titles (h1)."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Big numbers on the Overview band."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section heads (h2); Home figure values."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "h3, alert titles, service names, empty-state titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Text and tables."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Buttons, tabs, pills."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "UPPERCASE mono data labels: table heads, fact terms, chips, captions. Never above a heading."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Job ids, references, codes, footer."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16,1,0.3,1)",
+        "purpose": "Colour and border transitions."
+      },
+      {
+        "name": "dur",
+        "value": "160ms",
+        "purpose": "Every transition; none under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "48rem",
+        "purpose": "Bottom tab bar, stacked grids, phone job rows, folded filters."
+      },
+      {
+        "name": "convo-stack",
+        "value": "64rem",
+        "purpose": "Handover side panel stacks first."
+      }
+    ],
+    "sizes": [
+      {
+        "name": "control",
+        "value": "2.75rem"
+      },
+      {
+        "name": "control-sm",
+        "value": "2.25rem"
+      },
+      {
+        "name": "tabbar",
+        "value": "3.75rem"
+      },
+      {
+        "name": "container",
+        "value": "80rem"
+      }
+    ],
+    "theming": {
+      "cookie": "zd_theme",
+      "values": [
+        "auto",
+        "light",
+        "dark"
+      ],
+      "attribute": "data-theme on <html>",
+      "rule": "Dark tokens apply under prefers-color-scheme: dark unless data-theme=\"light\", and always under data-theme=\"dark\". Match device deletes the cookie."
+    }
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Outlined default button; rows use the small size.",
+      "html": "<button class=\"ds-btn\">Mark delivered</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;height:var(--control,2.75rem);padding:0 1rem;border:1px solid var(--color-rule-2);border-radius:6px;background:var(--color-surface);color:var(--color-ink);font:500 .875rem/1 Inter,ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color 160ms cubic-bezier(0.16,1,0.3,1),border-color 160ms cubic-bezier(0.16,1,0.3,1)}.ds-btn:hover{border-color:var(--color-ink-2);background:var(--color-paper-2)}.ds-btn:active{background:var(--color-rule)}.ds-btn:focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one filled button per view.",
+      "html": "<button class=\"ds-btn-primary\">Search</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;height:2.75rem;padding:0 1rem;border:1px solid var(--color-accent);border-radius:6px;background:var(--color-accent);color:var(--color-accent-ink);font:500 .875rem/1 Inter,ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background-color 160ms cubic-bezier(0.16,1,0.3,1)}.ds-btn-primary:hover{background:var(--color-accent-hover);border-color:var(--color-accent-hover)}.ds-btn-primary:active{background:var(--color-accent-text)}.ds-btn-primary:focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "1 px border in every state, focus outline, reserved helper line.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field__l\">Board password</span><input class=\"ds-input\" type=\"password\"><span class=\"ds-helper\">That password is not right.</span></label>",
+      "css": ".ds-field{display:grid;gap:.25rem}.ds-field__l{font:500 .875rem/1.3 Inter,sans-serif;color:var(--color-ink)}.ds-input{height:2.75rem;padding:0 .75rem;border:1px solid var(--color-rule-2);border-radius:6px;background:var(--color-surface);color:var(--color-ink);font:400 .9375rem/1 Inter,sans-serif}.ds-input:hover{border-color:var(--color-ink-2)}.ds-input:focus-visible{outline:2px solid var(--color-focus);outline-offset:1px;border-color:var(--color-focus)}.ds-helper{min-height:1lh;font-size:.875rem;color:var(--color-bad)}"
+    },
+    {
+      "name": "Tab row with badges",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Desktop tabs; current is underlined in cobalt; urgent badges are red.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-tab\" aria-current=\"page\" href=\"#\">Home</a><a class=\"ds-tab\" href=\"#\">Deliveries<span class=\"ds-count\">3</span></a><a class=\"ds-tab\" href=\"#\">Handovers<span class=\"ds-count ds-count--urgent\">3</span></a><a class=\"ds-tab\" href=\"#\">Payments</a><a class=\"ds-tab\" href=\"#\">System</a></nav>",
+      "css": ".ds-nav{display:flex;gap:1.5rem;border-bottom:1px solid var(--color-rule)}.ds-tab{position:relative;display:inline-flex;align-items:center;gap:.5rem;min-height:2.75rem;color:var(--color-ink-2);text-decoration:none;font:500 .875rem/1 Inter,sans-serif;transition:color 160ms}.ds-tab:hover{color:var(--color-ink)}.ds-tab:focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}.ds-tab[aria-current=\"page\"]{color:var(--color-ink);font-weight:600}.ds-tab[aria-current=\"page\"]::after{content:\"\";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--color-accent)}.ds-count{display:inline-flex;align-items:center;justify-content:center;min-width:1.25rem;height:1.25rem;padding:0 .3125rem;border-radius:999px;background:var(--color-paper-2);border:1px solid var(--color-rule-2);color:var(--color-ink-2);font:600 .6875rem/1 Inter,sans-serif}.ds-count--urgent{background:var(--color-bad);border-color:var(--color-bad);color:var(--color-accent-ink)}"
+    },
+    {
+      "name": "Status pill",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "Job status as text, dot and border in the status colour.",
+      "html": "<span class=\"ds-pill\">paid</span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;gap:.25rem;height:1.5rem;padding:0 .5rem;border:1px solid currentColor;border-radius:999px;font:500 .75rem/1 Inter,sans-serif;color:var(--st-paid)}.ds-pill::before{content:\"\";width:.375rem;height:.375rem;border-radius:50%;background:currentColor}"
+    },
+    {
+      "name": "Needs-you alert row",
+      "kind": "custom",
+      "refersTo": "alert-row-urgent",
+      "description": "Home alert: full-width link, tone pill, one CTA; urgent rows tinted.",
+      "html": "<a class=\"ds-alert ds-alert--urgent\" href=\"#\"><span><span class=\"ds-alert__t\">3 chats are waiting for a person <span class=\"ds-tone\">Urgent</span></span><span class=\"ds-alert__d\">Zuma handed these customers to the team.</span></span><span class=\"ds-alert__cta\">Open handovers</span></a>",
+      "css": ".ds-alert{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.5rem 1.5rem;align-items:center;padding:1rem;border:1px solid var(--color-rule);border-radius:10px;background:var(--color-surface);color:var(--color-ink-2);text-decoration:none;transition:background-color 160ms}.ds-alert:hover{background:var(--color-paper-2)}.ds-alert:focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}.ds-alert--urgent,.ds-alert--urgent:hover{background:var(--color-bad-wash)}.ds-alert__t{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .75rem;font:600 1.0625rem/1.3 \"Space Grotesk\",sans-serif;color:var(--color-ink)}.ds-tone{display:inline-flex;align-items:center;gap:.25rem;height:1.375rem;padding:0 .5rem;border:1px solid currentColor;border-radius:999px;font:500 .75rem/1 Inter,sans-serif;color:var(--color-bad)}.ds-tone::before{content:\"\";width:.375rem;height:.375rem;border-radius:50%;background:currentColor}.ds-alert__d{display:block;margin-top:.25rem;font-size:.875rem}.ds-alert__cta{font:500 .875rem Inter,sans-serif;color:var(--color-accent-text);white-space:nowrap}.ds-alert:hover .ds-alert__cta{text-decoration:underline}"
+    },
+    {
+      "name": "Team notice",
+      "kind": "custom",
+      "refersTo": "team-notice",
+      "description": "The owner announcement on Home and sign-in.",
+      "html": "<div class=\"ds-announce\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 10v4a1 1 0 0 0 1 1h2l6 4V5L7 9H5a1 1 0 0 0-1 1z\"/><path d=\"M16.5 9a4 4 0 0 1 0 6\"/></svg><span><b>Team notice:</b> Lagos riders are off on Sunday.</span></div>",
+      "css": ".ds-announce{display:flex;gap:.75rem;align-items:flex-start;padding:.75rem 1rem;border:1px solid var(--color-accent);border-radius:6px;background:var(--color-accent-wash);color:var(--color-ink);font:400 .875rem/1.55 Inter,sans-serif}.ds-announce svg{width:1.125rem;height:1.125rem;flex:none;color:var(--color-accent-text)}.ds-announce b{font-weight:600}"
+    },
+    {
+      "name": "Empty state",
+      "kind": "card",
+      "refersTo": "empty-state",
+      "description": "Says what would appear and why it is empty.",
+      "html": "<div class=\"ds-blank\"><b>Nothing to review.</b> A payment lands here only when Paystack’s numbers disagree with the quote.</div>",
+      "css": ".ds-blank{padding:2rem 1rem;border:1px dashed var(--color-rule-2);border-radius:10px;color:var(--color-ink-2);font:400 .875rem/1.55 Inter,sans-serif}.ds-blank b{display:block;color:var(--color-ink);font:600 1.0625rem/1.3 \"Space Grotesk\",sans-serif;margin-bottom:.25rem}"
+    },
+    {
+      "name": "Theme switch",
+      "kind": "custom",
+      "description": "Segmented Match device / Light / Dark form buttons; pressed is cobalt wash.",
+      "html": "<span class=\"ds-theme\" role=\"group\" aria-label=\"Theme\"><button aria-pressed=\"false\">Auto</button><button aria-pressed=\"true\">Light</button><button aria-pressed=\"false\">Dark</button></span>",
+      "css": ".ds-theme{display:inline-flex;border:1px solid var(--color-rule-2);border-radius:6px;overflow:hidden}.ds-theme button{height:calc(2.25rem - 2px);padding:0 .75rem;border:0;background:transparent;color:var(--color-muted);font:500 .75rem Inter,sans-serif;cursor:pointer;transition:background-color 160ms,color 160ms}.ds-theme button+button{border-left:1px solid var(--color-rule)}.ds-theme button:hover{background:var(--color-paper-2);color:var(--color-ink)}.ds-theme button:focus-visible{outline:2px solid var(--color-focus);outline-offset:-2px}.ds-theme button[aria-pressed=\"true\"]{background:var(--color-accent-wash);color:var(--color-accent-text)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Instrument Panel",
+    "overview": "Calm and precise, with real numbers only and no marketing copy. The audience is the dispatcher and the business owner, on a laptop at a desk or a phone on the move; on `/pay/return`, a WhatsApp customer for a few seconds. They come to see what is waiting, advance a job, check how a payment was confirmed, and find one delivery fast.\n\nGenre: modern-minimal. Theme: Cobalt. Cool near-white paper, one electric-blue signal, hairline structure, tight 6 px radii. The board is a tabbed workbench: each tab holds one job, and Home is an inbox of the things that need a person. Deviations from Cobalt: no ⌘K palette and no reveal animation. The CSP allows **no scripts**, so every control (tabs, sub-tabs, filters, theme switch, actions, sign-out) is a link or a form and works with JavaScript off.",
+    "keyCharacteristics": [
+      "Five tabs, each a real URL; sub-views are links with their own URLs too.",
+      "Hairlines separate everything; no shadows, no boxed marketing cards.",
+      "One accent, used for the current tab, the primary action, focus and the brand mark.",
+      "Light, dark, or match device, chosen per browser and rendered on the server.",
+      "Every figure is a D1 count labelled with what it counts and over which period."
+    ],
+    "rules": [
+      {
+        "name": "The One Signal Rule",
+        "body": "The accent covers less than 5% of any screen. Row buttons are outlined. A filled primary button appears once per view: Search, Sign in, Send, Take over, or the next step on a job page.",
+        "section": "colors"
+      },
+      {
+        "name": "The Text Too Rule",
+        "body": "Colour never carries state alone. Every pill, tone, chip and badge also carries its meaning as text (or screen-reader text for badges).",
+        "section": "colors"
+      },
+      {
+        "name": "The Upright Rule",
+        "body": "Headings are never italic. Numbers use tabular figures (`.num`).",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Kicker Rule",
+        "body": "No labels above headings: no eyebrow, kicker or small caption over an h1, h2 or h3. A page title starts the page; a section head starts its section. The job page's back link (\"← Deliveries\") is navigation, not a label, and is the one thing allowed above an h1. Mono labels name data (table heads, fact terms, figure terms, chart captions); they never introduce a heading.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Sideways Rule",
+        "body": "No horizontal page scroll at 320 / 375 / 414 / 768 px (`overflow-x: clip` on html and body). No clickable text wraps. Wide data tables scroll inside their own frame.",
+        "section": "layout"
+      },
+      {
+        "name": "The Hairline Rule",
+        "body": "Sections are separated by a 1 px rule, never by a shadow or a filled card.",
+        "section": "elevation & depth"
+      }
+    ],
+    "dos": [
+      "Do take every colour and font from a token. Add any new value to `layout.ts` as a token first.",
+      "Do label every figure with what it counts and over which period (days are WAT). Every figure is a D1 count.",
+      "Do give every list one CTA per row and every view one filled primary button.",
+      "Do make every control a link or a form, so it works with scripts off.",
+      "Do pass every interpolated value through `escapeHtml`.",
+      "Do keep sub-views on their own URLs so they can be shared and refreshed."
+    ],
+    "donts": [
+      "Don't put a label, eyebrow or kicker above a heading.",
+      "Don't use the graphite band anywhere but Deliveries › Overview.",
+      "Don't add shadows or filled cards; separate with hairlines.",
+      "Don't let colour alone carry a state.",
+      "Don't invent numbers or show zeros as a chart.",
+      "Don't cause horizontal page scroll at 320 px or wrap clickable text."
+    ]
+  }
+}

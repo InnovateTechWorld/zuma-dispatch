@@ -35,7 +35,7 @@ check "schema rejects unconfirmed booking" 'isError' \
   "$(rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_dispatch_job","arguments":{"quote_id":"Q-X","sender_name":"Ada","recipient_name":"Bola","recipient_phone":"08031234567","customer_confirmed":false}}}')"
 if [[ -z "${BOARD_TOKEN:-}" && -f .env ]]; then BOARD_TOKEN="$(grep -E '^BOARD_TOKEN=' .env | head -1 | cut -d= -f2-)"; fi
 check "board sends browsers to sign-in"   '303 '"$BASE"'/board/login?next=' "$(curl -sS -m 15 -o /dev/null "$BASE/board?status=paid" -w '%{http_code} %{redirect_url}')"
-check "sign-in page loads"                'Sign in to the dispatcher board' "$(curl -sS -m 15 "$BASE/board/login")"
+check "sign-in page loads"                'Sign in to the board' "$(curl -sS -m 15 "$BASE/board/login")"
 check "wrong board password -> 401"       'HTTP 401'  "$(curl -sS -m 15 -o /dev/null -X POST "$BASE/board/login" -H "Origin: $BASE" -d 'password=wrong&next=/board' -w 'HTTP %{http_code}')"
 check "sign-in blocks cross-site POST"    'HTTP 403'  "$(curl -sS -m 15 -o /dev/null -X POST "$BASE/board/login" -H 'Origin: https://evil.example' -d 'password=x' -w 'HTTP %{http_code}')"
 check "browsers never get a password popup" 'no-challenge' "$(curl -sS -m 15 -D - -o /dev/null -u x:wrong "$BASE/board" | grep -qi '^www-authenticate' && echo challenge || echo no-challenge)"

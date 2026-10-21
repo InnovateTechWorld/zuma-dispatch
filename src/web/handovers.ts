@@ -4,8 +4,10 @@ import type { Env } from '../env';
 import { normalizeNigerianPhone } from '../lib/phone';
 import { escapeHtml as h } from '../lib/text';
 import { log } from '../lib/log';
-import { backTo, readFlash } from './flash';
-import { boardBar, footLine, notice, page, time } from './layout';
+import { backTo } from './flash';
+import { notice, time } from './layout';
+import { blank, pageHead, shell, type BoardSession } from './shell';
+import { readSignals } from './signals';
 import { crossSite } from './session';
 
 /**
@@ -120,7 +122,7 @@ const CSS = `
 .state::before{content:"";width:.375rem;height:.375rem;border-radius:50%;background:currentColor}
 .state--human_active{color:var(--color-accent-text)}
 .state--agent_active{color:var(--color-muted)}
-.state--paused{color:var(--st-payment_failed)}
+.state--paused{color:var(--color-warn)}
 .state--unknown{color:var(--color-muted)}
 .convo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,20rem);gap:var(--space-lg) var(--space-xl);align-items:start;padding-bottom:var(--space-lg)}
 .convo__side{position:sticky;top:var(--space-md);display:grid;gap:var(--space-sm)}
@@ -161,26 +163,43 @@ function contact(t: Thread): string {
   return p.ok ? p.masked : t.channel_id === 'whatsapp' ? 'WhatsApp' : t.channel_id === 'external_chat' ? 'Test chat (simulator)' : t.channel_id ?? '';
 }
 
-function notConfigured(config: Config, signedIn: boolean, why: string): Response {
-  return page({
-    title: 'Handovers',
-    css: CSS,
-    body: `${boardBar(config.businessName, signedIn)}<main class="wrap ho-head"><p class="label"><a href="/board">← Board</a></p><h1>Handovers</h1>
-<p class="muted">${h(why)}</p></main>`,
+function notConfigured(url: URL, env: Env, config: Config, session: BoardSession, why: string): Promise<Response> {
+  return shell({
+    env, config, session, url, active: 'handovers', title: 'Handovers', css: CSS,
+    body: `${pageHead('Handovers')}${blank('Handovers are not connected.', ` ${h(why)}`)}`,
   });
 }
 
+/** Cuts at a word boundary and marks the cut, so a preview never ends mid-word. */
+export function clip(text: string, max: number): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const at = cut.lastIndexOf(' ');
+  return `${(at > max * 0.6 ? cut.slice(0, at) : cut).replace(/[\s,.;:–—-]+$/, '')}…`;
+}
+
+/** Earlier handovers come from the webhook log, which has no customer name: name them by job, else by chat id. */
+export function earlierTitle(threadId: string, reason: string | null, thread?: Thread | 'gone'): string {
+  if (thread === 'gone') return `Chat no longer in Chord (…${threadId.slice(-6)})`;
+  const name = thread?.remote_participant_metadata?.display_name?.trim();
+  const job = /\bZD-[0-9A-Z]{5}\b/.exec(reason ?? '')?.[0];
+  if (name) return job ? `${name} · ${job}` : name;
+  if (thread) return job ? `${contact(thread)} · ${job}` : contact(thread) || `Chat …${threadId.slice(-6)}`;
+  return job ? `Chat about ${job}` : `Chat …${threadId.slice(-6)}`;
+}
+
 /** GET /board/handovers */
-async function inbox(url: URL, env: Env, config: Config, signedIn: boolean): Promise<Response> {
+async function inbox(url: URL, env: Env, config: Config, session: BoardSession): Promise<Response> {
   const cfg = noticeConfig(env);
-  if (!cfg) return notConfigured(config, signedIn, 'Replying from the board needs CHORD_API_KEY (scopes thread:read and thread:write). Until then, reply in Chord → Teammates → Zuma → Escalated.');
+  if (!cfg) return notConfigured(url, env, config, session, 'Replying from the board needs CHORD_API_KEY (scopes thread:read and thread:write). Until then, reply in Chord → Teammates → Zuma → Escalated.');
+  const sigP = readSignals(env, Date.now()).catch(() => null);
   const [live, recent] = await Promise.all([
     chord<{ threads?: Thread[] }>(cfg, `/v1/threads?${new URLSearchParams({ workspace_id: cfg.workspaceId, control_state: 'human_active,paused', limit: '50' })}`, TIMEOUT_MS),
     env.DB.prepare(`SELECT thread_id, initiator, reason, received_at FROM chord_events WHERE type = 'conversation.escalated' AND thread_id IS NOT NULL ORDER BY received_at DESC LIMIT 40`).all<{
       thread_id: string; initiator: string | null; reason: string | null; received_at: number;
     }>(),
   ]);
-  const flash = await readFlash(url, config.boardToken);
   const waiting = live.ok ? (live.data.threads ?? []).filter((t) => THREAD_RE.test(t.id)) : [];
   const waitingIds = new Set(waiting.map((t) => t.id));
   // Latest real handover per thread (ignore our own momentary take-overs).
@@ -190,40 +209,45 @@ async function inbox(url: URL, env: Env, config: Config, signedIn: boolean): Pro
     if (!latest.has(e.thread_id)) latest.set(e.thread_id, e);
   }
   const card = (id: string, who: string, state: ControlState, reason: string | null, when: number | null, sub: string) => `<li><a class="ho-card" href="/board/handovers/${h(id)}#reply" style="text-decoration:none">
-<div><div class="ho-card__who">${h(who)}</div>${reason ? `<p class="ho-card__reason">${h(reason.slice(0, 220))}${reason.length > 220 ? '…' : ''}</p>` : ''}<p class="ho-card__meta">${h(sub)}</p></div>
+<div><div class="ho-card__who">${h(who)}</div>${reason ? `<p class="ho-card__reason">${h(clip(reason, 220))}</p>` : ''}<p class="ho-card__meta">${h(sub)}</p></div>
 <div class="ho-card__end">${stateChip(state)}<span class="ho-card__meta">${when ? time(when) : ''}</span></div></a></li>`;
   const waitingHtml = waiting.length
     ? `<ul class="ho-list">${waiting
         .map((t) => {
           const e = latest.get(t.id);
-          return card(t.id, displayName(t), controlState(t.control_state), e?.reason ?? null, t.last_handoff_at ?? e?.received_at ?? t.last_turn_at ?? null, `${contact(t)} · last message: ${(t.last_turn_preview ?? '').slice(0, 80)}`);
+          return card(t.id, displayName(t), controlState(t.control_state), e?.reason ?? null, t.last_handoff_at ?? e?.received_at ?? t.last_turn_at ?? null, `${contact(t)} · last message: ${clip(t.last_turn_preview ?? '', 80)}`);
         })
         .join('')}</ul>`
-    : `<p class="muted" style="margin-bottom:var(--space-lg)">${live.ok ? 'Nobody is waiting for a person right now.' : `Could not reach Chord (${h(chordError(live))}). Recent handovers below come from the webhook log.`}</p>`;
+    : `<div style="margin-bottom:var(--space-lg)">${live.ok ? blank('Nobody is waiting for a person.', ' When Zuma hands a customer over, the chat appears here with the reason.') : notice(`Could not reach Chord (${chordError(live)}). Recent handovers below come from the webhook log.`, 'error')}</div>`;
   const earlier = [...latest.entries()].filter(([id]) => !waitingIds.has(id)).slice(0, 20);
+  // The webhook log has no customer name: ask Chord for each earlier chat (in parallel, 2.5 s cap; reads cost no credits).
+  const names = new Map<string, Thread | 'gone'>();
+  if (live.ok && earlier.length) {
+    const found = await Promise.race([
+      Promise.all(earlier.map(([id]) => chord<Thread>(cfg, `/v1/threads/${id}`, 2000).then((r) => (r.ok ? ([id, r.data] as const) : r.failure === 'http' && r.status === 404 ? ([id, 'gone'] as const) : null)).catch(() => null))),
+      new Promise<null[]>((r) => setTimeout(() => r([]), 2500)),
+    ]);
+    for (const f of found) if (f) names.set(f[0], f[1]);
+  }
   const earlierHtml = earlier.length
-    ? `<ul class="ho-list">${earlier.map(([id, e]) => card(id, 'Earlier handover', live.ok ? 'agent_active' : 'unknown', e.reason, e.received_at, e.initiator === 'human_operator' ? 'taken over by a person' : 'handed over by Zuma')).join('')}</ul>`
+    ? `<ul class="ho-list">${earlier.map(([id, e]) => card(id, earlierTitle(id, e.reason, names.get(id)), live.ok ? 'agent_active' : 'unknown', e.reason, e.received_at, e.initiator === 'human_operator' ? 'taken over by a person' : 'handed over by Zuma')).join('')}</ul>`
     : '<p class="muted">None yet.</p>';
-  return page({
-    title: `Handovers · ${config.businessName}`,
-    css: CSS,
-    body: `${boardBar(config.businessName, signedIn)}
-<main class="wrap">
-<div class="ho-head"><p class="label"><a href="/board">← Board</a></p><h1>Handovers</h1><p class="muted">Chats Zuma handed to a person. Open one to read the whole conversation, reply as the team, and hand it back.</p></div>
-${flash ? `<div style="margin-bottom:var(--space-md)">${notice(flash.msg, flash.error ? 'error' : 'info')}</div>` : ''}
-<section aria-labelledby="w-h"><div class="section__head"><h2 id="w-h">Waiting for a person (${waiting.length})</h2></div>${waitingHtml}</section>
-<section class="section" aria-labelledby="e-h"><div class="section__head"><h3 id="e-h">Earlier handovers</h3><p class="muted">Back with Zuma, or closed.</p></div>${earlierHtml}</section>
-</main>
-${footLine(`${h(config.businessName)} · replies from people cost no AI credits · times in WAT`)}`,
+  return shell({
+    env, config, session, url, active: 'handovers', title: 'Handovers', css: CSS, signals: await sigP,
+    foot: `${h(config.businessName)} · replies from people cost no AI credits · times in WAT`,
+    body: `${pageHead('Handovers', 'Chats Zuma handed to a person. Open one to read the whole conversation, reply as the team, and hand it back.', `<a href="/board/handovers">Refresh</a>`)}
+<section aria-labelledby="w-h"><div class="section__head"><h2 id="w-h">Waiting for a person <span class="muted num">(${waiting.length})</span></h2></div>${waitingHtml}</section>
+<section class="section" aria-labelledby="e-h"><div class="section__head"><h2 id="e-h">Earlier handovers</h2><p class="muted">Back with Zuma, or closed.</p></div>${earlierHtml}</section>`,
   });
 }
 
 /** GET /board/handovers/{id} */
-async function conversation(threadId: string, url: URL, env: Env, config: Config, signedIn: boolean): Promise<Response> {
+async function conversation(threadId: string, url: URL, env: Env, config: Config, session: BoardSession): Promise<Response> {
   const cfg = noticeConfig(env);
-  if (!cfg) return notConfigured(config, signedIn, 'Reading and replying needs CHORD_API_KEY (scopes thread:read and thread:write).');
+  if (!cfg) return notConfigured(url, env, config, session, 'Reading and replying needs CHORD_API_KEY (scopes thread:read and thread:write).');
   const before = url.searchParams.get('before') ?? '';
   const turnsPath = `/v1/threads/${threadId}/turns?${new URLSearchParams({ limit: '40', ...(before && /^[A-Za-z0-9_=-]{1,200}$/.test(before) ? { cursor: before } : {}) })}`;
+  const sigP = readSignals(env, Date.now()).catch(() => null);
   const [th, tu, events] = await Promise.all([
     chord<Thread>(cfg, `/v1/threads/${threadId}`, TIMEOUT_MS),
     chord<{ turns?: Turn[]; next_cursor?: string; has_more?: boolean }>(cfg, turnsPath, TIMEOUT_MS),
@@ -233,11 +257,9 @@ async function conversation(threadId: string, url: URL, env: Env, config: Config
   ]);
   if (!th.ok) {
     const status = th.failure === 'http' && th.status === 404 ? 404 : 502;
-    return page({
-      title: 'Conversation',
-      status,
-      css: CSS,
-      body: `${boardBar(config.businessName, signedIn)}<main class="wrap ho-head"><p class="label"><a href="/board/handovers">← Handovers</a></p><h1>${status === 404 ? 'No such conversation' : 'Could not reach Chord'}</h1><p class="muted">${h(chordError(th))}</p></main>`,
+    return shell({
+      env, config, session, url, active: 'handovers', title: 'Conversation', status, css: CSS, signals: await sigP,
+      body: `${pageHead(status === 404 ? 'No such conversation' : 'Could not reach Chord', '', '', '<a class="crumb" href="/board/handovers">← Handovers</a>')}${blank(status === 404 ? 'Chord has no conversation with this id.' : 'The conversation could not be loaded.', ` ${h(chordError(th))}. <a href="${h(`/board/handovers/${threadId}`)}">Try again</a>.`)}`,
     });
   }
   const t = th.data;
@@ -245,7 +267,6 @@ async function conversation(threadId: string, url: URL, env: Env, config: Config
   const turns = tu.ok ? tu.data.turns ?? [] : [];
   const reasons = events.results.map((e) => e.reason).filter((r) => r && !r.startsWith('zuma-dispatch automated notice'));
   const jobId = jobIdIn(turns, reasons);
-  const flash = await readFlash(url, config.boardToken);
   const nonce = crypto.randomUUID();
   const self = `/board/handovers/${threadId}`;
   const hidden = (action: string) => `<input type="hidden" name="nonce" value="${nonce}-${action}"><input type="hidden" name="action" value="${action}">`;
@@ -289,18 +310,14 @@ ${reasons[0] ? `<div><p class="label">Why Zuma handed over</p><p style="font-siz
 <p class="muted" style="font-size:var(--text-xs)"><a href="${h(self)}">Refresh</a> to see new customer messages.</p>
 </aside>`;
 
-  return page({
-    title: `${displayName(t)} · Handover`,
-    css: CSS,
-    body: `${boardBar(config.businessName, signedIn)}
-<main class="wrap">
-<div class="ho-head"><p class="label"><a href="/board/handovers">← Handovers</a></p><h1>${h(displayName(t))}</h1></div>
+  return shell({
+    env, config, session, url, active: 'handovers', title: `${displayName(t)} · Handover`, css: CSS, signals: await sigP,
+    foot: `${h(config.businessName)} · conversation from Chord · times in WAT`,
+    body: `${pageHead(h(displayName(t)), '', stateChip(state), '<a class="crumb" href="/board/handovers">← Handovers</a>')}
 <div class="convo">
-<section aria-label="Conversation"><div class="chat">${earlierLink}${newestLink}${bubbles || `<p class="muted">${tu.ok ? 'No messages.' : `Could not load messages (${h(chordError(tu))}).`}</p>`}</div>${flash ? `<div style="margin-top:var(--space-sm)">${notice(flash.msg, flash.error ? 'error' : 'info')}</div>` : ''}${composer}</section>
+<section aria-label="Conversation"><div class="chat">${earlierLink}${newestLink}${bubbles || `<p class="muted">${tu.ok ? 'No messages.' : `Could not load messages (${h(chordError(tu))}).`}</p>`}</div>${composer}</section>
 ${side}
-</div>
-</main>
-${footLine(`${h(config.businessName)} · conversation from Chord · times in WAT`)}`,
+</div>`,
   });
 }
 
@@ -398,16 +415,16 @@ async function handBack(cfg: NoticeConfig, threadId: string) {
 }
 
 // ------------------------------------------------------------------ router
-export async function handovers(request: Request, url: URL, env: Env, config: Config, session: { signedIn: boolean }): Promise<Response | null> {
+export async function handovers(request: Request, url: URL, env: Env, config: Config, session: BoardSession): Promise<Response | null> {
   if (url.pathname === '/board/handovers' || url.pathname === '/board/handovers/') {
-    return request.method === 'GET' || request.method === 'HEAD' ? inbox(url, env, config, session.signedIn) : null;
+    return request.method === 'GET' || request.method === 'HEAD' ? inbox(url, env, config, session) : null;
   }
   const m = /^\/board\/handovers\/([^/]+)$/.exec(url.pathname);
   if (!m) return null;
   const id = m[1]!;
   if (!THREAD_RE.test(id)) {
-    return page({ title: 'Not found', status: 404, css: CSS, body: `${boardBar(config.businessName, session.signedIn)}<main class="wrap ho-head"><h1>No such conversation</h1><p class="muted"><a href="/board/handovers">Back to handovers</a></p></main>` });
+    return shell({ env, config, session, url, active: 'handovers', title: 'Not found', status: 404, css: CSS, noSignals: true, body: `${pageHead('No such conversation', '', '', '<a class="crumb" href="/board/handovers">← Handovers</a>')}${blank('That is not a Chord conversation id.', ' <a href="/board/handovers">Back to handovers</a>.')}` });
   }
   if (request.method === 'POST') return act(request, url, env, id);
-  return conversation(id, url, env, config, session.signedIn);
+  return conversation(id, url, env, config, session);
 }

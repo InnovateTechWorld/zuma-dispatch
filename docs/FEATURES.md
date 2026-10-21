@@ -324,61 +324,104 @@ components) is written down in [`design.md`](../design.md).
   created under.
 - **Ten wrong passwords in 15 minutes from one IP** lock that IP out for the rest of the window (429 with
   `Retry-After`). Only a hash of the IP is stored (`board_login_failures`).
+- **Warnings before the lockout:** from the 7th wrong password the page says "3 tries left…", then 2 and
+  1. The 10th says "No tries left" and disables the form.
+- **Messages on the sign-in page:** signed out, session ended mid-action, tries left, locked out, the team
+  notice (`BOARD_ANNOUNCEMENT`), and a short "before you sign in" panel: test mode, Home comes first, the
+  session length and lockout, and where the password lives.
 - **Deep links survive sign-in:** `/board/jobs/ZD-K45V7` → sign in → back on that job. The `next` target
   must be a `/board` path (no open redirect).
 - **Scripts and curl** may still send HTTP Basic credentials (any username). Browsers are never challenged
   for them, and wrong Basic passwords count against the same lockout.
 
-**`/board`: all deliveries.**
-- **Waiting on you:** chips for paid jobs ready to dispatch, jobs out for delivery, amount mismatches, and
-  handovers from Chord in the last 24 h. Each chip is a link to that filter.
-- **Overview** (the dark band). Every number is a live D1 count; nothing is estimated.
-  - Four figures: booked today, paid today (₦), waiting for payment (₦ and jobs), and agent tool calls
-    (% ok, median and p95 latency over the last 200).
-  - *Where every job is now:* a stacked bar of all jobs by status, with a legend of counts and shares.
-    Each segment and legend entry filters the list.
-  - *Bookings, last 7 days:* one column per WAT day, split paid vs not paid, with totals and paid value.
-  - *How payments were confirmed:* which path noticed the payment (Paystack notification, checkout return
-    page, customer asked, dispatcher approval) and the method used (checkout link vs bank transfer). Only
-    jobs currently paid, dispatched or delivered are counted.
-  - Charts are plain HTML/CSS (no script, no images). Each is hidden from screen readers and paired with
-    a screen-reader table or the legend text.
-- **Filters:**
-  - City tabs (All cities / Abuja / Lagos, with counts) and status tabs with counts (plain links, so
-    they work with scripts off).
-  - A search box for job id (`zd-k45v7` works), recipient phone (any format), or part of a name or address.
-  - City, status and search combine; "Clear filters" resets them. The latest 100 matches are shown.
-- **Each row:** job id and time, status (and how it was paid), city, route, package and distance, amount,
-  sender → recipient with phone and handover code, and the actions allowed for that status.
-- **After an action** you return to the same filtered view, with a one-line confirmation or problem.
-  The line is signed by the server, so a crafted `?msg=` link cannot show text on the board.
-- **Auto-refresh is off by default.** A 30 s refresh used to wipe whatever you were typing into the search
-  box. "Turn on auto-refresh" adds `live=1`, which filters and actions keep.
-- **Panels:**
-  - *Handed to a human*: from Chord's `conversation.escalated` webhook.
-  - *Payments needing review*: amount mismatch, double payment, paid after cancel, refunds, disputes.
-  - *Paystack notifications*: with the source-IP check.
-  - *Google Sheet mirror*: last sync, Open, Resync.
-  - *Recent tool calls*: collapsed; tool, result, latency, provider path.
+**Pages and tabs (redesigned 2026-10-21).** Before, one long page held everything. Now there are five
+tabs, each with one job. On desktop they sit in a row under the bar; under 48 rem (phones) they become a
+fixed bottom bar of five. Each tab can show a badge: red means urgent.
 
-**`/board/jobs/ZD-XXXXX`: everything about one delivery.**
-- **Progress:** Booked → Paid → Dispatched → Delivered with times. Shows where a job stopped (payment
-  failed, amount mismatch, cancelled).
-- **Booking:** sender, recipient (full phone), package and note, amount, handover code, and the actions.
-- **Pickup and drop-off:** what the customer typed, the resolved label, precision, which geocoder found
-  it and with what confidence, postcode + NIPOST result, service-area check, and a map link.
-- **Quote:** distance and its source (OSRM / ORS / estimated), ETA, rate card version, line-by-line breakdown.
-- **Every payment attempt:** method, reference, Paystack status and gateway message, channel, the checkout
-  link or transfer account (with expiry), and when it was paid.
-- **Paystack notifications** for this job, and the **full timeline** (every event, who did it, the detail).
+| Tab | URL | What it is for | Badge |
+|---|---|---|---|
+| **Home** | `/board` | What needs a person, today in four numbers, the five latest deliveries | – |
+| **Deliveries** | `/board/deliveries` (List) · `/board/deliveries/overview` (Overview) | Find and advance jobs; the charts | paid jobs ready to dispatch |
+| **Handovers** | `/board/handovers` | Chats Zuma handed to a person (§9) | chats waiting (live from Chord), red |
+| **Payments** | `/board/payments` · `/paystack` · `/chat` | Payments to review, every Paystack notification, every "Payment received" chat notice | reviews + stuck + failed notices |
+| **System** | `/board/system` · `/system/tools` | Whether each connection works; every agent tool call | problems found |
+
+**Home: "Needs you" first.**
+- One ranked list, most urgent first. Each row is a whole link: tone (Urgent / Check / To do / For info),
+  what happened, what it means, and the one next step.
+- Sources, all live: chats held by a person (Chord API, 2 s budget), amount mismatches, chats left with a
+  person after a payment notice, Google Sheet sync failures, Chord unreachable or misconfigured, failed
+  chat notices (24 h), agent tool faults (24 h), paid jobs to dispatch, and deliveries out with riders.
+- **Faults, not refusals.** "Agent tool calls broke" counts only our failures: `INTERNAL_ERROR`,
+  `UNKNOWN_TOOL`, `PAYMENT_PROVIDER_BUSY` and any `*_UNAVAILABLE`. Refusals Zuma explains to the customer
+  (out of area, job not found, between states) are not alerts. The System › Agent tool calls view labels
+  every row as "broke" or "refusal".
+- **If Chord does not answer**, Home says "Could not reach Chord" rather than "nobody is waiting".
+- An empty list says what would appear there.
+- Then *Today in numbers* (booked today, paid today ₦, waiting for payment ₦, out with riders), each with
+  what it counts. Then the latest five deliveries with their actions.
+- **Team notice:** set `BOARD_ANNOUNCEMENT` (plain text, up to 280 characters, escaped) and it shows as
+  a banner on Home and on the sign-in page. It's for things like "Lagos riders off on Sunday". Leave it
+  unset for no banner.
+
+**Deliveries › List.**
+- Search for a job id (`zd-k45v7` works), a recipient phone (any format), or part of a name or address.
+- City chips (Both cities / Abuja / Lagos) and status chips. Only statuses that have jobs are shown, so
+  the row stays short.
+- Filters combine. "Clear filters" resets them. The latest 100 matches are shown.
+- Old links such as `/board?status=paid` (sheet, bookmarks) redirect here with the same filters.
+- **Each row:** job id and time, status (how it was paid, rider), city, route, package and distance,
+  amount, sender → recipient with phone and handover code, and the actions for that status.
+- **Auto-refresh is off by default.** A 30 s refresh used to wipe the search box. "Auto-refresh" adds
+  `live=1`, which filters and actions keep. Home has the same switch.
+
+**Deliveries › Overview:** the dark graphite band. Every number is a live D1 count.
+- Four figures: booked today, paid today, waiting for payment, agent tool calls (% ok, median and p95).
+- *Where every job is now:* status bar plus legend. Each entry filters the list.
+- *Bookings, last 7 days:* one column per WAT day, paid vs not paid.
+- *How payments were confirmed:* which path noticed it, and link vs transfer.
+- Charts are plain HTML/CSS, hidden from screen readers and paired with a table or text.
+
+**Payments.**
+- **To review:** jobs in `amount_mismatch`, with what did not match, and **Approve** / **Cancel** right
+  there. Approving marks the job paid, assigns a rider and tells the customer in the chat.
+- **Paystack notifications:** the last 50, with the source-IP check.
+- **Chat notices:** each "Payment received" notice with a plain-English result and reason. A chat left
+  with a person links straight to its conversation to hand it back.
+
+**System.**
+- **Status:** one row each for the Chord API, the Chord webhook, Paystack, payment notices, the Google
+  Sheet and agent tools. Each row has a state chip (Working / Off / Misconfigured / Unreachable /
+  Failed), a one-line detail and its action (Open / Resync all / View). Optional services that are not
+  configured say "Off", not "Failed".
+- **Agent tool calls:** the last 50, with latency and provider path.
+
+**`/board/jobs/ZD-XXXXX`: one delivery, in three views.**
+- **Summary:**
+  - Progress (Booked → Paid → Dispatched → Delivered, or where it stopped), then a "next step" strip that
+    says what is expected and holds the actions.
+  - Booking facts (sender, recipient, package, amount, handover code, rider), the handover link, and the
+    "Payment received" chat notice with Send again.
+  - Pickup and drop-off: what was typed, how it was found, postcode, state, map.
+- **Payment** (`?view=payments`): quote breakdown, every payment attempt, Paystack notifications.
+- **Timeline** (`?view=timeline`): every event, who did it and the detail.
+
+**Theme.**
+- Light and dark. By default the board follows the device.
+- The switch in the bar (desktop: Match device / Light / Dark; phones: one button that steps through
+  them) is a plain form posting to `/board/theme`. It sets the `zd_theme` cookie (a year, HttpOnly,
+  SameSite=Lax; "Match device" deletes it) and returns to the same page.
+- It works on the sign-in page too and keeps that page's `next`.
+- A cross-site post or an unknown value changes nothing. The return path must be a board page.
 
 **Actions:** mark dispatched → delivered, approve a reviewed payment (records the paid time and
 "via dispatcher approval"), cancel.
 
 **Layout:**
-- Light and dark (follows the device setting).
-- Phones: rows become two-column cards and the progress steps stack vertically. Checked at 320, 375,
-  414 and 768 px, with no sideways scroll.
+- Light and dark (see Theme).
+- Phones: the tabs become a bottom bar, rows become two-column cards and progress steps stack vertically.
+- Checked at 320, 375 and 1366 px in both themes, with no sideways scroll and no wrapped tab or button
+  labels.
 
 **Protections:**
 - A cross-site POST is refused (CSRF). `Sec-Fetch-Site` is checked first, then `Origin`.
@@ -389,9 +432,14 @@ components) is written down in [`design.md`](../design.md).
   CSS and Google Fonts. LIKE wildcards in the search are stripped. `noindex`.
 - Unknown job or path: 404.
 
-**Code:** `src/web/login.ts` (gate, sign-in), `src/web/session.ts` (sessions, lockout, CSRF),
-`src/web/pages.ts` (board, job page), `src/web/charts.ts`, `src/web/layout.ts`.
+**Code:**
+- `src/web/login.ts` (gate, sign-in, theme route), `src/web/session.ts` (sessions, lockout, CSRF, theme
+  cookie).
+- `src/web/shell.ts` (bar, tabs, sub-tabs), `src/web/signals.ts` (alerts and badges).
+- `src/web/home.ts`, `src/web/pages.ts` (router, Deliveries, job page), `src/web/ops.ts` (Payments,
+  System), `src/web/jobsShared.ts`, `src/web/handovers.ts`, `src/web/charts.ts`, `src/web/layout.ts`.
 **Tests:** `test/board.test.ts` (redirect safety, cookie flags, CSRF, lockout window, filters, charts, progress),
+`test/shell.test.ts` (alerts and their order, faults vs refusals, badges, theme cookie, safe return path, theme switch, announcement),
 `test/units.test.ts` (search parsing), smoke (sign-in redirect, wrong password, CSRF, Basic for scripts),
 and the browser runs in `docs/EDGE_CASES.md` B1–B16.
 

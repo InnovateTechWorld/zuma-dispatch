@@ -199,6 +199,18 @@ Every row names the code that handles the case and the evidence that it works.
 | B18 | Opening a board link from the sheet, chat or email | The cookie is `SameSite=Lax`, so a link from another site arrives signed in; cross-site POSTs still never carry it and are refused by the CSRF check | U cookie flags |
 | B19 | Approving a reviewed payment | Sets `paid_at` and records `via: dispatcher`, so the job counts in "Paid today" and the sheet's Paid at / Paid via columns | Code path in `boardAction` |
 | B20 | Odd form values (`action=constructor`) | Actions are looked up with `Object.hasOwn`, so unknown keys get "Unknown action." instead of a 500 | Code path |
+| B21 | Everything on one long page (the user's complaint) | Five tabs (Home, Deliveries, Handovers, Payments, System), each with sub-tabs that have their own URLs; Home shows only what needs a person, today's numbers and the latest five jobs | M: every page at 1366, 375 and 320 px, light and dark |
+| B22 | Old links to `/board?status=paid` (sheet, bookmarks, flash redirects) | `/board` with `status`, `q` or `city` → 302 to `/board/deliveries` with the same query | Local run: `302 → /board/deliveries?status=paid` |
+| B23 | Chord slow or down while the board loads | Waiting-chat count has a 2 s request timeout plus a 2.5 s hard cap; on failure the badge is left off and Home says "Could not reach Chord" (never "nobody is waiting") | U `alertsFrom` (unreachable) |
+| B24 | Expected tool refusals look like outages | Only `INTERNAL_ERROR`, `UNKNOWN_TOOL`, `PAYMENT_PROVIDER_BUSY` and `*_UNAVAILABLE` count as "broke"; out-of-area, not-found and between-state answers are refusals | U `isFault`; local data: 213 errors, all refusals → no alert |
+| B25 | Theme switch abused or broken | Unknown value, cross-site post or GET → no cookie, redirect to a safe board page; a `back` outside `/board` → `/board`; from the sign-in page the safe `next` is kept; "Match device" deletes the cookie; the cookie is HttpOnly + SameSite=Lax | U `readTheme`, `themeCookie`, `safeBack`; local curl for each case |
+| B26 | Theme choice vs device setting | Light/dark choice wins over `prefers-color-scheme`; "Match device" follows it; works without JavaScript | M: dark cookie on a light-emulated device renders dark; Match device on light renders light |
+| B27 | Flash message repeats after changing theme | The return path drops `msg`, `sig` and `tone` | U `hereWithoutFlash` |
+| B28 | Warn before the sign-in lockout | Tries 7–9 show "3/2/1 tries left"; the 10th shows "No tries left" and disables the form; the 11th gets 429 | Local run with one client IP: exactly that sequence |
+| B29 | Owner needs to tell staff something | `BOARD_ANNOUNCEMENT` banner on sign-in and Home; whitespace collapsed, 280-character cap, HTML-escaped, absent when empty | U `announcementText`, `announcement` |
+| B30 | Phone width with five tabs | Fixed bottom tab bar (icons + labels, 60 px targets, safe-area inset); the body is padded so it never covers content; the theme switch becomes one button | M: 320 px, no overflow, no wrapped labels |
+| B31 | Badge numbers get huge | Badges cap at "99+"; screen readers hear "Handovers, 3 waiting" | Code path in `tabLinks` |
+| B32 | Unknown board path, unknown job, bad conversation id | 404 inside the board shell with tabs and a link onward; no Chord call is made for it | Local run: `/board/nope` 404, `/board/jobs/ZD-00000` 404 |
 
 ## Google Sheet mirror
 

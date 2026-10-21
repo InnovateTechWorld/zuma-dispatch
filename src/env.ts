@@ -18,6 +18,8 @@ export interface Env {
   GOOGLE_MAPS_API_KEY?: string;
   MCP_BEARER_TOKEN?: string;
   BOARD_TOKEN?: string;
+  /** Optional plain-text team notice (max 280 characters) shown on the board's sign-in page and Home. */
+  BOARD_ANNOUNCEMENT?: string;
   /** Signing secret of the Chord webhook registration (Admin -> Developer -> Webhooks). Optional. */
   CHORD_WEBHOOK_SECRET?: string;
   /** Google Sheets mirror (optional): spreadsheet id and a service-account JSON key with access to it. */

@@ -3,16 +3,55 @@
     "date": "2026-10-20",
     "verb": "redesign",
     "scope": "multi-page app (board, sign-in, job detail, payment return) via one shared layout",
-    "files": ["src/web/layout.ts", "src/web/login.ts", "src/web/pages.ts", "src/web/charts.ts"],
+    "files": [
+      "src/web/layout.ts",
+      "src/web/login.ts",
+      "src/web/pages.ts",
+      "src/web/charts.ts"
+    ],
     "genre": "modern-minimal",
     "macrostructure": "workbench (app variant: tool-first, no marketing copy)",
     "theme": "cobalt",
     "nav": "N9 edge-aligned minimal",
     "footer": "Ft2 inline single line",
     "enrichment": "none (app pages)",
-    "deviations": ["no ⌘K palette and no reveal script: the CSP forbids scripts", "accent darkened to oklch(54% 0.2 257) so white button text clears 4.5:1", "dark mode added (cobalt is light-only)"],
+    "deviations": [
+      "no ⌘K palette and no reveal script: the CSP forbids scripts",
+      "accent darkened to oklch(54% 0.2 257) so white button text clears 4.5:1",
+      "dark mode added (cobalt is light-only)"
+    ],
     "critique": "P4 H5 E4 S5 R5 V4",
     "contrast": "pass (40–41)",
     "responsive": "checked 320 / 375 / 414 / 768 / 1280: scrollWidth = viewport"
+  },
+  {
+    "date": "2026-10-21",
+    "verb": "redesign",
+    "scope": "board restructured into five tabbed pages (Home, Deliveries, Handovers, Payments, System) plus sign-in; same Cobalt system (design.md managed)",
+    "files": [
+      "src/web/layout.ts",
+      "src/web/shell.ts",
+      "src/web/signals.ts",
+      "src/web/home.ts",
+      "src/web/pages.ts",
+      "src/web/ops.ts",
+      "src/web/jobsShared.ts",
+      "src/web/handovers.ts",
+      "src/web/login.ts"
+    ],
+    "genre": "modern-minimal",
+    "macrostructure": "tabbed workbench: Home inbox of alerts, one task per tab, sub-tabs with their own URLs",
+    "theme": "cobalt (light + dark, device default with a cookie switch)",
+    "nav": "N9 bar + underlined tab row; fixed 5-item bottom tab bar under 48rem",
+    "footer": "Ft2 inline single line",
+    "enrichment": "none (app pages)",
+    "deviations": [
+      "no ⌘K palette and no scripts (CSP)",
+      "kicker labels above headings removed",
+      "theme switch is a form, not a script"
+    ],
+    "critique": "P5 H5 E4 S5 R5 V4",
+    "contrast": "pass (40–41) in both themes",
+    "responsive": "checked 320 / 375 / 1366: scrollWidth = viewport, no wrapped clickable labels"
   }
 ]

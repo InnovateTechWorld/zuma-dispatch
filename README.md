@@ -11,7 +11,7 @@ are within one state (anywhere in the FCT, or anywhere in Lagos State), never be
 |---|---|
 | Tool server (MCP) | `https://zuma-dispatch.obimz123.workers.dev/mcp` (bearer token) |
 | Health | https://zuma-dispatch.obimz123.workers.dev/health |
-| Admin / dispatcher board | https://zuma-dispatch.obimz123.workers.dev/board: sign-in page, overview charts, every delivery with status tabs and search, job pages with progress (password = `BOARD_TOKEN`; see `design.md`) |
+| Admin / dispatcher board | https://zuma-dispatch.obimz123.workers.dev/board: sign-in page, then five tabs (Home: what needs you · Deliveries · Handovers · Payments · System), light and dark themes (password = `BOARD_TOKEN`; see [FEATURES §8](docs/FEATURES.md) and `design.md`) |
 | Skill | [`skill/zuma-dispatch/`](skill/zuma-dispatch/SKILL.md) |
 | Try it | [Simulator test script](docs/TEST_SCRIPT.md): demo postcodes (`LA-11-ZDM-PS-01` = Paystack office), addresses that work, 15 scenarios |
 | Docs | [Features](docs/FEATURES.md) · [Architecture](docs/ARCHITECTURE.md) · [Edge cases](docs/EDGE_CASES.md) · [What was tested](docs/TESTING.md) · [Go-live + WhatsApp](docs/GO_LIVE.md) · [Field notes](docs/FIELD_NOTES.md) · [Design](design.md) · [Research](notes/) |
@@ -30,7 +30,7 @@ src/
   routing/                  OSRM → ORS → straight-line distance
   payments/                 Paystack client, pure payment decision, verification service
   business/                 business profile (service area, hours) and the rate card
-  web/                      /board sign-in + sessions, board and job pages, charts, /pay/return
+  web/                      /board sign-in + sessions, tab shell, Home alerts, Deliveries, Payments, System, job pages, handovers, charts, /pay/return
   db/, lib/                 data access; ids, phone, money, text, geo, http helpers
 migrations/                 D1 schema
 test/                       unit tests (vitest, plain Node)
@@ -96,7 +96,7 @@ npm run dev             # http://127.0.0.1:8787
 Test it, no Chord credits needed:
 
 ```bash
-npm test                              # 101 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config, board sign-in, charts, sheet mirror
+npm test                              # 182 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config, board sign-in, Home alerts, theme, charts, sheet mirror, handovers
 ```
 ```bash
 scripts/mcp-smoke.sh                  # protocol, auth, board sign-in, CSRF, webhook checks (23)
