@@ -99,7 +99,7 @@ export async function paymentsPage(path: string, url: URL, env: Env, config: Con
               .map((n) => {
                 const stuck = n.reason === 'hand_back_failed';
                 return `<tr><td><a class="mono" href="/board/jobs/${h(n.job_id)}">${h(n.job_id)}</a></td><td>${stuck ? '<b>Left with a person</b>' : n.state === 'failed' ? '<b>Failed</b>' : h(NOTICE_STATE[n.state] ?? n.state)}</td><td><span class="why">${h(n.reason ? NOTICE_REASONS[n.reason] ?? n.reason : '—')}</span></td><td>${time(n.updated_at)}</td><td>${
-                  n.thread_id ? `<a href="/board/handovers/${h(n.thread_id)}${stuck ? '#reply' : ''}">${stuck ? 'Hand back' : 'Open'}</a>` : '—'
+                  n.thread_id ? `<a href="/board/handovers/${h(n.thread_id)}">${stuck ? 'Hand back' : 'Open'}</a>` : '—'
                 }</td></tr>`;
               })
               .join(''),

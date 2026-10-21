@@ -27,7 +27,22 @@ export function paymentReceivedMessage(
   const code = `Your handover code is ${job.handover_code}. Please share it with the recipient; the rider will ask for it at drop-off.`;
   if (job.status === 'delivered') return `${head} It has been delivered.`;
   if (job.status === 'dispatched') return `${head} ${rider ? `${riderLine(rider)} has the package.` : 'A rider already has the package.'} ${code}`;
-  return `${head} ${rider ? `Your rider is ${riderLine(rider)}. ` : ''}${afterPaymentTiming(now, Boolean(rider))} ${code}`;
+  // Inside rider hours the rider sets off at once, so say so; outside them, name the rider and the time.
+  const coming = rider ? (pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now. ` : `Your rider is ${riderLine(rider)}. `) : '';
+  return `${head} ${coming}${afterPaymentTiming(now, Boolean(rider))} ${code}`;
+}
+
+/**
+ * When the customer already saw our "Payment received" notice and then asks: confirm briefly, with the
+ * rider and the code again, without repeating the whole notice.
+ */
+export function paidFollowUp(job: { id: string; handover_code: string; status?: string; rider_id?: string | null }, now: number): string {
+  if (job.status === 'delivered') return `Yes, ${job.id} is paid and it has been delivered.`;
+  const rider = riderById(job.rider_id);
+  const who = job.status === 'dispatched'
+    ? `${rider ? riderLine(rider) : 'The rider'} has the package and is on the way to the drop-off.`
+    : rider ? (pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now.` : `${riderLine(rider)} will collect it. ${pickupWindow(now).note}`) : afterPaymentTiming(now, false);
+  return `Yes, your payment is confirmed. ${who} Your handover code is ${job.handover_code}; please share it with the recipient.`;
 }
 
 /** "bola ahmed" → "Bola Ahmed", for addressing people in messages (stored names keep the customer's spelling). */

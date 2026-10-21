@@ -1,3 +1,4 @@
+import { HANDOVER_REASON_PREFIX } from '../chord/handover';
 import type { Env } from '../env';
 import { acknowledgeHandover, TAKEOVER_REASON } from '../chord/notices';
 import { secretsMatch } from '../lib/auth';
@@ -73,6 +74,11 @@ export async function chordWebhook(
         ),
       ),
     );
+  }
+  // Our own handover (hand_to_team): Zuma already told the customer in its reply, so no acknowledgement
+  // is sent; the row is marked so the board shows "Customer told: yes".
+  if (res.meta.changes === 1 && type === 'conversation.escalated' && initiator === 'human_operator' && reason.startsWith(HANDOVER_REASON_PREFIX)) {
+    await db.prepare('UPDATE chord_events SET ack = ? WHERE delivery_id = ?').bind('sent', deliveryId.slice(0, 100)).run().catch(() => undefined);
   }
   return new Response(null, { status: 204 });
 }

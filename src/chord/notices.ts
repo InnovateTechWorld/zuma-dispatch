@@ -305,6 +305,28 @@ export async function notifyPaymentReceived(env: Env, jobId: string, opts: { man
   }
 }
 
+/**
+ * The agent is confirming the payment in its own reply (verify_payment). Returns whether the customer
+ * already saw our automatic notice on a channel that shows it; if not, the notice is claimed as
+ * "agent_confirmed" so it is not pushed a few seconds later as a duplicate. A notice that is already
+ * pending (being sent right now) is left alone.
+ */
+export async function noteAgentConfirmed(db: D1Database, jobId: string, now: number): Promise<'customer_already_told' | 'agent_tells'> {
+  try {
+    const row = await db.prepare('SELECT state, reason FROM chat_notices WHERE job_id = ? AND kind = ?').bind(jobId, NOTICE_KIND).first<{ state: string; reason: string | null }>();
+    if (row && (row.state === 'sent' || row.state === 'queued') && row.reason !== 'record_only') return 'customer_already_told';
+    if (!row) {
+      await db
+        .prepare(`INSERT INTO chat_notices (job_id, kind, state, reason, created_at, updated_at) VALUES (?1, ?2, 'skipped', 'agent_confirmed', ?3, ?3) ON CONFLICT (job_id, kind) DO NOTHING`)
+        .bind(jobId, NOTICE_KIND, now)
+        .run();
+    }
+  } catch (e) {
+    log('warn', 'note_agent_confirmed_failed', { job_id: jobId, message: String(e) });
+  }
+  return 'agent_tells';
+}
+
 /** Fire-and-forget hook used after a payment is confirmed outside the conversation. No-op when off. */
 export function queueChatNotice(env: Env, waitUntil: (p: Promise<unknown>) => void, jobId: string, origin: string): void {
   if (noticeStatus(env) !== 'enabled' || !sendsAllowed(env, origin)) return;

@@ -228,7 +228,7 @@ describe('the message itself', async () => {
 
   it('after payment: amount, job, the rider, timing, and (only now) the handover code', () => {
     expect(paymentReceivedMessage({ ...JOB, rider_id: 'R-LA1' }, NOW)).toBe(
-      'Payment received: ₦1,950 for ZD-H01G4. Thank you! Your rider is Tunde (motorbike, LSD 553 XA). Pickup is usually within 45 minutes. Your handover code is 8960. Please share it with the recipient; the rider will ask for it at drop-off.',
+      'Payment received: ₦1,950 for ZD-H01G4. Thank you! Tunde (motorbike, LSD 553 XA) is on the way to the pickup now. Pickup is usually within 45 minutes. Your handover code is 8960. Please share it with the recipient; the rider will ask for it at drop-off.',
     );
     expect(paymentReceivedMessage(JOB, NOW)).toContain('A dispatcher is assigning a rider now');
   });
@@ -248,5 +248,38 @@ describe('the message itself', async () => {
   it('tells a handed-over customer who will answer, and when (closed: from 7am)', () => {
     expect(handoverMessage(NOW)).toContain('will reply here shortly');
     expect(handoverMessage(Date.UTC(2026, 9, 25, 10, 0))).toContain('from 7am'); // a Sunday
+  });
+});
+
+describe('the agent confirms first: no duplicate notice', () => {
+  const db = (row: { state: string; reason: string | null } | null) => {
+    const runs: string[] = [];
+    return {
+      runs,
+      prepare(sql: string) {
+        return { bind: () => ({ first: async () => row, run: async () => { runs.push(sql); return { meta: { changes: 1 } }; } }) };
+      },
+    } as unknown as D1Database & { runs: string[] };
+  };
+  it('no notice yet: claims it as agent_confirmed so the push is skipped', async () => {
+    const { noteAgentConfirmed } = await import('../src/chord/notices');
+    const d = db(null);
+    expect(await noteAgentConfirmed(d, 'ZD-AAAAA', 1)).toBe('agent_tells');
+    expect(d.runs[0]).toContain("'agent_confirmed'");
+  });
+  it('notice already shown on a real channel: the agent sends the short follow-up', async () => {
+    const { noteAgentConfirmed } = await import('../src/chord/notices');
+    expect(await noteAgentConfirmed(db({ state: 'sent', reason: null }), 'ZD-AAAAA', 1)).toBe('customer_already_told');
+    expect(await noteAgentConfirmed(db({ state: 'queued', reason: null }), 'ZD-AAAAA', 1)).toBe('customer_already_told');
+  });
+  it('notice only recorded (simulator cannot show it): the agent still sends the full message', async () => {
+    const { noteAgentConfirmed } = await import('../src/chord/notices');
+    expect(await noteAgentConfirmed(db({ state: 'sent', reason: 'record_only' }), 'ZD-AAAAA', 1)).toBe('agent_tells');
+  });
+  it('the follow-up keeps the rider and the code', async () => {
+    const { paidFollowUp } = await import('../src/business/messages');
+    const m = paidFollowUp({ ...JOB, status: 'paid', rider_id: 'R-LA1' }, NOW);
+    expect(m).toContain('Yes, your payment is confirmed.');
+    expect(m).toContain('8960');
   });
 });

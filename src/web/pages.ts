@@ -440,7 +440,7 @@ ${subTabs('Job views', [
           : '<p class="muted">Not found.</p>'
       }</section>`;
     const rider = riderById(job.rider_id);
-    const side = [(handover ? `<section class="section" aria-labelledby="hv-h"><div class="section__head"><h2 id="hv-h">Handed to a person</h2><p class="muted">Zuma handed this customer to the team ${time(handover.received_at)}.</p></div><a class="btn" href="/board/handovers/${h(handover.thread_id)}#reply">Open the conversation</a></section>` : ''), chatNoticeSection(job, chatNotice, noticeStatus(env) === 'enabled')].join('');
+    const side = [(handover ? `<section class="section" aria-labelledby="hv-h"><div class="section__head"><h2 id="hv-h">Handed to a person</h2><p class="muted">Zuma handed this customer to the team ${time(handover.received_at)}.</p></div><a class="btn" href="/board/handovers/${h(handover.thread_id)}">Open the conversation</a></section>` : ''), chatNoticeSection(job, chatNotice, noticeStatus(env) === 'enabled')].join('');
     body = `<ol class="steps" aria-label="Progress">${steps}</ol>
 <div class="next"><p>${NEXT_STEP[job.status] ?? ''}</p>${actions ? `<div class="actions">${actions}</div>` : ''}</div>
 <div class="grid-2">

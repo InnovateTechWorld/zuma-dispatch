@@ -28,7 +28,7 @@ check "browser Origin -> 403"     'HTTP 403'         "$(curl -sS -m 15 -X POST "
 check "GET -> 405"               'HTTP 405'         "$(curl -sS -m 15 "$BASE/mcp" -H "Authorization: Bearer $MCP_BEARER_TOKEN" -w '\nHTTP %{http_code}')"
 check "initialize"                '"serverInfo"'     "$(rpc '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}')"
 LIST="$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
-for t in resolve_address quote_delivery create_dispatch_job create_payment_link verify_payment get_job_status cancel_job; do
+for t in resolve_address quote_delivery create_dispatch_job create_payment_link verify_payment get_job_status cancel_job hand_to_team; do
   check "tools/list has $t" "\"$t\"" "$LIST"
 done
 check "schema rejects unconfirmed booking" 'isError' \

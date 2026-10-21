@@ -100,6 +100,7 @@ export const NOTICE_REASONS: Record<string, string> = {
   customer_mid_conversation: 'the customer was writing at that moment; the agent confirms in its reply',
   outside_24h_window: "the customer's last message is older than WhatsApp's 24-hour window",
   local_server: 'this is a local test server (set CHORD_NOTICES_ALLOW_LOCAL=1 to allow)',
+  agent_confirmed: 'Zuma confirmed the payment in its own reply first, so no separate notice was sent',
   record_only: "this channel (e.g. the test simulator) cannot show pushed messages; it is in the Chord conversation, so the agent knows the job is paid",
   hand_back_failed: 'Zuma could not hand the chat back to the agent. Open it in Chord and press "Hand back to AI", or the agent stays silent there',
   direct_line_not_delivered: "Chord's scheduled message only reached Chord's record, not the customer's chat (route since replaced)",

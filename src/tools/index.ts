@@ -4,6 +4,7 @@ import { cancelJob as cancelJobHandler, createDispatchJob as createJobHandler, g
 import { createPaymentLink as createLinkHandler, verifyPayment as verifyHandler } from './payments';
 import { quoteDelivery as quoteHandler } from './quoteDelivery';
 import { resolveAddress as resolveHandler } from './resolveAddress';
+import { handToTeam as handToTeamHandler } from './handover';
 
 /*
  * Tool surface for the Zuma Dispatch teammate.
@@ -159,6 +160,23 @@ export const cancelJob = defineTool({
   handler: cancelJobHandler,
 });
 
+export const handToTeam = defineTool({
+  name: 'hand_to_team',
+  title: 'Hand the customer to a person',
+  description: [
+    'Pass the conversation to a human dispatcher (refunds, cancelling a paid job, complaints, out-of-scope requests, a customer who asks for a person).',
+    'Use this instead of the built-in handover tool: it returns the line to send the customer, and a person takes over right after your reply.',
+    'If it returns an error, use the built-in handover tool.',
+  ].join(' '),
+  inputSchema: {
+    reason: z.string().min(3).max(280).describe('Why a person is needed, with the job id if there is one, e.g. "refund for paid job ZD-QFJ5F".'),
+    customer_message: z.string().min(1).max(500).describe("The customer's latest message, word for word (used to find this conversation)."),
+    job_id: jobId.optional(),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  handler: handToTeamHandler,
+});
+
 export const ALL_TOOLS = [
   resolveAddress,
   quoteDelivery,
@@ -167,4 +185,5 @@ export const ALL_TOOLS = [
   verifyPayment,
   getJobStatus,
   cancelJob,
+  handToTeam,
 ] as const;

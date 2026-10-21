@@ -730,3 +730,62 @@ operator console, those five are your surface": take-over, hand-back, pause, res
 - Show operator and system messages in the simulator.
 - Mark operator turns as such in the model's context (or document that they appear as assistant turns).
 - Keep the agent's last text when it calls handover, or let the skill set the handover notice.
+
+## 22. "No response when I said I want a refund": why, and what we changed
+
+**What the tester saw (simulator, 2026-10-21):** "i want a refund" got no reply at all. The board showed
+the chat "Waiting for you" with two messages after the request:
+
+- Chord's own system line: "One moment — connecting you with a teammate."
+- Our acknowledgement: "You're now connected to the Zuma Dispatch support team…", posted by the
+  escalation webhook.
+
+**Why:**
+- Chord's built-in handover tool ends the AI's turn. Zuma writes nothing itself. We checked all six
+  handovers in the workspace, and in every one the customer's message is followed directly by Chord's
+  system line, with no AI turn.
+- The TSG simulator only displays customer and AI turns. It never shows system or operator messages
+  (FIELD_NOTES #21, EDGE_CASES H10). Both lines that were sent are therefore invisible there.
+- On real WhatsApp both lines reach the customer, so this is a simulator gap, not a WhatsApp one. It
+  still matters, because the simulator is where the agent is judged.
+
+**Can it be worked around?** Yes, with our own handover tool, `hand_to_team`, which skill v16 tells Zuma
+to use:
+
+1. Zuma calls `hand_to_team` with the reason, the customer's latest message and the job id.
+2. The tool finds the conversation. Chord passes tools no conversation id (#8), so it matches the
+   customer's latest message against chats still with the AI from the last 3 minutes. If that fails, it
+   uses the recent chat where Zuma sent that job id. It never guesses between two matches.
+3. The tool returns the line to send: "I've passed this to our support team. Someone from the team will
+   reply here shortly, and they'll have your booking details." Outside 7am–8pm Monday to Saturday, it
+   says when the team will reply instead.
+4. Zuma's reply is an **AI turn**, so the simulator shows it.
+5. In the background, the server waits until that reply is in the conversation, then takes the chat over
+   through the operator API (reason "Zuma handover: …").
+   - Taking over earlier could cut the reply off. The wait is capped at 20 s, so the customer is never
+     left with the AI after asking for a person.
+   - Chord then posts its own "connecting you" line. That line is visible on WhatsApp only.
+6. The webhook sees a take-over by `human_operator` with our reason. So the board marks "Customer told:
+   yes", lists it as "handed over by Zuma", and sends **no** second acknowledgement.
+
+**What can't be fixed from our side:**
+- If `hand_to_team` can't find the chat (two customers typing the same words in the same moment, or
+  Chord down), it returns an error and Zuma falls back to the built-in tool. On WhatsApp the customer is
+  still told by Chord's line and our acknowledgement. In the simulator they would again see nothing,
+  because the simulator can't show those.
+- We can't make the simulator display operator messages.
+
+**Also fixed in the same run:**
+- After "done i have paid", Zuma wrote only "Your delivery is paid and booked." It dropped the rider and
+  the code from `verify_payment`'s message.
+  - The tool now says to reply with that message word for word.
+  - The message now says the rider "is on the way to the pickup now".
+  - Our automatic "Payment received" notice was then pushed 4 s later. On WhatsApp that is a duplicate.
+    When Zuma confirms first, the notice is now claimed as `agent_confirmed` and skipped. When the
+    customer already saw the notice, Zuma sends a short follow-up with the rider and code instead.
+- "Where is the rider?" got "I don't have a live map location". `get_job_status` now returns a
+  **simulated** position (test mode has no riders or GPS). It is computed from the job's timestamps, so
+  it moves forward with time and never jumps:
+  - The rider rides to the pickup over 15 minutes, then waits there.
+  - Once the board marks the job dispatched, the rider moves to the drop-off over the quoted trip time.
+  - Each update carries an OpenStreetMap link.

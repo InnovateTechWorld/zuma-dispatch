@@ -3,7 +3,8 @@ import { eventStmt, getJob, getPayment, listPayments, type JobRow, type PaymentR
 import { paymentReference } from '../lib/ids';
 import { log } from '../lib/log';
 import { formatNaira } from '../lib/money';
-import { afterPaymentTiming, linkMessage, paymentReceivedMessage, transferMessage } from '../business/messages';
+import { afterPaymentTiming, linkMessage, paidFollowUp, paymentReceivedMessage, transferMessage } from '../business/messages';
+import { noteAgentConfirmed } from '../chord/notices';
 import { assignRider, riderView } from '../business/riders';
 import { ToolError, type ToolContext } from '../mcp/tooling';
 import { chargeBankTransfer, initializeTransaction } from '../payments/paystack';
@@ -215,6 +216,8 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
 
 /** Pickup timing worded for after payment (the quote-time wording says "as soon as payment is confirmed"). */
 // ------------------------------------------------------------------ verify_payment
+/** In a live test the model replied only "Your delivery is paid and booked", dropping the rider and the code. */
+const PAID_TODO = 'It is paid. Reply with message_for_customer word for word: it has the rider and the handover code the customer needs. Do not shorten it or replace it with your own summary. Then answer anything else they asked.';
 export async function verifyPayment(args: { job_id: string }, ctx: ToolContext): Promise<Record<string, unknown>> {
   let job = await loadJob(ctx, args.job_id);
   // Already paid by our records (webhook, return page, an earlier check, or a dispatcher's approval):
@@ -230,8 +233,8 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
       pickup_timing: job.status === 'paid' ? afterPaymentTiming(ctx.now(), Boolean(job.rider_id)) : job.status === 'dispatched' ? 'A rider already has the package.' : 'The package has been delivered.',
       handover_code: job.handover_code,
       rider: riderView(job.rider_id),
-      message_for_customer: paymentReceivedMessage(job, ctx.now()),
-      what_to_do: 'It is paid. Send message_for_customer, then answer their question (get_job_status for the latest).',
+      message_for_customer: (await noteAgentConfirmed(ctx.db, job.id, ctx.now())) === 'customer_already_told' ? paidFollowUp(job, ctx.now()) : paymentReceivedMessage(job, ctx.now()),
+      what_to_do: PAID_TODO,
     };
   }
 
@@ -264,8 +267,8 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
         pickup_timing: afterPaymentTiming(now, Boolean(check.job.rider_id)),
         // Ready-to-send text: in a live test the model once dropped the confirmation and the timing
         // and replied only "keep the envelope ready" (FIELD_NOTES #13). A full sentence to pass on is harder to drop.
-        message_for_customer: paymentReceivedMessage(check.job, now),
-        what_to_do: 'Payment confirmed. Send message_for_customer (you may adjust the wording, but keep the payment confirmation, the rider, the pickup timing and the handover code: this is the first time the customer gets the code), then answer anything else they asked.',
+        message_for_customer: (await noteAgentConfirmed(ctx.db, check.job.id, now)) === 'customer_already_told' ? paidFollowUp(check.job, now) : paymentReceivedMessage(check.job, now),
+        what_to_do: PAID_TODO,
       };
     case 'in_progress':
       if (openTransfer) {

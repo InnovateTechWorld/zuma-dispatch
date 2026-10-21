@@ -573,6 +573,22 @@ and the browser runs in `docs/EDGE_CASES.md` B1–B16.
   acknowledgements, 0 AI requests. A handed-back chat's
   next customer message is a normal AI turn.
 
+### 9a. `hand_to_team` (our own handover) and simulated rider tracking (2026-10-21)
+- **`hand_to_team`** (`src/chord/handover.ts`, `src/tools/handover.ts`, see FIELD_NOTES #22):
+  - Zuma calls it with the reason, the customer's latest message and the job id.
+  - Zuma replies with the returned line, which is visible everywhere including the simulator.
+  - The server takes over once that reply is posted.
+  - If it can't find the chat, Zuma falls back to Chord's built-in handover.
+- **Rider tracking** (`src/business/tracking.ts`): `get_job_status` returns `rider_location` and a
+  ready message ("Tunde … is on the way to the pickup at Paystack office, about 9 minutes away (2.1 km)"
+  plus a map link).
+  - It is **simulated** (`simulated: true`): test mode has no riders or GPS. The position comes from the
+    job's own timestamps.
+  - To see the rider move to the drop-off, mark the job **dispatched** on the board.
+- **Board conversation page:** the messages sit in a fixed panel that scrolls on its own and opens at the
+  newest one. The reply box stays under it, and the facts sit on the right (on phones, under "About this
+  chat").
+
 ## 10. Conversation memory (Chord-specific behaviour)
 
 Chord gives the model only the text of the last 30 turns, not earlier tool results, and passes MCP

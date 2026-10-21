@@ -8,6 +8,7 @@ import { backTo } from './flash';
 import { notice, time } from './layout';
 import { blank, pageHead, shell, type BoardSession } from './shell';
 import { readSignals } from './signals';
+import { HANDOVER_REASON_PREFIX } from '../chord/handover';
 import { crossSite } from './session';
 
 /**
@@ -124,12 +125,18 @@ const CSS = `
 .state--agent_active{color:var(--color-muted)}
 .state--paused{color:var(--color-warn)}
 .state--unknown{color:var(--color-muted)}
-.convo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,20rem);gap:var(--space-lg) var(--space-xl);align-items:start;padding-bottom:var(--space-lg)}
-.convo__side{position:sticky;top:var(--space-md);display:grid;gap:var(--space-sm)}
+.convo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,19rem);gap:var(--space-lg);align-items:start;padding-bottom:var(--space-md)}
+.thread{display:flex;flex-direction:column;border:1px solid var(--color-rule);border-radius:var(--radius-lg);background:var(--color-surface);overflow:hidden;min-width:0}
+.thread__bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-2xs) var(--space-sm);padding:var(--space-xs) var(--space-sm);border-bottom:1px solid var(--color-rule);font-size:var(--text-sm)}
+.thread__bar a{white-space:nowrap}
+.convo__side{position:sticky;top:var(--space-md);display:grid;gap:var(--space-sm);padding:var(--space-sm);border:1px solid var(--color-rule);border-radius:var(--radius-lg);background:var(--color-surface)}
 .facts-mini{display:grid;grid-template-columns:minmax(0,7rem) minmax(0,1fr);gap:var(--space-3xs) var(--space-xs);margin:0;font-size:var(--text-sm)}
 .facts-mini dt{font:500 var(--text-2xs)/1.9 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--color-muted)}
 .facts-mini dd{margin:0;color:var(--color-ink);overflow-wrap:anywhere}
-.chat{display:flex;flex-direction:column;gap:var(--space-xs);padding:var(--space-sm);border:1px solid var(--color-rule);border-radius:var(--radius-lg);background:var(--color-paper-2);min-height:12rem}
+/* The message list scrolls inside a fixed-height panel. It is a reversed column (newest first in the
+   markup), so with no script it opens scrolled to the newest message. */
+.chat{display:flex;flex-direction:column-reverse;gap:var(--space-xs);padding:var(--space-sm);background:var(--color-paper-2);height:clamp(16rem,calc(100dvh - 28rem),44rem);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.chat:focus-visible{outline:2px solid var(--color-focus);outline-offset:-2px}
 .msg{max-width:min(36rem,85%);padding:var(--space-xs) var(--space-sm);border:1px solid var(--color-rule);border-radius:var(--radius-lg);background:var(--color-surface)}
 .msg--customer{align-self:flex-start}
 .msg--agent{align-self:flex-end}
@@ -140,14 +147,19 @@ const CSS = `
 .msg__meta{display:flex;flex-wrap:wrap;gap:var(--space-3xs) var(--space-xs);margin-bottom:var(--space-3xs);font:500 var(--text-2xs)/1.4 var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--color-muted)}
 .msg__text{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--color-ink);font-size:var(--text-base)}
 .msg__bad{display:block;margin-top:var(--space-3xs);font-size:var(--text-xs);color:var(--color-bad)}
-.earlier{align-self:center;font-size:var(--text-sm)}
-.composer{display:grid;gap:var(--space-2xs);margin-top:var(--space-sm)}
-.textarea{height:auto;min-height:6.5rem;padding:var(--space-xs);line-height:1.5;resize:vertical}
+.earlier{align-self:center;font-size:var(--text-sm);padding:var(--space-3xs) 0}
+.chat__empty{margin:auto;color:var(--color-muted);font-size:var(--text-sm)}
+.composer{display:grid;gap:var(--space-2xs);padding:var(--space-sm);border-top:1px solid var(--color-rule);background:var(--color-surface)}
+.composer .label{display:block;margin-bottom:var(--space-3xs)}
+.textarea{height:auto;min-height:4.5rem;max-height:12rem;padding:var(--space-xs);line-height:1.5;resize:vertical}
+.composer__end{display:flex;flex-wrap:wrap;gap:var(--space-2xs);align-items:center;justify-content:space-between}
+.composer__end form{margin:0}
 .composer__row{display:flex;flex-wrap:wrap;gap:var(--space-2xs);align-items:center;justify-content:space-between}
 .composer__hint{font-size:var(--text-xs);color:var(--color-muted)}
-.lock{padding:var(--space-sm);border:1px dashed var(--color-rule-2);border-radius:var(--radius-lg);font-size:var(--text-sm);color:var(--color-ink-2);display:grid;gap:var(--space-xs);margin-top:var(--space-sm)}
-@media (max-width:64rem){.convo{grid-template-columns:minmax(0,1fr)}.convo__side{position:static;order:-1}}
-@media (max-width:48rem){.ho-card{grid-template-columns:minmax(0,1fr)}.ho-card__end{align-items:flex-start;flex-direction:row}.msg{max-width:92%}}
+.lock{padding:var(--space-sm);border-top:1px solid var(--color-rule);font-size:var(--text-sm);color:var(--color-ink-2);display:grid;gap:var(--space-xs);background:var(--color-surface)}
+.side-sm{display:none}
+@media (max-width:64rem){.convo{grid-template-columns:minmax(0,1fr)}.convo__side{display:none}.side-sm{display:block;border-bottom:1px solid var(--color-rule)}.side-sm>summary{padding:0 var(--space-sm);font-size:var(--text-sm)}.side-sm .facts-mini{padding:0 var(--space-sm) var(--space-sm)}.chat{height:clamp(16rem,calc(100dvh - 26rem),36rem)}}
+@media (max-width:48rem){.ho-card{grid-template-columns:minmax(0,1fr)}.ho-card__end{align-items:flex-start;flex-direction:row}.msg{max-width:92%}.chat{height:clamp(13rem,calc(100dvh - 31rem),26rem)}.thread__bar .muted{display:none}.composer__hint{display:none}}
 `;
 
 function stateChip(s: ControlState): string {
@@ -169,6 +181,9 @@ function notConfigured(url: URL, env: Env, config: Config, session: BoardSession
     body: `${pageHead('Handovers')}${blank('Handovers are not connected.', ` ${h(why)}`)}`,
   });
 }
+
+/** The reason as a dispatcher reads it (our internal prefix removed). */
+export const shownReason = (r: string) => (r.startsWith(HANDOVER_REASON_PREFIX) ? r.slice(HANDOVER_REASON_PREFIX.length) : r);
 
 /** Cuts at a word boundary and marks the cut, so a preview never ends mid-word. */
 export function clip(text: string, max: number): string {
@@ -208,8 +223,8 @@ async function inbox(url: URL, env: Env, config: Config, session: BoardSession):
     if ((e.reason ?? '').startsWith('zuma-dispatch automated notice')) continue;
     if (!latest.has(e.thread_id)) latest.set(e.thread_id, e);
   }
-  const card = (id: string, who: string, state: ControlState, reason: string | null, when: number | null, sub: string) => `<li><a class="ho-card" href="/board/handovers/${h(id)}#reply" style="text-decoration:none">
-<div><div class="ho-card__who">${h(who)}</div>${reason ? `<p class="ho-card__reason">${h(clip(reason, 220))}</p>` : ''}<p class="ho-card__meta">${h(sub)}</p></div>
+  const card = (id: string, who: string, state: ControlState, reason: string | null, when: number | null, sub: string) => `<li><a class="ho-card" href="/board/handovers/${h(id)}" style="text-decoration:none">
+<div><div class="ho-card__who">${h(who)}</div>${reason ? `<p class="ho-card__reason">${h(clip(shownReason(reason), 220))}</p>` : ''}<p class="ho-card__meta">${h(sub)}</p></div>
 <div class="ho-card__end">${stateChip(state)}<span class="ho-card__meta">${when ? time(when) : ''}</span></div></a></li>`;
   const waitingHtml = waiting.length
     ? `<ul class="ho-list">${waiting
@@ -230,7 +245,7 @@ async function inbox(url: URL, env: Env, config: Config, session: BoardSession):
     for (const f of found) if (f) names.set(f[0], f[1]);
   }
   const earlierHtml = earlier.length
-    ? `<ul class="ho-list">${earlier.map(([id, e]) => card(id, earlierTitle(id, e.reason, names.get(id)), live.ok ? 'agent_active' : 'unknown', e.reason, e.received_at, e.initiator === 'human_operator' ? 'taken over by a person' : 'handed over by Zuma')).join('')}</ul>`
+    ? `<ul class="ho-list">${earlier.map(([id, e]) => card(id, earlierTitle(id, e.reason, names.get(id)), live.ok ? 'agent_active' : 'unknown', e.reason, e.received_at, e.initiator === 'human_operator' && !(e.reason ?? '').startsWith(HANDOVER_REASON_PREFIX) ? 'taken over by a person' : 'handed over by Zuma')).join('')}</ul>`
     : '<p class="muted">None yet.</p>';
   return shell({
     env, config, session, url, active: 'handovers', title: 'Handovers', css: CSS, signals: await sigP,
@@ -271,7 +286,9 @@ async function conversation(threadId: string, url: URL, env: Env, config: Config
   const self = `/board/handovers/${threadId}`;
   const hidden = (action: string) => `<input type="hidden" name="nonce" value="${nonce}-${action}"><input type="hidden" name="action" value="${action}">`;
 
-  const bubbles = turns
+  // Newest first: the panel is a reversed column, so this shows oldest at the top and opens at the newest.
+  const bubbles = [...turns]
+    .reverse()
     .map((x) => {
       const who = speakerOf(x);
       const failed = x.delivery_status === 'failed';
@@ -289,33 +306,36 @@ async function conversation(threadId: string, url: URL, env: Env, config: Config
   const composer = state === 'human_active'
     ? `<form class="composer" id="reply" method="post" action="${h(self)}">
 <input type="hidden" name="nonce" value="${nonce}-reply">
-<label class="field"><span class="label">Reply as the Zuma Dispatch team</span>
-<textarea class="input textarea" name="text" maxlength="${MAX_REPLY}" required placeholder="Hi, this is the Zuma Dispatch team…"></textarea></label>
-<div class="composer__row"><span class="composer__hint">Signed “${TEAM_SIGNATURE}”. Handing back also posts “${HANDBACK_LINE}”. People's replies use no AI credits.</span>
+<label for="reply-text" class="label">Reply as the Zuma Dispatch team</label>
+<textarea class="input textarea" id="reply-text" name="text" rows="3" maxlength="${MAX_REPLY}" required placeholder="Hi, this is the Zuma Dispatch team…"></textarea>
+<div class="composer__end"><span class="composer__hint">Signed “${TEAM_SIGNATURE}”. No AI credits used.</span>
 <div class="actions"><button class="btn" type="submit" name="action" value="reply_handback">Send and hand back</button><button class="btn btn--primary" type="submit" name="action" value="reply">Send</button></div></div>
 </form>
-<form class="inline" method="post" action="${h(self)}" style="display:block;margin-top:var(--space-xs)">${hidden('handback')}<button class="btn btn--ghost" type="submit">Hand back to Zuma without replying</button></form>`
+<div class="lock" style="border-top:0;padding-top:0"><form class="inline" method="post" action="${h(self)}">${hidden('handback')}<button class="btn btn--sm btn--ghost" type="submit">Hand back to Zuma without replying</button></form></div>`
     : `<div class="lock" id="reply"><span>${state === 'agent_active' ? 'Zuma (the AI) is answering this chat. To reply yourself, take it over: the customer will see “connecting you with a teammate”, and Zuma stops replying until you hand it back.' : state === 'paused' ? 'This chat is paused: nobody replies. Take it over to reply, or resume Zuma.' : 'Chord did not report who holds this chat.'}</span>
 <div class="actions"><form class="inline" method="post" action="${h(self)}">${hidden('takeover')}<button class="btn btn--primary" type="submit">Take over</button></form>${
         state === 'paused' ? `<form class="inline" method="post" action="${h(self)}">${hidden('resume')}<button class="btn" type="submit">Resume Zuma</button></form>` : ''
       }</div></div>`;
 
-  const side = `<aside class="convo__side" aria-label="About this chat">
-<div>${stateChip(state)}</div>
-<dl class="facts-mini"><dt>Customer</dt><dd>${h(displayName(t))}</dd><dt>Channel</dt><dd>${h(contact(t))}</dd>
+  const facts = `<dl class="facts-mini"><dt>Customer</dt><dd>${h(displayName(t))}</dd><dt>Channel</dt><dd>${h(contact(t))}</dd>
 <dt>Job</dt><dd>${jobId ? `<a class="mono" href="/board/jobs/${h(jobId)}">${h(jobId)}</a>` : '—'}</dd>
 <dt>Handed over</dt><dd>${events.results[0] ? time(events.results[0].received_at) : t.last_handoff_at ? time(t.last_handoff_at) : '—'}</dd>
-<dt>Customer told</dt><dd>${events.results[0]?.ack === 'sent' ? 'yes' : h(events.results[0]?.ack ?? '—')}</dd></dl>
-${reasons[0] ? `<div><p class="label">Why Zuma handed over</p><p style="font-size:var(--text-sm);overflow-wrap:anywhere">${h(reasons[0])}</p></div>` : ''}
-<p class="muted" style="font-size:var(--text-xs)"><a href="${h(self)}">Refresh</a> to see new customer messages.</p>
-</aside>`;
+<dt>Customer told</dt><dd>${events.results[0]?.ack === 'sent' ? 'yes' : h(events.results[0]?.ack ?? '—')}</dd>
+${reasons[0] ? `<dt>Why</dt><dd>${h(shownReason(reasons[0]))}</dd>` : ''}</dl>`;
+  const side = `<aside class="convo__side" aria-label="About this chat"><h2 style="font-size:var(--text-md)">About this chat</h2>${facts}</aside>`;
+  const sideSmall = `<details class="side-sm"><summary>About this chat${jobId ? ` · ${h(jobId)}` : ''}</summary>${facts}</details>`;
 
   return shell({
     env, config, session, url, active: 'handovers', title: `${displayName(t)} · Handover`, css: CSS, signals: await sigP,
     foot: `${h(config.businessName)} · conversation from Chord · times in WAT`,
     body: `${pageHead(h(displayName(t)), '', stateChip(state), '<a class="crumb" href="/board/handovers">← Handovers</a>')}
 <div class="convo">
-<section aria-label="Conversation"><div class="chat">${earlierLink}${newestLink}${bubbles || `<p class="muted">${tu.ok ? 'No messages.' : `Could not load messages (${h(chordError(tu))}).`}</p>`}</div>${composer}</section>
+<section class="thread" aria-label="Conversation">
+<div class="thread__bar"><span class="muted">${turns.length} message${turns.length === 1 ? '' : 's'}${before ? ' (earlier page)' : ''} · newest at the bottom</span><a href="${h(self)}">Refresh</a></div>
+${sideSmall}
+<div class="chat" role="log" aria-label="Messages, oldest first" tabindex="0">${bubbles || `<p class="chat__empty">${tu.ok ? 'No messages yet.' : `Could not load messages (${h(chordError(tu))}).`}</p>`}${newestLink}${earlierLink}</div>
+${composer}
+</section>
 ${side}
 </div>`,
   });
@@ -355,7 +375,7 @@ function explain(step: string, r: { ok: boolean; status?: number | null; failure
 }
 
 async function act(request: Request, url: URL, env: Env, threadId: string): Promise<Response> {
-  const self = `/board/handovers/${threadId}#reply`; // land on the reply box, where the result is shown
+  const self = `/board/handovers/${threadId}`; // the result shows at the top; the chat panel opens at the newest message
   if (crossSite(request, url)) return backTo(url, env, self, 'Blocked: that form came from another site.', true);
   const cfg = noticeConfig(env);
   if (!cfg) return backTo(url, env, self, 'CHORD_API_KEY is not set.', true);

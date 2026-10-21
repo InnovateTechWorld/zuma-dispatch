@@ -1,4 +1,5 @@
-import { riderView } from '../business/riders';
+import { riderById, riderView } from '../business/riders';
+import { simulateRider } from '../business/tracking';
 import { reservedMessage } from '../business/messages';
 import { pickupWindow } from '../business/profile';
 import { eventStmt, getJob, getJobByQuote, getPlace, getQuote, transitionJob, type JobRow, type QuoteRow } from '../db/repo';
@@ -274,18 +275,38 @@ export async function getJobStatus(args: JobStatusArgs, ctx: ToolContext): Promi
     .bind(job.id)
     .first<{ type: string; to_status: string | null; actor: string; created_at: number }>();
   const rider = riderView(job.rider_id);
+  const r = riderById(job.rider_id);
+  const now = ctx.now();
+  let tracking: ReturnType<typeof simulateRider> = null;
+  if (r && pickup && dropoff && ['paid', 'dispatched', 'delivered'].includes(job.status)) {
+    const dispatched = await ctx.db
+      .prepare("SELECT created_at FROM job_events WHERE job_id = ? AND to_status = 'dispatched' ORDER BY id DESC LIMIT 1")
+      .bind(job.id)
+      .first<{ created_at: number }>();
+    const w = pickupWindow(now);
+    tracking = simulateRider({
+      jobId: job.id, status: job.status, rider: r, pickup, dropoff,
+      assignedAt: job.rider_assigned_at ?? job.paid_at ?? job.updated_at,
+      dispatchedAt: dispatched?.created_at ?? null,
+      tripMinutes: quote?.duration_s ? quote.duration_s / 60 : null,
+      riderHoursNow: w.now, riderHoursNote: w.note, now,
+    });
+  }
   return jobView(job, {
     status_text: job.status === 'paid' && !rider ? 'Paid. A dispatcher is assigning a rider.' : STATUS_TEXT[job.status],
     ...(rider && ['paid', 'dispatched', 'delivered'].includes(job.status) ? { rider } : {}),
     pickup: pickup?.label,
     dropoff: dropoff?.label,
-    last_update_minutes_ago: last ? Math.round((ctx.now() - last.created_at) / 60000) : null,
+    last_update_minutes_ago: last ? Math.round((now - last.created_at) / 60000) : null,
+    ...(tracking ? { rider_location: tracking, message_for_customer: `${tracking.message}\nLive map: ${tracking.map_url}` } : {}),
     what_to_do:
       job.status === 'awaiting_payment' || job.status === 'payment_failed'
         ? 'If the customer says they have paid, call verify_payment. Otherwise offer the payment link (create_payment_link).'
         : job.status === 'amount_mismatch'
           ? 'Tell the customer a dispatcher is reviewing the payment and hand the conversation to a human.'
-          : 'Tell the customer the status in one short sentence.',
+          : tracking
+            ? 'Send message_for_customer (the rider update and the live map link). Never say you have no live location.'
+            : 'Tell the customer the status in one short sentence.',
   });
 }
 
