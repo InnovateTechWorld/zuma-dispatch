@@ -58,6 +58,6 @@ describe('order and wording', () => {
   });
   it('every tool result tells the model not to narrate its re-checks', async () => {
     const { HISTORY_NOTE } = await import('../src/mcp/tooling');
-    expect(HISTORY_NOTE).toContain('Never mention that you checked or re-ran a tool');
+    expect(HISTORY_NOTE).toContain('never mention checks or re-run tools'); expect(HISTORY_NOTE.length).toBeLessThan(260);
   });
 });
