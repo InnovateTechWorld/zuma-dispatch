@@ -47,7 +47,7 @@ function warmUpSchemas(): void {
  * The low-level Server is used instead of McpServer for CPU reasons: McpServer converts
  * every zod schema to JSON Schema on each tools/list, and the default Ajv validator is
  * expensive to construct. Here schemas are compiled once and the Workers-native
- * cfworker validator is used. See docs/FIELD_NOTES.md ("CPU time on the free plan").
+ * cfworker validator is used. See docs/FIELD_NOTES_FULL.md (#2, "CPU time on the free plan").
  */
 export async function handleMcp(
   request: Request,

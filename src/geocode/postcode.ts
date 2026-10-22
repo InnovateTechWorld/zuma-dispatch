@@ -9,7 +9,7 @@ import { cacheGet, cachePut } from './cache';
  * The API accepts dashed, spaced or compact forms. Legacy 6-digit postal codes (e.g. 900001)
  * are recognised but cannot be verified through the API.
  *
- * What a test key can do (verified 2026-10-20, see docs/FIELD_NOTES.md #1):
+ * What a test key can do (verified 2026-10-20, see docs/FIELD_NOTES_FULL.md #1):
  *  - /v1/lookup level 1 answers validity only, with no names or coordinates. Coordinates need L5.
  *  - The documented sandbox codes return not_found, so validity is reported honestly
  *    and never blocks the flow.
@@ -75,7 +75,7 @@ export type NipostStatus = 'valid' | 'not_found' | 'invalid' | 'unavailable' | '
  *
  * Why they exist: with our test key NIPOST cannot locate anything. Its sandbox answers `not_found` for
  * every code, including the five codes its docs say "always resolve" (all in Abaji). Coordinates need
- * lookup level 5, which needs a live key and business verification (FIELD_NOTES #1, #15, #17).
+ * lookup level 5, which needs a live key and business verification (FIELD_NOTES_FULL #1, #15, #17).
  *
  * How they are kept safe:
  * - The district segment is `ZDM` (Zuma Dispatch deMo): letters only. Real NIPOST districts are a letter

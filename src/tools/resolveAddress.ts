@@ -45,7 +45,7 @@ export function preferState<T extends LatLng>(candidates: T[], hint: ServiceStat
 
 /**
  * Chord does not show the model earlier turns' tool results, so it re-resolves addresses on every
- * turn (observed in the simulator test, FIELD_NOTES #9). Returning the same answer, and therefore
+ * turn (observed in the simulator test, FIELD_NOTES_FULL #9). Returning the same answer, and therefore
  * the same place_ids, for the same text keeps quotes and bookings stable across turns.
  */
 const STABLE_RESULT_MS = 6 * 60 * 60_000;

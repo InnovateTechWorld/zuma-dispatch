@@ -266,7 +266,7 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
         rider: riderView(check.job.rider_id),
         pickup_timing: afterPaymentTiming(now, Boolean(check.job.rider_id)),
         // Ready-to-send text: in a live test the model once dropped the confirmation and the timing
-        // and replied only "keep the envelope ready" (FIELD_NOTES #13). A full sentence to pass on is harder to drop.
+        // and replied only "keep the envelope ready" (FIELD_NOTES_FULL #13). A full sentence to pass on is harder to drop.
         message_for_customer: (await noteAgentConfirmed(ctx.db, check.job.id, now)) === 'customer_already_told' ? paidFollowUp(check.job, now) : paymentReceivedMessage(check.job, now),
         what_to_do: PAID_TODO,
       };

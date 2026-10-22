@@ -8,7 +8,7 @@ import { log } from '../lib/log';
 /**
  * "Payment received" pushed into the customer's chat, without the customer writing first.
  *
- * Chord sends no conversation id with MCP tool calls (FIELD_NOTES #9), so we find the conversation
+ * Chord sends no conversation id with MCP tool calls (FIELD_NOTES_FULL #9), so we find the conversation
  * the way a person would: the agent always sends the job id ("ZD-H01G4") when it books, so we look
  * through this workspace's recent conversations for the agent turn that contains it. Then we deliver it
  * (route "auto", the default) as a Chord scheduled MESSAGE: through the WhatsApp / Telegram / Slack
@@ -16,14 +16,14 @@ import { log } from '../lib/log';
  * simulator's external chat) as DIRECT_LINE, which lands in Chord's conversation record (the agent then
  * knows it is paid) but is not shown to the customer there. Route "operator" (opt-in) takes the chat
  * over, posts and hands back: it reaches every channel, but Chord also sends the customer
- * "One moment — connecting you with a teammate." on the take-over (FIELD_NOTES #14).
+ * "One moment — connecting you with a teammate." on the take-over (FIELD_NOTES_FULL #14).
  *
  * Every step fails safe. If anything is unclear (no match, two different customers mention the id,
  * a human holds the chat, the customer is typing right now, outside WhatsApp's 24-hour window, Chord
  * down, key missing a scope), we send nothing and record why. The customer still gets the
  * confirmation the old way, when they next write and the agent calls verify_payment.
  *
- * Docs: docs/FEATURES.md §5a, FIELD_NOTES #14. Chord API: /v1/threads, /v1/threads/{id}/turns,
+ * Docs: docs/FEATURES.md §5a, FIELD_NOTES_FULL #14. Chord API: /v1/threads, /v1/threads/{id}/turns,
  * /v1/scheduled-tasks (scopes thread:read, teammate:update).
  */
 

@@ -26,7 +26,7 @@ import { crossSite } from './session';
 
 export const OPERATOR_ID = 'zuma-board-dispatcher';
 /** Appended to every board reply. Chord shows operator messages to the AI as if it had written them; in a
- *  live test Zuma "corrected" a dispatcher's reply as its own mistake and re-escalated (FIELD_NOTES #21).
+ *  live test Zuma "corrected" a dispatcher's reply as its own mistake and re-escalated (FIELD_NOTES_FULL #21).
  *  A signature tells the customer and the AI that a person wrote it. */
 export const TEAM_SIGNATURE = '— Zuma Dispatch team';
 /** Posted just before a hand-back: tells the customer who answers next, and tells the AI the person is done. */

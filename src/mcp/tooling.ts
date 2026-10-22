@@ -77,7 +77,7 @@ export function compileTools(defs: readonly ToolDefinition[]): Map<string, Compi
 }
 
 /**
- * Chord shows the model only the TEXT of earlier turns, never their tool calls (FIELD_NOTES #9, #18).
+ * Chord shows the model only the TEXT of earlier turns, never their tool calls (FIELD_NOTES_FULL #9, #18).
  * Without this note the model sees a fresh tool result and decides its earlier answers were unchecked:
  * in live tests it retracted a correct quote ("I quoted ₦2,850 without checking … ignore it").
  * Putting the fact in every result means it is in front of the model at the moment it reasons.

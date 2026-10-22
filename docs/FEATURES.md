@@ -25,13 +25,13 @@ so the model can never invent a location.
      | `LA-20-ZDM-NS-01` | Lagos National Stadium, Surulere |
      | `LA-19-ZDM-UL-01` | UNILAG, Akoka |
 
-     - Why: NIPOST cannot locate any code with a test key (below, and FIELD_NOTES #17).
+     - Why: NIPOST cannot locate any code with a test key (below, and FIELD_NOTES_FULL #17).
      - Safety: the district `ZDM` is letters-only, while real districts are `A01`, `A02` …, so they never
        shadow a real code. The state and LGA segments are the real ones. They are reported as
        `nipost_status: "demo"`, never "valid". With a live NIPOST key they are ignored.
      - Test script: [TEST_SCRIPT.md](TEST_SCRIPT.md).
    - NIPOST gives an L1 validity check and the LGA name. A test key gets no coordinates, and the sandbox
-     answers `not_found` for every code (FIELD_NOTES #1, #15). The status is reported and never blocks.
+     answers `not_found` for every code (FIELD_NOTES_FULL #1, #15). The status is reported and never blocks.
    - **The area's location:** FCT postcodes use a fixed table of the six area councils (Abaji, Abuja
      Municipal, Bwari, Gwagwalada, Kuje, Kwali). Other states use the geocoder, but only a result that
      names the LGA. Photon once returned the FCT Administration in Garki for "Abaji".
@@ -249,7 +249,7 @@ event shapes), `scripts/e2e.py` (forged-but-signed event leaves the job unpaid).
 
 **The problem.**
 - Paystack's webhook marks a job paid within seconds, but the customer only heard about it after writing again.
-- Chord sends MCP tools no conversation id (FIELD_NOTES #9), so the server did not know which chat to
+- Chord sends MCP tools no conversation id (FIELD_NOTES_FULL #9), so the server did not know which chat to
   write to. Field note #10 called this impossible. #14 corrects that.
 
 **How it works** (`src/chord/notices.ts`):
@@ -473,7 +473,7 @@ fixed bottom bar of five. Each tab can show a badge: red means urgent.
 
 **Protections:**
 - A cross-site POST is refused (CSRF). `Sec-Fetch-Site` is checked first, then `Origin`.
-  `Referrer-Policy: same-origin`, so our own forms carry a real Origin (FIELD_NOTES #12) and outside links
+  `Referrer-Policy: same-origin`, so our own forms carry a real Origin (FIELD_NOTES_FULL #12) and outside links
   get no referrer.
 - A stale page (version check) is refused with "changed since you loaded the page".
 - Every value is HTML-escaped. The CSP allows no scripts at all; styles and fonts come only from inline
@@ -592,7 +592,7 @@ and the browser runs in `docs/EDGE_CASES.md` B1–B16.
   | Two dispatchers | Each action reads Chord's answer; a 409 explains the current state |
 
 - **Signed replies and a closing line.** Chord shows operator messages to the AI as if it wrote them, so in a
-  live test Zuma "corrected" a reply and re-escalated (FIELD_NOTES #21).
+  live test Zuma "corrected" a reply and re-escalated (FIELD_NOTES_FULL #21).
   - Every board reply is signed "— Zuma Dispatch team", unless already signed.
   - Every hand-back first posts "Thanks for your patience. Zuma, our booking assistant, will help you from
     here."
@@ -605,7 +605,7 @@ and the browser runs in `docs/EDGE_CASES.md` B1–B16.
   next customer message is a normal AI turn.
 
 ### 9a. `hand_to_team` (our own handover) and simulated rider tracking (2026-10-21)
-- **`hand_to_team`** (`src/chord/handover.ts`, `src/tools/handover.ts`, see FIELD_NOTES #22):
+- **`hand_to_team`** (`src/chord/handover.ts`, `src/tools/handover.ts`, see FIELD_NOTES_FULL #22):
   - Zuma calls it with the reason, the customer's latest message and the job id.
   - Zuma replies with the returned line, which is visible everywhere including the simulator.
   - The server takes over once that reply is posted.
@@ -634,7 +634,7 @@ tools no conversation or customer id. The server is built so this cannot cause w
 | Might disown an id it sent | Skill rule: ids already sent are real |
 
 **Earlier answers stay trusted.**
-- Chord hides earlier tool calls from the model, which led it to retract correct quotes (FIELD_NOTES #18).
+- Chord hides earlier tool calls from the model, which led it to retract correct quotes (FIELD_NOTES_FULL #18).
 - Every tool result therefore carries a `history_note`: earlier places, prices, refs and ids came from
   tools; don't correct or comment on them; never mention the note.
 - The quote message includes "Quote ref Q-…" as visible evidence.

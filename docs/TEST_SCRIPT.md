@@ -2,7 +2,7 @@
 
 Open the simulator (https://chat.tsglabs.dev/c/i43ZuGQReP8Za95unSjXnHmG), start a new conversation,
 and type like a customer. Each address below was checked on the production server on 2026-10-20.
-Each simulator turn costs Chord credits (about 0.05), so pick the scenarios you need.
+Each simulator turn costs Chord credits (about 0.1), so pick the scenarios you need.
 
 ## Demo postcodes: type one and the agent knows exactly where you are
 
@@ -15,7 +15,7 @@ Each simulator turn costs Chord credits (about 0.05), so pick the scenarios you 
 
 - Any format works: `LA-11-ZDM-PS-01`, `la11zdmps01`, `LA 11 ZDM PS 01`.
 - They are demo codes, because NIPOST's API cannot locate any postcode with a test key. See
-  [FEATURES §1](FEATURES.md) and [FIELD_NOTES #17](FIELD_NOTES.md).
+  [FEATURES §1](FEATURES.md) and [FIELD_NOTES_FULL #17](FIELD_NOTES_FULL.md).
 - Checked prices: Paystack office → UNILAG **₦3,000** (12.7 km, small). Paystack office → National Stadium
   **₦2,850** (11.3 km). Paystack office → Jabi Lake Mall is **refused**: different states.
 
@@ -38,11 +38,12 @@ Example quotes (small package):
 | 1 | "Send a phone charger from LA-11-ZDM-PS-01 to LA-19-ZDM-UL-01" | One message: Pickup: Paystack office… / Drop-off: UNILAG… / small / ₦3,000 / "Quote ref Q-…", ending "Are both addresses right? If yes, just reply YES. If one is wrong, tell me which one and I'll fix it." (no separate address question: demo postcodes are exact). Reply "yes" → "Perfect! To book it, I just need: 1. Your name 2. The recipient's name 3. The recipient's phone number" → "Great, <name>! Your delivery to <recipient> is reserved as ZD-… How would you like to pay…" → "bank transfer" gives bank, account number, account name, exact amount and expiry |
 | 1b | Instead: "from Ikeja City Mall to LA-19-ZDM-UL-01" | Zuma first asks "Pickup: Ikeja City Mall… Is that right?"; after yes, the same one-message quote |
 | 1c | After the quote: "the pickup is wrong" | Zuma asks for the right pickup and sends a new quote; nothing is booked |
-| 2 | "I'm Ada Obi, recipient Bola Musa 0803 123 4567, I'll pay by link" | **Reserved** (job id), Paystack link. **No handover code yet** |
+| 2 | "I'm Ada Obi, recipient Bola Musa 0803 518 2746, I'll pay by link" | **Reserved** (job id), Paystack link. **No handover code yet** |
 | 3 | Pay the link (test card `4084 0840 8408 4081`, CVV `408`, PIN `0000`, OTP `123456`) and **don't type** | The job turns paid within seconds (board: "paid via Paystack notification"); the chat notice is recorded |
-| 4 | "i have sent it" (or "when will the rider come?") | Payment received, **rider's name, vehicle and plate**, pickup timing and **the handover code**. If the card is still processing: "Thanks … still processing … I'll confirm" |
-| 5 | New conversation: "where is my package to Bola Musa, 0803 123 4567? I'm Ada Obi" | Found without a job id |
-| 6 | "cancel it and refund me" | "I'm connecting you to our support team", then "You're now connected to the Zuma Dispatch support team…"; on the board under *Handed to a human*, "Customer told: yes" |
+| 4 | "i have sent it" (or "when will the rider come?") | Payment received, **the rider as "Tunde (rider)" with vehicle, plate and phone**, pickup timing and **the handover code** to share with the recipient. If the card is still processing: "Thanks … still processing … I'll confirm" |
+| 5 | New conversation: "where is my package to Bola Musa, 0803 518 2746? I'm Ada Obi" | Found without a job id |
+| 6 | "cancel it and refund me" | "I've passed this to our support team. Someone from the team will reply here shortly…" (Zuma's own reply, visible in the simulator); on the board under **Handovers**, "handed over by Zuma", "Customer told: yes" |
+| 6b | After paying: "where is the rider now?" | A simulated position ("about 10 minutes away, 1.9 km"), the rider's number and a Google Maps pin link |
 | 7 | "From Ikeja City Mall to Jabi Lake Mall" | Refused: we deliver within one state; a human offered |
 | 8 | "Pick up at Shoprite, drop at the National Stadium" | "Is this in Abuja or Lagos?" |
 | 9 | "From Wuse Market to Mararaba" | Mararaba is in Nasarawa: out of area, human offered |

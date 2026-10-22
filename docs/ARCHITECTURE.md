@@ -84,7 +84,7 @@ Payment attempts have their own states: `initializing` (row written before calli
 |---|---|---|
 | Ids, not values, cross the model boundary | The model cannot invent or tweak a price, amount or coordinate. The schema rejects extra keys with a steering message. | Validating model-supplied prices server-side (still lets it say a wrong number) |
 | Stateless MCP, JSON responses, no sessions | Chord's discovery calls `tools/list` without `initialize`; Workers isolates are short-lived. | `McpAgent` (Durable Objects): deprecated by Cloudflare, and sessions add failure modes |
-| SDK v1 low-level `Server` + cfworker validator, schemas compiled at load | Free plan allows 10 ms CPU per request: 48 ms → median 4 ms (FIELD_NOTES #2) | `McpServer` (converts schemas per request), `agents` package (large dependency tree) |
+| SDK v1 low-level `Server` + cfworker validator, schemas compiled at load | Free plan allows 10 ms CPU per request: 48 ms → median 4 ms (FIELD_NOTES_FULL #2) | `McpServer` (converts schemas per request), `agents` package (large dependency tree) |
 | Cloudflare Workers + D1 | No cold start (Chord waits about 60 s per reply), persistent SQLite, free HTTPS | Render (sleeps and wipes the disk on free), Railway (trial), Fly (needs a card) |
 | D1 in ENAM, not WEUR | The Worker runs next to its caller (Chord, IAD). WEUR would add ~80–90 ms per query | Smart Placement (moves the Worker; our other calls are global anyway) |
 | Pluggable geocoder chain + cross-check | Free OSM geocoders disagree and miss Nigerian landmarks; disagreement is turned into a question to the customer | One provider (fast but wrong silently), Google only (needs a billing account) |

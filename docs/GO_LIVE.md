@@ -1,91 +1,33 @@
-# Go-live note: from the simulator to a real WhatsApp number
+# Zuma Dispatch: before you go live
 
-Everything below was read from Chord's dashboard and docs on 2026-10-20. Nothing has been connected yet.
+**What it does.** Zuma answers your WhatsApp day and night and books same-day deliveries within Abuja or
+within Lagos. For each booking it:
+- checks both addresses with the customer;
+- quotes from your price list;
+- takes payment through Paystack, by card link or bank transfer;
+- assigns a rider and sends the rider's name, number and a handover code;
+- answers "where is my rider?".
 
-## 1. How WhatsApp connects in Chord
+Refunds, complaints and anything unusual go to your team on the dispatcher board. Every job is copied to
+your Google Sheet.
 
-> **Not part of the assessment.** The brief asks for a conversation "in the WhatsApp simulator" and an
-> agent left live "so we can talk to it in the simulator", and says *"Don't connect … anyone's personal
-> number."* A connected number is a go-live prerequisite, so it belongs in this note. It is not something
-> to do for the submission.
+**What it doesn't do.** No deliveries between states, no cash on delivery, no discounts and no refunds (a
+person refunds in Paystack). The riders, their numbers and the live location are pretend for now; a rider
+app must replace them.
 
-WhatsApp is a **channel** in Chord, set up in the dashboard, not in our code:
-**Admin → Channels & Tools → WhatsApp Business → Add number.** There are two ways.
-
-| Option | What happens | Today |
-|---|---|---|
-| **Use my own number** | Enter the number (E.164, e.g. `+2348012345678`) and an optional label. Chord provisions a provider session for it; you then **pair the number by scanning a QR code** in the provider dashboard, like linking a device | Available |
-| **Rent a number** | Take an already-connected number from Chord's pool. It "goes live instantly, no QR pairing" | "No numbers are available to rent right now" |
-
-- Each number is a **session** and can be assigned to a different teammate.
-- Assign it to **Zuma**.
-- Credentials sit under **Connections** (tenant level, attachable to several workspaces).
-- After pairing, the WhatsApp Business channel shows **Connected**, and customers who message that number
-  talk to Zuma.
-
-**What does not change on our side.**
-- Zuma's skill, the MCP tool server, the board, Paystack and the sheet are channel-agnostic: Chord calls
-  the same tools whether the customer is on WhatsApp or in the simulator.
-- Conversations will appear with `channel_id: whatsapp`. The customer's phone becomes the channel identity,
-  so the same customer is recognised across conversations. In the simulator each new chat looked like a
-  new person.
-
-**What starts working only on WhatsApp.**
-- **"Payment received" reaches the customer.** Our default notice route (`CHORD_NOTICE_ROUTE=auto`) sends
-  through Chord's WhatsApp connector when the chat is on WhatsApp, with no take-over. On the simulator it
-  can only land in Chord's record.
-- **Chord's memory across conversations** keyed to the phone number.
-
-**Caution.**
-- WhatsApp only lets a business send free text within 24 hours of the customer's last message. Our notices
-  check this, and every payment happens minutes after a chat.
-- A QR-paired number behaves like a linked device on that phone. Keep the phone online and the WhatsApp
-  account in good standing, and use a dedicated business number, not a personal one.
-
-## 2. Switch to live money (in this order)
-
-1. **Paystack live keys.** The server refuses non-test keys on purpose (`loadConfig`). Going live is a code
-   change: drop that guard, and keep a `PAYSTACK_MODE` var so it can be flipped back.
-2. Set the **live webhook URL** in Paystack (Settings → API Keys & Webhooks → Live): `/hooks/paystack`.
-3. Decide **who absorbs Paystack's fees** (1.5% + ₦100, waived under ₦2,500, capped at ₦2,000) and update
-   the rate card.
-4. **Cloudflare Workers paid plan** ($5/month): removes the 10 ms CPU ceiling (FIELD_NOTES #2).
-5. **Rotate** `MCP_BEARER_TOKEN`, `BOARD_TOKEN` and the Chord API key. Rotating `BOARD_TOKEN` signs every
-   dispatcher out.
-6. Point the sheet mirror at the owner's real sheet (a separate one from testing).
-7. Revoke the unused narrow Chord key ("zuma-dispatch server: payment notices").
-
-## 3. First-day test script on WhatsApp (about 15 minutes)
-
-From a second phone, message the business number:
-
-1. "I want to send documents from Jabi Lake Mall to Wuse Market": a quote comes back.
-2. "yes", then the names and recipient phone: a job id, handover code and Paystack link arrive.
-3. Pay **without replying**. Within about a minute, **"Payment received: ₦… for ZD-…"** should arrive.
-   - The board's job page should say *Chord reports it delivered*.
-   - If it says `record_only` or `failed`, read the reason there.
-4. Ask "where is my package?" in a **new** chat: it is found by your phone, without the job id.
-5. Ask for a refund: the chat is handed to a human and appears on the board under *Handed to a human*.
-6. On the board, mark the job dispatched → delivered, and ask again: the agent reports it.
-7. **Lagos:** "send a phone from Ikeja City Mall to Lekki Phase 1". It should quote and book, and appear
-   under **Lagos** on the board.
-8. **Interstate:** "from Ikeja to Jabi Lake Mall, Abuja". It should be refused politely, with a human
-   offered.
-
-**Two cities, one number.** One WhatsApp number can serve both cities: the agent asks "Abuja or Lagos?"
-when it isn't clear. Riders and dispatch offices (Wuse 2, Abuja; Yaba, Lagos) must exist in both before
-go-live.
-
-## 4. Known limits that stay
-
-- Deliveries between states (and to neighbouring-state suburbs like Mararaba or Ota) are not offered.
-  A human dispatcher handles those requests.
-
-- Notices cover "payment received" only, not "rider assigned" or "delivered". Same mechanism; not built.
-- The handover code is shown but not checked at delivery (no rider app).
-- No per-customer rate limit on our MCP endpoint beyond Cloudflare and the bearer token.
-- What we'd ask Chord for (FIELD_NOTES #9, #10, #14):
-  - The conversation id in MCP tool calls.
-  - A `thread:read` toggle in the key form.
-  - Operator messages without the "connecting you with a teammate" system message.
-  - Pushed messages shown in the simulator.
+**Before the first real customer:**
+1. **A WhatsApp Business number** for the business only, connected to Zuma in Chord, on a phone that stays
+   charged and online.
+2. **Paystack live keys** instead of the test keys. Decide who pays Paystack's fee (1.5% + ₦100, capped at
+   ₦2,000).
+3. **Failed payments.** Nothing is dispatched until Paystack confirms the money.
+   - A failed card can simply try again.
+   - A transfer account expires after 30 minutes, and the bank returns a wrong amount.
+   - A "success" with the wrong amount waits under **Payments → needs review**, to be approved or
+     cancelled the same day.
+4. **Who gets alerted.** The board shows chats waiting for a person, payments to review and jobs to
+   dispatch, but it doesn't text anyone. Name one person per city to watch it from 7am to 8pm, and turn on
+   Chord's escalation email as a backup.
+5. **Real riders** with their real numbers on the roster, in both cities.
+6. **One test day:** book, pay and deliver one real job per city from a second phone
+   ([GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md)).

@@ -9,7 +9,7 @@ import { chord, chordError, firstAgentMention, noticeConfig, sendsAllowed, type 
  * Why: Chord's built-in handover ends the AI's turn, so Zuma never writes anything itself. The customer
  * gets only Chord's system line ("One moment — connecting you with a teammate.") and our operator
  * acknowledgement. On WhatsApp that is fine, but the TSG simulator shows neither (it shows only customer
- * and AI turns), so a tester saw no reply at all (6 of 6 handovers checked, FIELD_NOTES #22).
+ * and AI turns), so a tester saw no reply at all (6 of 6 handovers checked, FIELD_NOTES_FULL #22).
  *
  * How: the tool finds the conversation, answers at once with the line Zuma should send, and in the
  * background waits until that reply has been posted, then takes the chat over through the operator API.

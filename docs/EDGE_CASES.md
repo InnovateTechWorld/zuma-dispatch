@@ -68,7 +68,7 @@ Every row names the code that handles the case and the evidence that it works.
 | 18 | Same name, different places ("Shoprite") | Providers disagreeing by more than 400 m, or one provider returning places more than 3 km apart → `ambiguous` with up to 3 candidates for the customer to pick. | U "Shoprite Lugbe case", E (production returned Jabi, Wuse II, Wuse branches) |
 | 19 | Too vague ("Abuja", "my house") | `needs_detail` without calling any provider. | E "just 'Abuja'" |
 | 20 | NIPOST postcode only (`FC-02-A09-DB-09`) | NIPOST L1 validity check plus LGA name (Abuja Municipal) → area-level place, honestly labelled "area of postcode …" → `needs_detail` (ask for a landmark). Never `ambiguous`. | E, U `findPostcode` |
-| 21 | NIPOST sandbox returns `not_found` | Reported as `nipost_status: not_found` and never blocks; the LGA from the reference endpoint still locates the area. | E, FIELD_NOTES #1 |
+| 21 | NIPOST sandbox returns `not_found` | Reported as `nipost_status: not_found` and never blocks; the LGA from the reference endpoint still locates the area. | E, FIELD_NOTES_FULL #1 |
 | 22 | Invalid NIPOST code | `not_found`: "ask them to check it or describe the place". | Code |
 | 23 | Legacy 6-digit code (`900288`) | Recognised and not sent to NIPOST (no API). The rest of the text is geocoded. A code alone → `needs_detail`. | U |
 | 24 | Phone numbers mistaken for postcodes | Runs of 7+ digits are not treated as legacy codes. | U |
@@ -87,7 +87,7 @@ Every row names the code that handles the case and the evidence that it works.
 | H8 | Already handed back by someone else | 409 → explained, nothing changes | U |
 | H9 | After a hand-back the AI "corrects" the team's reply and re-escalates | Replies signed "— Zuma Dispatch team"; closing line on hand-back; skill v11 rule | Live: re-escalated before the fix; after it, Zuma took the new request |
 | H10 | The simulator hides messages from people | Known simulator limit (its `/state` feed has none); Chord marks them sent; WhatsApp shows them | Live, `/state` inspected |
-| H11 | "i want a refund" gets no visible reply in the simulator (Chord's built-in handover ends the AI's turn; its "connecting you" line and our acknowledgement are system/operator messages the simulator hides) | `hand_to_team`: Zuma's own reply ("I've passed this to our support team…") is an AI turn, then the server takes over once that reply is posted (20 s cap). Board: "handed over by Zuma", "Customer told: yes", no second acknowledgement | U `matchThread`, `takeOverAfterReply`; live: unmatched message → `HANDOVER_UNAVAILABLE`, nothing taken over (FIELD_NOTES #22) |
+| H11 | "i want a refund" gets no visible reply in the simulator (Chord's built-in handover ends the AI's turn; its "connecting you" line and our acknowledgement are system/operator messages the simulator hides) | `hand_to_team`: Zuma's own reply ("I've passed this to our support team…") is an AI turn, then the server takes over once that reply is posted (20 s cap). Board: "handed over by Zuma", "Customer told: yes", no second acknowledgement | U `matchThread`, `takeOverAfterReply`; live: unmatched message → `HANDOVER_UNAVAILABLE`, nothing taken over (FIELD_NOTES_FULL #22) |
 | H12 | `hand_to_team` can't tell which chat (two customers typing the same words at once, Chord down, local server) | Error → Zuma uses the built-in handover; WhatsApp still gets Chord's line + our acknowledgement | U ambiguous → not guessed |
 | H13 | A person takes the chat while the server is waiting to take over | The wait sees `human_active` and does nothing | U |
 | P6 | Agent confirms payment, then our automatic notice repeats it seconds later | verify_payment claims the notice as `agent_confirmed`; if the customer already saw the notice on a real channel, the agent sends a short follow-up with the rider and code instead | U `noteAgentConfirmed` (none / sent / record_only) |
@@ -111,7 +111,7 @@ Every row names the code that handles the case and the evidence that it works.
 | T1 | "Where is the rider?": "I don't have a live map location" | Simulated position from the job's timestamps (15-minute approach, then trip time once dispatched), minutes away, km and a Google Maps pin link; same moment gives the same answer; outside rider hours it says when | U `simulateRider` (all phases); live: ZD-QFJ5F at pickup with map link |
 | B33 | Opening a handover jumped down the page; long chats made the page scroll forever | Fixed-height message panel that scrolls inside itself, opens at the newest message with no script (reversed column), reply box pinned under it; no `#reply` jumps; phone: details fold into "About this chat" | M: 1366 and 375 px: page at top, panel at newest, Send visible, no sideways scroll |
 | H1 | Handed to a human but the customer sees nothing | Server posts "You're now connected to the Zuma Dispatch support team…" on the escalation webhook; board column "Customer told" | Local signed webhook: agent → attempted (skipped locally), human take-over → not sent |
-| C7 | The agent retracts or apologises for correct earlier answers (it can't see earlier tool results) | `history_note` in every tool result (context only, never mentioned); "Quote ref Q-…" in the quote text; skill: no unneeded apologies, never talk about tools or earlier messages | Simulator: v6–v8 retracted or apologised; v9 clean on the same 3 turns (FIELD_NOTES #18) |
+| C7 | The agent retracts or apologises for correct earlier answers (it can't see earlier tool results) | `history_note` in every tool result (context only, never mentioned); "Quote ref Q-…" in the quote text; skill: no unneeded apologies, never talk about tools or earlier messages | Simulator: v6–v8 retracted or apologised; v9 clean on the same 3 turns (FIELD_NOTES_FULL #18) |
 | ST1 | Lagos → Abuja (or Abuja → Lagos) | `quote_delivery` → `INTERSTATE_NOT_SUPPORTED`; the agent offers a human | E; simulator: declined before quoting, human offered |
 | ST2 | An Abuja place named during a Lagos booking | `what_to_do` carries an interstate note before quoting | E |
 | ST3 | Border suburbs in other states (Mararaba, Karu: Nasarawa; Suleja: Niger; Ota, Arepo, Agbara: Ogun) | `out_of_area`, named | U (22 towns vs OSM's own state); E (Ota, Suleja) |
@@ -155,17 +155,17 @@ Every row names the code that handles the case and the evidence that it works.
 | 47 | Browser / DNS-rebinding request | Any `Origin` header → 403 (Chord sends none; checked on 4 captured requests). | S |
 | 48 | GET/DELETE on /mcp | 405 (stateless server). | S |
 | 49 | Chord calls `tools/list` without `initialize` | Works: the server is stateless. | Observed in Chord's discovery |
-| 50 | Free-plan CPU limit (10 ms) | Low-level SDK server, Workers JSON-schema validator, schemas compiled and warmed at module load. | FIELD_NOTES #2 (median 4 ms) |
+| 50 | Free-plan CPU limit (10 ms) | Low-level SDK server, Workers JSON-schema validator, schemas compiled and warmed at module load. | FIELD_NOTES_FULL #2 (median 4 ms) |
 | 51 | Board CSRF (the session cookie, or browser-cached credentials, would be sent automatically) | POST needs a same-origin `Origin`/`Sec-Fetch-Site`. A stale page is caught by the version check. | M: cross-site POST → 403; stale version → "changed since you loaded" |
 | 52 | HTML injection on the board (names, labels) | Every value is escaped, plus a strict CSP (`default-src 'none'`). | U `escapeHtml` |
 | 53 | PII in logs | Logs carry ids, codes, latencies and provider paths only. The phone is masked in tool output; the full number is shown only on the authenticated board. | Code review |
-| 54 | Cloudflare blocks unusual clients | `Python-urllib` gets Cloudflare error 1010 before the Worker runs. Chord's Java client and curl are fine. Scripts set their own User-Agent. | FIELD_NOTES #4 |
+| 54 | Cloudflare blocks unusual clients | `Python-urllib` gets Cloudflare error 1010 before the Worker runs. Chord's Java client and curl are fine. Scripts set their own User-Agent. | FIELD_NOTES_FULL #4 |
 
 ## Payment notifications (Paystack webhook)
 
 | # | Case | Handling | Evidence |
 |---|---|---|---|
-| W1 | Customer pays and never says "paid" | Paystack webhook → re-verify with the API → job paid, board shows "paid via Paystack notification" | Simulator run (see FIELD_NOTES #10) |
+| W1 | Customer pays and never says "paid" | Paystack webhook → re-verify with the API → job paid, board shows "paid via Paystack notification" | Simulator run (see FIELD_NOTES_FULL #10) |
 | W2 | Forged or tampered webhook | HMAC-SHA512 signature over the raw body; missing, wrong or tampered → 401 | U (3 cases), E "bad signature -> 401" |
 | W3 | Correctly signed but false "success" (e.g. replayed or mis-sent) | The payload is never trusted: the server re-verifies with Paystack; unpaid stays unpaid | E "signed 'charge.success' for an unpaid link" |
 | W4 | Paystack's verify API down during the webhook | 503 so Paystack retries; return page and `verify_payment` still work | Code `paystackWebhook.ts` |
@@ -203,7 +203,7 @@ Every row names the code that handles the case and the evidence that it works.
 | # | Case | Handling | Evidence |
 |---|---|---|---|
 | S1 | Same conversation | Job id is in the conversation text and Customer Memory | Simulator |
-| S2 | New conversation, same customer | Chord memory ("Booking ZD-…") is loaded into the prompt | Simulator (FIELD_NOTES #10) |
+| S2 | New conversation, same customer | Chord memory ("Booking ZD-…") is loaded into the prompt | Simulator (FIELD_NOTES_FULL #10) |
 | S3 | No id anywhere | `get_job_status(recipient_phone, sender_name)` with any phone format and first name | E "found by recipient phone (any format) + first name" |
 | S4 | Wrong name / someone guessing | `JOB_NOT_FOUND`; needs both factors; never returns the handover code | E "wrong sender name", "never reveals the handover code" |
 | S5 | Several bookings match | Listed (drop-off, when booked) for the customer to choose | Code |
@@ -217,9 +217,9 @@ Every row names the code that handles the case and the evidence that it works.
 | B2 | Bogus filter values | Unknown status is ignored; LIKE wildcards stripped; values are bound parameters | U, local run (`status=hacked` → all jobs) |
 | B3 | See everything about a job | Detail page: places (+ how each was found), quote breakdown, all payment attempts, Paystack notifications, timeline | Local run (ZD-K45V7, ZD-FHMY8) |
 | B4 | Unknown job / path | 404 page | Local run |
-| B5 | Two dispatchers click at once / stale page | Version check + compare-and-set | Earlier manual run (FIELD_NOTES, EDGE_CASES #51) |
+| B5 | Two dispatchers click at once / stale page | Version check + compare-and-set | Earlier manual run (EDGE_CASES #51) |
 | B6 | Payment arrived without the customer writing | Row shows "paid via Paystack notification" | Local run: ZD-FHMY8 paid only by the webhook |
-| B7 | Filter button "did nothing" | Root cause: the board was opened through a link with the password embedded in it (`https://user:pass@host/board`). The form's relative action inherits those credentials, and Chromium silently drops navigations to URLs with embedded credentials. *Fix:* a sign-in page with a cookie session, so no URL carries a password; status filters are plain links | M: reproduced (click → no request, no console error), then fixed; `?q=ada&status=paid` → 1 match in the browser (FIELD_NOTES #12) |
+| B7 | Filter button "did nothing" | Root cause: the board was opened through a link with the password embedded in it (`https://user:pass@host/board`). The form's relative action inherits those credentials, and Chromium silently drops navigations to URLs with embedded credentials. *Fix:* a sign-in page with a cookie session, so no URL carries a password; status filters are plain links | M: reproduced (click → no request, no console error), then fixed; `?q=ada&status=paid` → 1 match in the browser (FIELD_NOTES_FULL #12) |
 | B8 | Auto-refresh wiped the search box mid-typing | Refresh is off by default; `live=1` turns it on and survives filters and actions | M |
 | B9 | Our own form posts refused as "cross-site" | Under `Referrer-Policy: no-referrer`, browsers send `Origin: null` on form posts. Now `Sec-Fetch-Site` is checked first, `Origin: null` is never trusted as same-site, and the policy is `same-origin` | U `crossSite`; M: sign-in in the browser |
 | B10 | Password guessing | 10 wrong tries per IP per 15 min → 429 + `Retry-After`; every attempt is counted atomically before the password is compared, so parallel guesses cannot slip under the limit and the 11th is not even checked; Basic auth counts too; a correct password clears the count | U `lockoutSeconds`; local run: 10 × 401, then 429 `Retry-After: 900`, a correct password from that IP also 429, another IP 200 |
@@ -267,11 +267,11 @@ Every row names the code that handles the case and the evidence that it works.
 | # | Case | Handling | Evidence |
 |---|---|---|---|
 | C1 | The model can't see earlier tool results and re-resolves every turn | Same text → same `place_id` for 6 h (stable answers), so it gets the same quote back | E "same text -> same place_id" |
-| C2 | The model "forgets" a booking and books again | Duplicate guard: same sender + recipient phone + size + route (within 200 m), unpaid, < 2 h → the existing job is returned | E "re-booked under a different quote id", simulator (FIELD_NOTES #9) |
+| C2 | The model "forgets" a booking and books again | Duplicate guard: same sender + recipient phone + size + route (within 200 m), unpaid, < 2 h → the existing job is returned | E "re-booked under a different quote id", simulator (FIELD_NOTES_FULL #9) |
 | C3 | Different senders to the same recipient | Never merged (sender name is part of the match) | E "a different sender … is NOT merged" |
 | C4 | Two customers ask for the same trip | A quote that has a job is never re-issued | E reruns (35/35 twice on production) |
 | C5 | The model disowns an id it already sent | Skill v2 rule: ids already sent are real; continue with them | Simulator: after v2 the agent continued with real job ids |
-| C6 | Test traffic colliding with real conversations | The e2e script uses unique identities per run | FIELD_NOTES #9 |
+| C6 | Test traffic colliding with real conversations | The e2e script uses unique identities per run | FIELD_NOTES_FULL #9 |
 
 ## Known gaps (deliberately not built)
 
