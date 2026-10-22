@@ -255,6 +255,7 @@ Every row names the code that handles the case and the evidence that it works.
 | P15 | Declined, then "Retry with test details" succeeds on the same checkout page (same reference) | Failed attempts are re-checked for 24 h instead of being treated as final, so the retry is caught (webhook, return page or `verify_payment`); then the rider is assigned and the code sent | U; live: declined → retry → our return page said "Payment received", and `verify_payment` returned paid |
 | P16 | New details after a decline | The job goes back from `payment_failed` to `awaiting_payment` (board, Home totals, status lookups), recorded on the timeline | U |
 | P17 | Return page promised "the confirmation will be there in a minute", but the simulator never shows pushed messages | It now says "Go back to WhatsApp for your rider and handover code. If you don't see them yet, reply paid", which is true on every channel | Code |
+| T4 | The model rewrote the tracking reply and made up a link ("Track live: https://zumadispatch.example/track/…") | `get_job_status` says word for word, quotes the exact Google Maps link and says it is the only link allowed | U `tracking-reply.test.ts`; found in the demo recording (FIELD_NOTES_FULL #26) |
 
 ## Google Sheet mirror
 

@@ -323,7 +323,9 @@ export async function getJobStatus(args: JobStatusArgs, ctx: ToolContext): Promi
         : job.status === 'amount_mismatch'
           ? 'Tell the customer a dispatcher is reviewing the payment and hand the conversation to a human.'
           : tracking
-            ? 'Send message_for_customer (the rider update and the live map link). Never say you have no live location.'
+            ? // In a live run (22 Oct) the model rewrote this reply and made up "Track live: https://zumadispatch.example/track/…",
+              // a page that does not exist. The Google Maps link in message_for_customer is the only link it may send.
+              `Reply with message_for_customer word for word. Its Google Maps link (${tracking.map_url}) is the only link you may send: never write any other link, tracking page or URL. Never say you have no live location.`
             : 'Tell the customer the status in one short sentence.',
   });
 }

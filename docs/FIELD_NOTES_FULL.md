@@ -879,3 +879,29 @@ the rule.
 - A fuller email body: who it's from, why you got it, and a plain-text part. Over time this helps the
   domain's reputation.
 - A resend button with a countdown, so nobody requests several codes at once.
+
+## 26. The model invented a tracking link
+
+**What happened (demo recording, 22 Oct 2026, ZD-5MHJZ).**
+- Asked "where is the rider now", Zuma replied "Tunde is about 12 minutes from the pickup point, near
+  Ikeja GRA. Track live: https://zumadispatch.example/track/ZD-5MHJZ".
+- That page doesn't exist.
+- `get_job_status` had returned a ready-made reply with a real Google Maps link, and an instruction to
+  "send message_for_customer (the rider update and the live map link)".
+
+**How we found the cause.**
+- Our code never writes `zumadispatch.example` or `/track/`, so the model wrote it.
+- The instruction said "send", not "word for word", and it described the link in words.
+- The model kept the facts, rewrote the sentence, and swapped in a link that looked better.
+- The payment and transfer replies, which say "word for word", were never rewritten in any run.
+
+**Fix.** The instruction now says to reply with `message_for_customer` word for word, quotes the exact
+Google Maps link, and says it is the only link that may be sent: no other link, tracking page or URL.
+There is a unit test for this.
+
+**Lesson.**
+- With a managed model, every reply a customer must read exactly needs "word for word" spelled out.
+- Any link has to be quoted, never described. "Send the map link" invites the model to write one.
+
+**What would help (Chord).** An option on a tool result marking text as "send verbatim", which Chord
+enforces, would remove this whole class of error.
