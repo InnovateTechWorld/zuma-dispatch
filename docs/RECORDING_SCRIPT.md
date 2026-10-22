@@ -5,6 +5,13 @@ first: the whole run is about 8 AI turns, which is roughly 1 credit.
 
 ## Before you press record
 
+- **Record between 7am and 8pm WAT, Monday to Saturday.** Those are rider hours. Outside them, Zuma
+  says pickup is from 7am, there is no live position to show, and the handover reply says the team is
+  closed.
+- **The board starts empty** (test data was cleared on 22 Oct), so everything on it during the video
+  comes from this one conversation. Don't run `scripts/e2e.py` just before recording: it cleans up after
+  itself, but its jobs show while it runs.
+
 - **Tab 1:** the simulator, https://chat.tsglabs.dev/c/i43ZuGQReP8Za95unSjXnHmG. Start a **new
   conversation**.
 - **Tab 2:** the board, https://zuma-dispatch.obimz123.workers.dev/board, already signed in, on **Home**.
@@ -27,7 +34,7 @@ first: the whole run is about 8 AI turns, which is roughly 1 credit.
 | 1:35 | `paid` | | **Payment received**, the rider by name and role (for example "Tunde (rider)") with plate and number, and a handover code to "share with Anthony (recipient)" |
 | 1:55 | `where is the rider now?` | "There are no real riders in a take-home, so the position is simulated from the job's timestamps." | "about N minutes away (x km)" and a Google Maps link. Click it once |
 | 2:15 | `i want a refund` | "Refunds need a person. Zuma tells the customer, then hands the chat to the team." | "I've passed this to our support team…" |
-| 2:25 | Switch to the board, **Home** | "The dispatcher sees what needs them." | Alert: a chat waiting for a person, and a paid job ready to dispatch |
+| 2:25 | Switch to the board, **Home** | "The dispatcher sees what needs them." | Two alerts: "1 chat is waiting for a person" and "1 paid job is ready to dispatch". Booked today: 1 |
 | 2:35 | **Handovers** → open the chat | "The whole conversation, the reason Zuma handed over, and a reply box that sends as the team." | Transcript and "Why Zuma handed over: refund…" |
 | 2:45 | **Deliveries** → the job | "The job: paid via Paystack, rider assigned, the same data the owner sees in their Google Sheet." | Paid, the rider assigned, Google Maps links for both addresses |
 | 2:55 | Stop | "That's one booking, end to end, on Chord." | |

@@ -5,7 +5,8 @@
 ```
  WhatsApp simulator ──► Chord teammate "Zuma" ──(MCP, Streamable HTTP, bearer)──► Cloudflare Worker  zuma-dispatch
  (chat.tsglabs.dev)     skill: zuma-dispatch-booking                              │
-                        model + Chord's human handover                            ├─ /mcp        7 tools (stateless JSON-RPC)
+                        managed model                                             ├─ /mcp        8 tools (stateless JSON-RPC), incl. hand_to_team
+                                                                                  ├─ /mcp/test-cleanup  test scripts remove their own runs (bearer)
                                                                                   ├─ /pay/return Paystack redirect → verify → "payment received"
                                                                                   ├─ /board      admin board: sign-in, overview charts, jobs, job pages
                                                                                   ├─ /hooks/paystack  payment notifications (HMAC-SHA512)
@@ -16,12 +17,12 @@
           ┌──────────────────────┬─────────────────────┬──────────────────┬──────────┴─────────┐
           ▼                      ▼                     ▼                  ▼                    ▼
    NIPOST Postcode API   Geocoders (chain)      Routers (chain)     Paystack (test)      D1 (SQLite, ENAM)
-   validity + LGA names  Nominatim · Photon ·   OSRM · ORS ·        initialize/verify    places, quotes, jobs,
-                         Google · ORS           straight line                            payments, events, cache
+   validity + LGA names  Google · Nominatim ·   OSRM · ORS ·        initialize/verify    places, quotes, jobs,
+                         Photon · ORS           straight line                            payments, events, cache
 ```
 
-- **Chord** owns the conversation: the model, the skill instructions, WhatsApp delivery, and the
-  human handover tool. It calls our tools over MCP from AWS us-east (observed: `Java-http-client`).
+- **Chord** owns the conversation: the model, the skill instructions and WhatsApp delivery. Handover
+  goes through our `hand_to_team` tool (Chord's built-in one is the fallback; FIELD_NOTES #1). It calls our tools over MCP from AWS us-east (observed: `Java-http-client`).
 - **The Worker** owns every fact that matters: locations, prices, bookings and payment state. The
   model only passes ids the Worker issued, so it cannot invent a price or a location.
 
@@ -98,7 +99,7 @@ Payment attempts have their own states: `initializing` (row written before calli
 
 ## Data model
 
-See `migrations/0001_init.sql` … `0011_riders_and_handover_ack.sql`. Money is integer kobo,
+See `migrations/0001_init.sql` … `0013_jobs_date_indexes.sql`. Money is integer kobo,
 times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 
 | Table | Holds | Key constraints |

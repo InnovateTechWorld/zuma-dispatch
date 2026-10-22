@@ -4,20 +4,14 @@
 
 ## Problem statement
 
-Zuma Dispatch is a made-up same-day courier in Abuja and Lagos. Like many small Nigerian dispatch
-businesses, it takes bookings on WhatsApp. Today a person has to answer every chat by hand: work out
-where "opposite the Shoprite" is, quote a price, chase the payment, find a rider and answer "where is my
-rider?". Bookings stall after hours and whenever that person is busy.
-
-Zuma, a Chord agent, books and takes payment for a delivery inside the WhatsApp chat in a few minutes, at
-any hour, and hands refunds and complaints to a person. The business takes more bookings without paying
-someone to watch WhatsApp, which is why it is worth paying for.
-
-Left out:
-- deliveries between states;
-- cash on delivery;
-- real riders and GPS (simulated);
-- live money and a real WhatsApp number (test mode only, as the brief asks).
+Zuma Dispatch is a made-up same-day courier in Abuja and Lagos that, like many small Nigerian dispatch
+businesses, takes its bookings on WhatsApp, where a person must work out where "opposite the Shoprite"
+is, quote, chase payment, find a rider and answer "where is my rider?" for every chat. Bookings stall
+after hours and whenever that person is busy. Zuma, a Chord agent, books and takes payment for a delivery
+inside the chat in a few minutes at any hour, and hands refunds and complaints to a person, so the
+business takes more bookings without paying someone to watch WhatsApp. Left out: deliveries between
+states, cash on delivery, real riders and GPS (simulated), and live money or a real WhatsApp number (test
+mode only, as the brief asks).
 
 ## The six deliverables
 
