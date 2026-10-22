@@ -21,6 +21,25 @@ first: the whole run is about 9 AI turns, which is roughly 1 credit.
   The run uses Declined first, then "Retry with test details" and **Success** on the same page. This
   was checked on 22 Oct: Paystack keeps the same payment, and our server still catches the retry.
 
+## Timing: plan for the waits
+
+The table assumes about 10 seconds per step, but each of Zuma's replies takes several seconds, sometimes
+over 20. With 10 customer messages, the Paystack steps and the board, an unedited take will probably run
+**4–5 minutes**.
+- **Record it in one take, then cut out the waiting** (the gaps while Zuma is typing) when you edit.
+  Trimming dead time is normal and still shows one full conversation.
+- **Keep talking during the waits.** The spoken lines are written to cover the time Zuma takes to reply.
+  Cut whatever silence is left.
+- **If the edit is still over 3:00, cut in this order:**
+  1. The optional ₦50–80 billion line at 0:10.
+  2. The short-phone-number step (0:40–0:50): type the correct number straight away. The declined card
+     already shows error handling, and it's the error the scoring table names.
+  3. The **Deliveries → Timeline** step at 2:45: end on Handovers.
+- **Don't cut:** the quote, the declined card and its reply, the retry, and the paid confirmation (the
+  moment the tool does its job), or the handover reply.
+- **The numbers you say** (95%, fake alerts, ₦50–80 billion) are the same ones as in the problem
+  statement and its sources in [SUBMISSION.md](../SUBMISSION.md). Don't add others.
+
 ## The run
 
 The brief asks you to "show the moment your tool does its job". Here that is 1:40–2:00: Paystack confirms
@@ -30,14 +49,14 @@ than ignored". Say both out loud.
 
 | Time | Type or do | Say (short) | You should see |
 |---|---|---|---|
-| 0:00 | Show the simulator | "Zuma books same-day deliveries for a courier in Abuja and Lagos, on WhatsApp. This is TSG's simulator." | Empty chat |
-| 0:10 | `Send a phone charger from LA-11-ZDM-PS-01 to LA-19-ZDM-UL-01` | "These are demo postcodes. NIPOST's test key can't locate a building, so we added four clearly marked ones. Real postcodes and landmarks also work." | One message: Paystack office → UNILAG, small, **₦3,000**, Quote ref, "If yes, just reply YES" |
+| 0:00 | Show the simulator | "Small Nigerian couriers take bookings on WhatsApp, which about 95% of Nigerians online use, and they lose money on bad addresses and fake transfer alerts. Zuma books the delivery for them in the chat. This is TSG's simulator." | Empty chat |
+| 0:10 | `Send a phone charger from LA-11-ZDM-PS-01 to LA-19-ZDM-UL-01` | "These are demo postcodes. NIPOST's test key can't locate a building, so we added four clearly marked ones; real postcodes and landmarks also work. *(Optional:)* Bad addresses are blamed for ₦50–80 billion a year in failed deliveries in Nigeria, so every address is confirmed before booking." | One message: Paystack office → UNILAG, small, **₦3,000**, Quote ref, "If yes, just reply YES" |
 | 0:30 | `yes` | "The price comes from the server's rate card, never from the model." | Asks for your name, the recipient's name and their phone |
 | 0:40 | `I'm Ada, sending to Anthony 0803 518 274` (one digit short, on purpose) | "Phone numbers are checked." | "looks incomplete: I got 10 digits…" |
 | 0:50 | `sorry 08035182746` | | "reserved as ZD-…", number read back, "How would you like to pay…" |
 | 1:00 | `card` | | A Paystack link |
 | 1:05 | Open the link, choose **Declined**, then **Pay** | "First, a card that gets declined." | Paystack: "Declined", with "Retry with test details" |
-| 1:15 | Back in the chat: `it was declined` | "The failure is handled, not ignored: Zuma checks with Paystack and says what happened." | "Your ₦3,000 payment for ZD-… didn't go through (the bank said: Declined). No money was taken." Then the offer of a new link or a bank transfer |
+| 1:15 | Back in the chat: `it was declined` | "Zuma only believes Paystack, never a screenshot. That's what stops fake transfer alerts. And the failure is handled, not ignored." | "Your ₦3,000 payment for ZD-… didn't go through (the bank said: Declined). No money was taken." Then the offer of a new link or a bank transfer |
 | 1:30 | On the Paystack tab: **Retry with test details** → **Success** → **Pay** | "Paystack lets you retry on the same page. The server re-checks a declined payment, so the retry still counts." | "Payment received for ZD-…" on our return page |
 | 1:40 | Back in the chat: `paid` | "**This is the moment the tool does its job:** `verify_payment` asks Paystack, marks the job paid and assigns a rider." | **Payment received**, the rider by name and role (for example "Tunde (rider)") with plate and number, and a handover code to "share with Anthony (recipient)" |
 | 2:00 | `where is the rider now?` | "There are no real riders in a take-home, so the position is simulated from the job's timestamps." | "about N minutes away (x km)" and a Google Maps link |
