@@ -146,9 +146,10 @@ describe('notifyPaymentReceived', () => {
     expect(db.writes.some((w) => w.startsWith('INSERT INTO job_events'))).toBe(true);
   });
 
-  it('on a channel without a connector (simulator) it says the message is in the record only', async () => {
-    chordApi({ threads: [thread({ channel_id: 'external_chat' })], turns: { [T1]: [agentSays('job ZD-H01G4')] } });
-    expect(await notifyPaymentReceived(env(fakeDb()), 'ZD-H01G4', { now: NOW })).toMatchObject({ state: 'queued', reason: 'record_only' });
+  it('on a channel that cannot show pushed messages (simulator) nothing is posted', async () => {
+    const calls = chordApi({ threads: [thread({ channel_id: 'external_chat' })], turns: { [T1]: [agentSays('job ZD-H01G4')] } });
+    expect(await notifyPaymentReceived(env(fakeDb()), 'ZD-H01G4', { now: NOW })).toMatchObject({ state: 'skipped', reason: 'channel_cannot_show' });
+    expect(calls.some((c) => c.url.endsWith('/v1/scheduled-tasks'))).toBe(false);
   });
 
   it('operator route (opt-in): take over, post, hand back', async () => {

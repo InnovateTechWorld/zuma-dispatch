@@ -221,6 +221,13 @@ async function sendAsOperator(cfg: NoticeConfig, thread: ThreadRow, body: string
 /** Default route: a scheduled MESSAGE, no control change, delivered by Chord's queue in about 30 s. */
 async function sendScheduled(cfg: NoticeConfig, thread: ThreadRow, body: string, now: number, timeoutMs: number): Promise<NoticeResult> {
   const platform = platformFor(thread);
+  // A chat on a surface Chord has no connector for (the TSG simulator's external_chat) would only get the
+  // message in Chord's record, not on the customer's screen. Worse, the AI then reads it as something it
+  // already said and skips the confirmation (live run, ZD-XSE4F: "Is there anything else I can help
+  // you with?" after "paid"). So nothing is posted there: Zuma confirms when the customer writes.
+  if (platform === 'DIRECT_LINE' && (thread.channel_id ?? 'direct_line') !== 'direct_line') {
+    return { state: 'skipped', reason: 'channel_cannot_show', thread_id: thread.id };
+  }
   const task = await chord<{ id?: string }>(cfg, '/v1/scheduled-tasks', timeoutMs, {
     task_type: 'MESSAGE',
     scheduled_at: new Date(now + 5_000).toISOString(), // must be in the future
@@ -230,10 +237,7 @@ async function sendScheduled(cfg: NoticeConfig, thread: ThreadRow, body: string,
     payload: { platform, conversation_id: thread.id, body },
   });
   if (!task.ok) return { state: 'failed', reason: chordError(task), thread_id: thread.id };
-  // DIRECT_LINE into a chat that lives on another surface (e.g. external_chat) is recorded in Chord's
-  // conversation but not shown to the customer there: say so instead of claiming it was delivered.
-  const recordOnly = platform === 'DIRECT_LINE' && (thread.channel_id ?? 'direct_line') !== 'direct_line';
-  return { state: 'queued', thread_id: thread.id, task_id: task.data.id ?? '', ...(recordOnly ? { reason: 'record_only' } : {}) };
+  return { state: 'queued', thread_id: thread.id, task_id: task.data.id ?? '' };
 }
 
 // ------------------------------------------------------------------ the notice

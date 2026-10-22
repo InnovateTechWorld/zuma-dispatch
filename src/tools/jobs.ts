@@ -1,12 +1,12 @@
 import { riderById, riderView } from '../business/riders';
 import { simulateRider } from '../business/tracking';
-import { reservedMessage } from '../business/messages';
+import { displayName, reservedMessage } from '../business/messages';
 import { pickupWindow } from '../business/profile';
 import { eventStmt, getJob, getJobByQuote, getPlace, getQuote, transitionJob, type JobRow, type QuoteRow } from '../db/repo';
 import { haversineMeters } from '../lib/geo';
 import { newHandoverCode, newJobId, normalizeId } from '../lib/ids';
 import { formatNaira } from '../lib/money';
-import { normalizeNigerianPhone } from '../lib/phone';
+import { localDisplay, looksMadeUp, normalizeNigerianPhone, phoneProblemMessage } from '../lib/phone';
 import { cleanPersonName, cleanText } from '../lib/text';
 import { ToolError, type ToolContext } from '../mcp/tooling';
 import { checkPayments, isAwaitingTransfer } from '../payments/service';
@@ -45,6 +45,7 @@ export interface CreateJobArgs {
   recipient_phone: string;
   package_note?: string | undefined;
   customer_confirmed: true;
+  recipient_phone_confirmed?: boolean | undefined;
 }
 
 export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
@@ -57,10 +58,18 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
 
   // Idempotent: one job per quote. A retry (or a double "yes") returns the same job.
   const existing = await getJobByQuote(ctx.db, quote.id);
+  if (existing?.status === 'cancelled') {
+    // Rebooking after a cancel (e.g. to fix the recipient's number): a quote books one job only.
+    throw new ToolError(
+      'QUOTE_ALREADY_USED',
+      `Quote ${quote.id} belonged to ${existing.id}, which is cancelled.`,
+      'Call quote_delivery again with the same place_ids and size to get a fresh Quote ref (same price), then call create_dispatch_job with it. Do not mention this to the customer.',
+    );
+  }
   if (existing) {
     return jobView(existing, {
       already_booked: true,
-      what_to_do: 'This quote is already booked; do not book again. Continue with create_payment_link for this job_id if it is unpaid.',
+      what_to_do: 'This is the booking you already made (same job id). Do not mention this to the customer and do not book again: just carry on with the next step (create_payment_link for this job_id if it is unpaid).',
     });
   }
 
@@ -73,7 +82,7 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
     if (twin) {
       return jobView(twin, {
         already_booked: true,
-        what_to_do: `This trip is already booked as ${twin.id} (same route, size and recipient, not yet paid). Do not book again: tell the customer it is the same booking and continue with create_payment_link for ${twin.id}.`,
+        what_to_do: `This trip is already booked as ${twin.id} (same route, size and recipient, not yet paid). Do not book again and do not mention it unless the customer asked to book twice: carry on with create_payment_link for ${twin.id}.`,
       });
     }
   }
@@ -92,18 +101,25 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
   const problems: { field: string; what_to_do: string }[] = [];
   if (!sender) problems.push({ field: 'sender_name', what_to_do: "Ask for the sender's name (at least two letters)." });
   if (!recipient) problems.push({ field: 'recipient_name', what_to_do: "Ask for the recipient's name." });
+  const whose = recipient ? `${displayName(recipient).split(' ')[0]}'s` : "the recipient's";
   if (!phone.ok) {
     problems.push({
       field: 'recipient_phone',
-      what_to_do:
-        phone.reason === 'not_nigerian_mobile'
-          ? 'That is not a Nigerian mobile number (they start 070, 080, 081, 090 or 091). Ask the customer to check it.'
-          : 'Ask for the recipient\'s 11-digit Nigerian mobile number, e.g. 0803 123 4567.',
+      what_to_do: 'Send message_for_customer (it says what is wrong with the number), then call again with the corrected number.',
+    });
+  } else if (looksMadeUp(phone.e164) && !args.recipient_phone_confirmed) {
+    problems.push({
+      field: 'recipient_phone',
+      what_to_do: 'The number looks like a placeholder. Send message_for_customer; if the customer says it is right, call again with recipient_phone_confirmed: true, otherwise with the new number.',
     });
   }
   if (problems.length > 0 || !sender || !recipient || !phone.ok) {
+    const phoneMsg = problems.some((p) => p.field === 'recipient_phone') ? phoneProblemMessage(args.recipient_phone, whose) : '';
+    const missing = problems.filter((p) => p.field !== 'recipient_phone').map((p) => (p.field === 'sender_name' ? 'your name' : "the recipient's name"));
+    const ask = [phoneMsg, missing.length ? `I also need ${missing.join(' and ')}.` : ''].filter(Boolean).join(' ');
     throw new ToolError('INVALID_DETAILS', 'Some booking details need fixing.', problems.map((p) => p.what_to_do).join(' '), false, {
       fields: problems,
+      ...(ask ? { message_for_customer: ask } : {}),
     });
   }
 

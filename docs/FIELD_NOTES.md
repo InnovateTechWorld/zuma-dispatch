@@ -789,3 +789,16 @@ to use:
   - The rider rides to the pickup over 15 minutes, then waits there.
   - Once the board marks the job dispatched, the rider moves to the drop-off over the quoted trip time.
   - Each update carries an OpenStreetMap link.
+
+**Follow-up, next run (ZD-XSE4F, 2026-10-22):** the payment confirmation still went missing, for a new
+reason.
+- Paystack's notification came in at 10:05:59, and our automatic notice was posted into Chord's record
+  at 10:06:20. The simulator can't show it.
+- The customer wrote "paid" at 10:06:36. The AI read the invisible notice as something it had already
+  said and replied only "Is there anything else I can help you with?". Later it referred to "the earlier
+  rider details and handover code".
+- It was not hallucinating: the message was really there, but only Chord and the AI could see it.
+
+**Fix:** our server no longer posts notices into chats whose channel can't display them
+(`channel_cannot_show`). In those chats Zuma confirms in its own reply, which the customer sees. On
+WhatsApp nothing changes.

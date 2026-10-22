@@ -80,10 +80,11 @@ export const createDispatchJob = defineTool({
     recipient_name: z.string().min(2).max(80).describe('Name of the person receiving the package.'),
     recipient_phone: z
       .string()
-      .min(3)
-      .max(20)
+      .min(1)
+      .max(30)
       .describe('Recipient phone number as given, e.g. "0803 123 4567" or "+2348031234567". The server checks and normalises it.'),
     package_note: z.string().max(200).optional().describe('Optional: what is in the package or handling notes ("fragile", "keep upright").'),
+    recipient_phone_confirmed: z.boolean().optional().describe('Only after the customer confirmed a number the tool said looks like a placeholder (e.g. 08000000000).'),
     customer_confirmed: z
       .literal(true)
       .describe('Must be true. Set it only after the customer explicitly agreed to the price and addresses you read back.'),

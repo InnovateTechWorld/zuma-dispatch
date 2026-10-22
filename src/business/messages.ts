@@ -1,4 +1,5 @@
 import { formatNaira } from '../lib/money';
+import { localDisplay } from '../lib/phone';
 import { pickupWindow } from './profile';
 import { riderById, riderLine } from './riders';
 
@@ -52,9 +53,11 @@ export function displayName(name: string): string {
 export const firstName = (name: string) => displayName(name).split(' ')[0] ?? '';
 
 /** Sent right after create_dispatch_job: reserved, the amount, and the one question that comes next. */
-export function reservedMessage(job: { id: string; sender_name: string; recipient_name: string; amount_kobo: number }): string {
+export function reservedMessage(job: { id: string; sender_name: string; recipient_name: string; recipient_phone?: string; amount_kobo: number }): string {
   const hi = firstName(job.sender_name);
-  return `Great${hi ? `, ${hi}` : ''}! Your delivery to ${displayName(job.recipient_name)} is reserved as ${job.id} (${formatNaira(job.amount_kobo)}). It's confirmed as soon as payment comes in.\n\nHow would you like to pay: a payment link (card, transfer or USSD), or a bank transfer to an account number?`;
+  // The number is read back so a typo is caught before the rider calls a stranger.
+  const on = job.recipient_phone?.startsWith('+234') ? ` (${localDisplay(job.recipient_phone)})` : '';
+  return `Great${hi ? `, ${hi}` : ''}! Your delivery to ${displayName(job.recipient_name)}${on} is reserved as ${job.id} (${formatNaira(job.amount_kobo)}). It's confirmed as soon as payment comes in.\n\nHow would you like to pay: a payment link (card, transfer or USSD), or a bank transfer to an account number?`;
 }
 
 export function linkMessage(amountKobo: number, url: string): string {
