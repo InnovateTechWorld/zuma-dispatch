@@ -1,6 +1,7 @@
 import { COVERAGE, SERVICE_STATES, stateOf, type ServiceState } from '../business/states';
 import { insertPlaceStmt, type PlaceRow } from '../db/repo';
 import { geocode, type Confidence } from '../geocode/chain';
+import { areaPart, cleanedQuery, houseNumber, isRelevant } from '../geocode/query';
 import type { LatLng } from '../lib/geo';
 import { demoPostcode, FCT_AREA_COUNCILS, findPostcode, lgaQuery, namesLga, nipostLgaName, nipostValidity, STATES, type NipostStatus } from '../geocode/postcode';
 import type { Candidate } from '../geocode/providers';
@@ -55,7 +56,8 @@ export async function resolveAddress(args: ResolveArgs, ctx: ToolContext): Promi
   // v2: postcode areas from the fixed FCT table and landmark matches limited to the postcode's area.
   // v4: service area = FCT + Lagos State (hint in the key); duplicate labels merged; all-outside matches collapsed.
   // v5: `confirm` (in_quote for demo postcodes, ask_first otherwise) added to confirmed results.
-  const stableKey = `resolve:v5:${args.state ?? 'any'}:${normalizeQuery(text)}`;
+  // v6/v7: relevance filter (place name first), cleaned-spelling retry, area fallback, house number kept (src/geocode/query.ts).
+  const stableKey = `resolve:v7:${args.state ?? 'any'}:${normalizeQuery(text)}`;
   try {
     const prior = await ctx.db
       .prepare('SELECT result_json, created_at FROM geocode_cache WHERE cache_key = ?')
@@ -148,6 +150,54 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
     const kept = withinKm(outcome.candidates, areaPoint, POSTCODE_AREA_KM);
     outcome = { ...outcome, candidates: kept, ambiguous: outcome.ambiguous && kept.length > 1 };
   }
+  // Free text only (postcodes have their own area logic): drop matches that share no distinctive word with
+  // what the customer typed, then, if nothing is left, retry with a cleaned spelling and, in parallel, the
+  // area they named. See src/geocode/query.ts for the live case behind each step.
+  let areaFallback: string | null = null;
+  if (!pc) {
+    const relevant = (o: typeof outcome, ref: string) => {
+      const named = o.candidates.filter((c) => isRelevant(c.label, ref));
+      // When the customer's city has matches, places elsewhere are other places with the same name.
+      const inCity = hint ? named.filter((c) => stateOf(c) === hint) : [];
+      return inCity.length ? inCity : named;
+    };
+    const kept = relevant(outcome, query);
+    if (kept.length !== outcome.candidates.length) ctx.trace.push(`relevance:dropped:${outcome.candidates.length - kept.length}`);
+    outcome = { ...outcome, candidates: kept, ambiguous: outcome.ambiguous && kept.length > 1 };
+    // The customer said which city, but every match is somewhere else ("St. Finbarr's Church, Jos" for an
+    // Akoka address): try the cleaned spelling and the area first; keep the far-away match only if those fail.
+    const onlyElsewhere = Boolean(hint) && kept.length > 0 && kept.every((c) => stateOf(c) !== hint);
+    if ((kept.length === 0 || onlyElsewhere) && !outcome.allFailed) {
+      const cleaned = cleanedQuery(query);
+      const area = areaPart(query);
+      const cityName = hint === 'LA' ? 'Lagos' : hint === 'FC' ? 'Abuja' : '';
+      const [c, a] = await Promise.all([
+        cleaned ? geocode(cleaned, ctx.config, ctx.db, now, ctx.trace, ctx.waitUntil, bias) : Promise.resolve(null),
+        area ? geocode(cityName && !area.includes(cityName.toLowerCase()) ? `${area}, ${cityName}` : area, ctx.config, ctx.db, now, ctx.trace, ctx.waitUntil, bias) : Promise.resolve(null),
+      ]);
+      const cKept = c && cleaned ? relevant(c, cleaned) : [];
+      const aKept = a && area ? relevant(a, area) : [];
+      const inHint = (xs: Candidate[]) => (hint ? xs.filter((x) => stateOf(x) === hint) : xs);
+      if (onlyElsewhere && !inHint(cKept).length && !inHint(aKept).length) {
+        // Nothing better nearby: keep the original matches (reported as out of area below).
+      } else if (inHint(cKept).length || (!onlyElsewhere && cKept.length)) {
+        ctx.trace.push('query:cleaned');
+        const use = onlyElsewhere ? inHint(cKept) : cKept;
+        outcome = { ...c!, candidates: use, ambiguous: c!.ambiguous && use.length > 1 };
+      } else if (inHint(aKept).length) {
+        ctx.trace.push('query:area-fallback');
+        areaFallback = area;
+        outcome = { candidates: [{ ...inHint(aKept)[0]!, precision: 'area' }], confidence: 'low', ambiguous: false, allFailed: false };
+      } else if (!onlyElsewhere && (c?.allFailed ?? true) && (a?.allFailed ?? true) && (c || a)) {
+        outcome = { ...outcome, allFailed: true };
+      }
+    }
+    // The rider needs the house number the customer gave; the map only knows the street.
+    const hn = houseNumber(text);
+    const isStreet = (x: Candidate) => x.precision === 'street' || /\b(road|rd|street|avenue|close|crescent|drive|way|lane)\b/i.test(x.label.split(',')[0] ?? '');
+    if (hn && !areaFallback) outcome = { ...outcome, candidates: outcome.candidates.map((x) => (isStreet(x) && !x.label.startsWith(hn) ? { ...x, label: `${hn} ${x.label}` } : x)) };
+  }
+
   // A postcode with a landmark that the map doesn't know (in that area): fall back to the postcode's area.
   if (outcome.candidates.length === 0 && pc?.kind === 'nipost' && !postcodeOnly && postcode?.area) {
     postcodeOnly = true;
@@ -243,6 +293,16 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
     );
   }
 
+  if (areaFallback) {
+    return {
+      status: 'confirmed',
+      role: args.role,
+      place: summary,
+      confidence: 'low',
+      confirm: 'ask_first',
+      what_to_do: `"${text}" itself is not on the map; only the area was found: "${place.label}". Tell the customer that simply, read the area back, and ask for the street or a well-known landmark nearby for the rider (you can quote with this place_id once they confirm the area).${interstate}`,
+    };
+  }
   return {
     status: 'confirmed',
     role: args.role,

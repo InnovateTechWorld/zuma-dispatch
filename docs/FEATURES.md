@@ -63,6 +63,18 @@ so the model can never invent a location.
 5. **Stable answers:** the same text returns the same `place_id`s for 6 hours (cache key `resolve:v5:`). Chord re-asks every turn
    (see §10), so this keeps quotes and bookings stable.
 
+**How customers write vs how the map has it** (`src/geocode/query.ts`, 2026-10-22):
+- Every free-text result must match the place's own name: the first distinctive word, or an
+  abbreviation that matches the initials.
+- If nothing matches, two things are tried in parallel: a cleaned spelling (no house number, "Saint" →
+  "St", "Finbarrs Road" → "Finbarr Road") and the area the customer named ("…, Akoka").
+- If only the area is found, Zuma says the place itself isn't on the map and asks for a nearby
+  landmark.
+- When the customer said which city, same-named places in other states lose to that area.
+- The house number is kept in the label ("23 Finbarr road, …").
+- **Map data:** OpenStreetMap doesn't have every school or business (St Finbarr's College is missing).
+  `GOOGLE_MAPS_API_KEY` (optional, first in `GEOCODER_CHAIN`) would cover more businesses.
+
 **Statuses:** `confirmed` · `ambiguous` · `needs_detail` · `not_found` · `out_of_area`. Each carries a
 `what_to_do` for the model.
 
