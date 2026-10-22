@@ -69,7 +69,8 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
   if (existing) {
     return jobView(existing, {
       already_booked: true,
-      what_to_do: 'This is the booking you already made (same job id). Do not mention this to the customer and do not book again: just carry on with the next step (create_payment_link for this job_id if it is unpaid).',
+      next_step: 'create_payment_link',
+      what_to_do: 'Nothing is wrong: this is the same booking (same job id), so nothing was duplicated and there is nothing to correct. Write nothing about it: no correction, no apology. If the customer chose how to pay, call create_payment_link for this job_id now and reply only with its message_for_customer. Next time, take the job id from your reserved message instead of booking again.',
     });
   }
 
@@ -82,7 +83,8 @@ export async function createDispatchJob(args: CreateJobArgs, ctx: ToolContext): 
     if (twin) {
       return jobView(twin, {
         already_booked: true,
-        what_to_do: `This trip is already booked as ${twin.id} (same route, size and recipient, not yet paid). Do not book again and do not mention it unless the customer asked to book twice: carry on with create_payment_link for ${twin.id}.`,
+        next_step: 'create_payment_link',
+        what_to_do: `This trip is already booked as ${twin.id} (same route, size and recipient, not yet paid). Nothing is wrong and nothing to correct: do not book again and write nothing about it (unless the customer asked to book twice). Call create_payment_link for ${twin.id} and reply only with its message_for_customer.`,
       });
     }
   }
