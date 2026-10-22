@@ -34,6 +34,7 @@ Every row names the code that handles the case and the evidence that it works.
 | # | Case | Handling | Evidence |
 |---|---|---|---|
 | T1 | Customer wants an account number instead of a link | `create_payment_link(method: "bank_transfer")` → Paystack Charge API issues a one-time account (bank, number, name, exact amount, 30 min expiry) sent straight into the chat | E "transfer details", M (Test Bank account returned) |
+| T2 | Customer needs to reach the rider | Every rider has a phone number. It is sent with the payment confirmation and every rider update ("You can call Tunde on 0800 000 0104"), and shown on the board's job page. The test roster uses an obviously fake block (0800 000 01xx), because a realistic number could belong to a stranger | U (notices, tracking); live: ZD-QFJ5F update carries the number |
 | T2 | Asks for the details twice | Same open account returned while more than 8 min remain; then fresh details | E "asking again returns the same account" |
 | T3 | Says "sent" before the bank confirms | `awaiting_transfer` with the details repeated; "transfers can take a few minutes, message again shortly"; never "paid" | E "nothing sent yet -> awaiting_transfer"; M: checkout transfer for ZD-YMK4G simulated with "I've sent the money" → verify returned `paid` ~30 s later |
 | T4 | Switches between link and transfer | New method allowed; the agent is told to warn "pay only one way". If both are paid → double-payment review (row 8) | E "switches to a card link" |

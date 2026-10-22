@@ -20,6 +20,7 @@ describe('simulated rider tracking (test mode)', () => {
     expect(a.message).toContain('on the way to the pickup at Paystack office');
     expect(a.map_url).toMatch(/^https:\/\/www\.openstreetmap\.org\/\?mlat=/);
     expect(a.simulated).toBe(true);
+    expect(a.message).toContain('You can call Tunde on 0800 000 0104.');
   });
   it('the same moment always gives the same position (no jumping between calls)', () => {
     expect(simulateRider({ ...base, status: 'paid', now: min(4) })).toEqual(simulateRider({ ...base, status: 'paid', now: min(4) }));
@@ -43,6 +44,7 @@ describe('simulated rider tracking (test mode)', () => {
   });
   it('delivered, and statuses with no rider movement', () => {
     expect(simulateRider({ ...base, status: 'delivered' })!.phase).toBe('delivered');
+    expect(simulateRider({ ...base, status: 'delivered' })!.message).not.toContain('call');
     expect(simulateRider({ ...base, status: 'cancelled' })).toBeNull();
     expect(simulateRider({ ...base, status: 'awaiting_payment' })).toBeNull();
   });

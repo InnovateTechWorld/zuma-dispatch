@@ -16,7 +16,7 @@ import { backTo } from './flash';
 import { handovers } from './handovers';
 import { crossSite, safeNext } from './session';
 import { SERVICE_STATES, stateOf, type ServiceState } from '../business/states';
-import { assignRider, riderById } from '../business/riders';
+import { assignRider, riderById, riderPhone } from '../business/riders';
 import { blank, pageHead, shell, subTabs, type BoardSession } from './shell';
 import {
   ACTIONS, actionForms, CITY_LABEL, CITY_PARAM, JOB_ROW_SQL, JOBS_CSS, jobRow, jobTable, LIST_LIMIT, listHref, listQuery, NOTICE_REASONS, PAID_VIA,
@@ -448,7 +448,7 @@ ${subTabs('Job views', [
 <dl class="facts"><dt>Sender</dt><dd>${h(job.sender_name)}</dd><dt>Recipient</dt><dd>${h(job.recipient_name)} · ${h(phone.ok ? phone.display : job.recipient_phone)}</dd>
 <dt>Package</dt><dd>${h(quote?.package_size ?? '?')}${job.package_note ? ` · “${h(job.package_note)}”` : ''}</dd><dt>Amount</dt><dd><b class="num">${formatNaira(job.amount_kobo)}</b></dd>
 <dt>Handover code</dt><dd><span class="mono">${h(job.handover_code)}</span> <span class="muted">(sent to the customer only after payment; the rider asks the recipient for it)</span></dd>
-<dt>Rider</dt><dd>${rider ? `${h(rider.name)} · ${h(rider.vehicle)} · <span class="mono">${h(rider.plate)}</span>${job.rider_assigned_at ? ` <span class="muted">(assigned ${time(job.rider_assigned_at)})</span>` : ''}` : '<span class="muted">Assigned when paid</span>'}</dd></dl></section>
+<dt>Rider</dt><dd>${rider ? `${h(rider.name)} · ${h(rider.vehicle)} · <span class="mono">${h(rider.plate)}</span> · <span class="num">${h(riderPhone(rider))}</span>${job.rider_assigned_at ? ` <span class="muted">(assigned ${time(job.rider_assigned_at)})</span>` : ''}` : '<span class="muted">Assigned when paid</span>'}</dd></dl></section>
 ${side ? `<div>${side}</div>` : ''}
 ${placeBlock('Pickup', pickup)}${placeBlock('Drop-off', dropoff)}
 </div>`;

@@ -1,5 +1,5 @@
 import { haversineMeters } from '../lib/geo';
-import { riderLine, type Rider } from './riders';
+import { riderContact, riderLine, type Rider } from './riders';
 
 /**
  * Simulated rider tracking (test mode: there are no real riders or GPS). The position is computed
@@ -63,8 +63,10 @@ export function simulateRider(o: {
 }): RiderUpdate | null {
   const who = riderLine(o.rider);
   const km = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => Math.round(haversineMeters(a, b) / 100) / 10;
+  // Every update while the rider still has the job ends with how to reach them.
   const done = (phase: Phase, at: { lat: number; lng: number }, minutes: number | null, kmAway: number | null, message: string): RiderUpdate => ({
-    phase, minutes_away: minutes, km_away: kmAway, lat: at.lat, lng: at.lng, map_url: mapUrl(at), simulated: true, message,
+    phase, minutes_away: minutes, km_away: kmAway, lat: at.lat, lng: at.lng, map_url: mapUrl(at), simulated: true,
+    message: phase === 'delivered' ? message : `${message} ${riderContact(o.rider)}`,
   });
 
   if (o.status === 'delivered') {

@@ -481,6 +481,13 @@ and the browser runs in `docs/EDGE_CASES.md` B1–B16.
 
 ## 5b. A rider is assigned the moment payment is confirmed
 
+- **Rider phone (2026-10-22):** the payment confirmation, the short follow-up and every simulated
+  tracking update end with "You can call <first name> on <number>". The board's job page shows the
+  number too.
+  - The made-up roster uses placeholder numbers in the 0800 000 01xx block, so a demo never shows a
+    real person's number.
+  - A real roster would carry each rider's own phone in `src/business/riders.ts` (or a riders table).
+
 - **Roster:** a made-up roster in `src/business/riders.ts`, three per city: two motorbikes and one car.
   Small and medium packages go by motorbike, large by car.
 - **Who gets the job:** the rider in the pickup's state with the right vehicle and the fewest active

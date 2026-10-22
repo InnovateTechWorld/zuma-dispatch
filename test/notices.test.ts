@@ -229,13 +229,13 @@ describe('the message itself', async () => {
 
   it('after payment: amount, job, the rider, timing, and (only now) the handover code', () => {
     expect(paymentReceivedMessage({ ...JOB, rider_id: 'R-LA1' }, NOW)).toBe(
-      'Payment received: ₦1,950 for ZD-H01G4. Thank you! Tunde (motorbike, LSD 553 XA) is on the way to the pickup now. Pickup is usually within 45 minutes. Your handover code is 8960. Please share it with the recipient; the rider will ask for it at drop-off.',
+      'Payment received: ₦1,950 for ZD-H01G4. Thank you! Tunde (motorbike, LSD 553 XA) is on the way to the pickup now. Pickup is usually within 45 minutes. You can call Tunde on 0800 000 0104. Your handover code is 8960. Please share it with the recipient; the rider will ask for it at drop-off.',
     );
     expect(paymentReceivedMessage(JOB, NOW)).toContain('A dispatcher is assigning a rider now');
   });
   it('stays true when re-sent after dispatch or delivery', () => {
     expect(paymentReceivedMessage({ ...JOB, status: 'dispatched', rider_id: 'R-LA1' }, NOW)).toBe(
-      `Payment received: ₦1,950 for ZD-H01G4. Thank you! ${riderLine(tunde)} has the package. Your handover code is 8960. Please share it with the recipient; the rider will ask for it at drop-off.`,
+      `Payment received: ₦1,950 for ZD-H01G4. Thank you! ${riderLine(tunde)} has the package. You can call Tunde on 0800 000 0104. Your handover code is 8960. Please share it with the recipient; the rider will ask for it at drop-off.`,
     );
     expect(paymentReceivedMessage({ ...JOB, status: 'delivered' }, NOW)).toBe('Payment received: ₦1,950 for ZD-H01G4. Thank you! It has been delivered.');
   });

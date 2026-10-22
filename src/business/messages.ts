@@ -1,7 +1,7 @@
 import { formatNaira } from '../lib/money';
 import { localDisplay } from '../lib/phone';
 import { pickupWindow } from './profile';
-import { riderById, riderLine } from './riders';
+import { riderById, riderContact, riderLine } from './riders';
 
 /**
  * Customer-facing sentences the server writes itself. Kept in one place so the chat notice our server
@@ -27,10 +27,10 @@ export function paymentReceivedMessage(
   const rider = riderById(job.rider_id);
   const code = `Your handover code is ${job.handover_code}. Please share it with the recipient; the rider will ask for it at drop-off.`;
   if (job.status === 'delivered') return `${head} It has been delivered.`;
-  if (job.status === 'dispatched') return `${head} ${rider ? `${riderLine(rider)} has the package.` : 'A rider already has the package.'} ${code}`;
+  if (job.status === 'dispatched') return `${head} ${rider ? `${riderLine(rider)} has the package. ${riderContact(rider)}` : 'A rider already has the package.'} ${code}`;
   // Inside rider hours the rider sets off at once, so say so; outside them, name the rider and the time.
   const coming = rider ? (pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now. ` : `Your rider is ${riderLine(rider)}. `) : '';
-  return `${head} ${coming}${afterPaymentTiming(now, Boolean(rider))} ${code}`;
+  return `${head} ${coming}${afterPaymentTiming(now, Boolean(rider))}${rider ? ` ${riderContact(rider)}` : ''} ${code}`;
 }
 
 /**
@@ -43,7 +43,7 @@ export function paidFollowUp(job: { id: string; handover_code: string; status?: 
   const who = job.status === 'dispatched'
     ? `${rider ? riderLine(rider) : 'The rider'} has the package and is on the way to the drop-off.`
     : rider ? (pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now.` : `${riderLine(rider)} will collect it. ${pickupWindow(now).note}`) : afterPaymentTiming(now, false);
-  return `Yes, your payment is confirmed. ${who} Your handover code is ${job.handover_code}; please share it with the recipient.`;
+  return `Yes, your payment is confirmed. ${who}${rider ? ` ${riderContact(rider)}` : ''} Your handover code is ${job.handover_code}; please share it with the recipient.`;
 }
 
 /** "bola ahmed" → "Bola Ahmed", for addressing people in messages (stored names keep the customer's spelling). */

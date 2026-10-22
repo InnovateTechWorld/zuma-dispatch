@@ -10,25 +10,34 @@ export interface Rider {
   name: string;
   vehicle: 'motorbike' | 'car';
   plate: string;
+  /** Placeholder number (E.164) in an obviously fake block (0800 000 01xx): the riders are made up, and a
+   *  realistic number could belong to a stranger. A real roster would carry each rider's own phone. */
+  phone: string;
   state: ServiceState;
 }
 
 export const RIDERS: Rider[] = [
-  { id: 'R-FC1', name: 'Musa Ibrahim', vehicle: 'motorbike', plate: 'ABJ 482 KT', state: 'FC' },
-  { id: 'R-FC2', name: 'Chidi Okeke', vehicle: 'motorbike', plate: 'ABJ 219 LM', state: 'FC' },
-  { id: 'R-FC3', name: 'Aisha Bello', vehicle: 'car', plate: 'ABJ 731 GW', state: 'FC' },
-  { id: 'R-LA1', name: 'Tunde Bakare', vehicle: 'motorbike', plate: 'LSD 553 XA', state: 'LA' },
-  { id: 'R-LA2', name: 'Emeka Nwosu', vehicle: 'motorbike', plate: 'KJA 108 BR', state: 'LA' },
-  { id: 'R-LA3', name: 'Funke Adeyemi', vehicle: 'car', plate: 'LND 664 EY', state: 'LA' },
+  { id: 'R-FC1', name: 'Musa Ibrahim', vehicle: 'motorbike', plate: 'ABJ 482 KT', phone: '+2348000000101', state: 'FC' },
+  { id: 'R-FC2', name: 'Chidi Okeke', vehicle: 'motorbike', plate: 'ABJ 219 LM', phone: '+2348000000102', state: 'FC' },
+  { id: 'R-FC3', name: 'Aisha Bello', vehicle: 'car', plate: 'ABJ 731 GW', phone: '+2348000000103', state: 'FC' },
+  { id: 'R-LA1', name: 'Tunde Bakare', vehicle: 'motorbike', plate: 'LSD 553 XA', phone: '+2348000000104', state: 'LA' },
+  { id: 'R-LA2', name: 'Emeka Nwosu', vehicle: 'motorbike', plate: 'KJA 108 BR', phone: '+2348000000105', state: 'LA' },
+  { id: 'R-LA3', name: 'Funke Adeyemi', vehicle: 'car', plate: 'LND 664 EY', phone: '+2348000000106', state: 'LA' },
 ];
 
 export const riderById = (id: string | null | undefined) => (id ? RIDERS.find((r) => r.id === id) ?? null : null);
 
-/** Rider details safe to show the customer (first name, vehicle, plate; no phone). */
-export function riderView(id: string | null | undefined): { name: string; vehicle: string; plate: string } | null {
+/** "+2348000000104" → "0800 000 0104". */
+export const riderPhone = (r: Rider) => { const d = r.phone.replace(/^\+234/, ''); return `0${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}`; };
+
+/** Rider details shown to the customer once the job is paid: first name, vehicle, plate and phone. */
+export function riderView(id: string | null | undefined): { name: string; vehicle: string; plate: string; phone: string } | null {
   const r = riderById(id);
-  return r ? { name: r.name.split(' ')[0]!, vehicle: r.vehicle, plate: r.plate } : null;
+  return r ? { name: r.name.split(' ')[0]!, vehicle: r.vehicle, plate: r.plate, phone: riderPhone(r) } : null;
 }
+
+/** "You can call Tunde on 0800 000 0104." */
+export const riderContact = (r: Rider) => `You can call ${r.name.split(' ')[0]} on ${riderPhone(r)}.`;
 
 /** "Tunde (motorbike, LSD 553 XA)": what the customer is told. First name only. */
 export function riderLine(r: Rider): string {
