@@ -10,3 +10,8 @@ dist/
 .DS_Store
 .impeccable/review/
 backups/
+
+# Design-tool working files (kept locally, not part of the submission)
+.impeccable/
+.hallmark/
+PRODUCT.md

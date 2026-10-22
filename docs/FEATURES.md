@@ -361,7 +361,7 @@ Only unpaid jobs can be cancelled. Paystack is checked first, so a payment that 
 The brief does not prescribe an admin tool. Our plan chose a server-rendered board over Google Sheets
 (no extra integration, and the same database the tools use), so this is where the business sees
 everything. The owner also gets a read-only Google Sheet copy (§12). The visual system (tokens, type,
-components) is written down in [`design.md`](../design.md).
+components) is written down in [`DESIGN.md`](DESIGN.md).
 
 **Sign-in (`/board/login`).**
 - A real sign-in page, not the browser's Basic-auth popup. The password is the `BOARD_TOKEN` secret.

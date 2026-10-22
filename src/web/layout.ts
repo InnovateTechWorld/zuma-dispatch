@@ -3,7 +3,7 @@ import { escapeHtml as h } from '../lib/text';
 /**
  * The visual system shared by every HTML page this Worker serves: the dispatcher board, its
  * sign-in page, the job detail page and the customer's payment-return page.
- * Design decisions are recorded in /design.md; change them there first.
+ * Design decisions are recorded in docs/DESIGN.md; change them there first.
  *
  * No JavaScript anywhere: the CSP forbids scripts, so every control (filters, actions, sign-out)
  * is a plain link or form and works with scripts disabled.
