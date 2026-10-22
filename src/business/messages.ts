@@ -29,20 +29,20 @@ export function paymentReceivedMessage(
   const code = handoverLines(job, rider);
   if (job.status === 'delivered') return `${head}\n\nIt has been delivered.`;
   if (job.status === 'dispatched') {
-    return [head, rider ? `${riderLine(rider)} has the package.\n${riderFirst(rider)}'s number: ${riderPhone(rider)}` : 'A rider already has the package.', code].join('\n\n');
+    return [head, rider ? `${riderLine(rider)} has the package.\n${riderFirst(rider)} (rider): ${riderPhone(rider)}` : 'A rider already has the package.', code].join('\n\n');
   }
   const coming = rider
-    ? `${pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now.` : `Your rider is ${riderLine(rider)}.`} ${afterPaymentTiming(now, true)}\n${riderFirst(rider)}'s number: ${riderPhone(rider)}`
+    ? `${pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now.` : `Your rider is ${riderLine(rider)}.`} ${afterPaymentTiming(now, true)}\n${riderFirst(rider)} (rider): ${riderPhone(rider)}`
     : afterPaymentTiming(now, false);
   return [head, coming, code].join('\n\n');
 }
 
 const riderFirst = (r: { name: string }) => r.name.split(' ')[0]!;
 
-/** "Handover code: 5277 / Share it with Micheal; Tunde will ask for it at drop-off." */
+/** "Handover code: 5277 / Share it with Anthony (recipient); Tunde (rider) will ask for it at drop-off." */
 function handoverLines(job: { handover_code: string; recipient_name?: string }, rider: { name: string } | null): string {
-  const to = job.recipient_name?.trim() ? firstName(job.recipient_name) : 'the recipient';
-  return `Handover code: ${job.handover_code}\nShare it with ${to}; ${rider ? riderFirst(rider) : 'the rider'} will ask for it at drop-off.`;
+  const to = job.recipient_name?.trim() ? `${firstName(job.recipient_name)} (recipient)` : 'the recipient';
+  return `Handover code: ${job.handover_code}\nShare it with ${to}; ${rider ? `${riderFirst(rider)} (rider)` : 'the rider'} will ask for it at drop-off.`;
 }
 
 /**
@@ -55,7 +55,7 @@ export function paidFollowUp(job: { id: string; handover_code: string; status?: 
   const who = job.status === 'dispatched'
     ? `${rider ? riderLine(rider) : 'The rider'} has the package and is on the way to the drop-off.`
     : rider ? (pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now.` : `${riderLine(rider)} will collect it. ${pickupWindow(now).note}`) : afterPaymentTiming(now, false);
-  return [`Yes, your payment is confirmed. ${who}${rider ? `\n${riderFirst(rider)}'s number: ${riderPhone(rider)}` : ''}`, handoverLines(job, rider)].join('\n\n');
+  return [`Yes, your payment is confirmed. ${who}${rider ? `\n${riderFirst(rider)} (rider): ${riderPhone(rider)}` : ''}`, handoverLines(job, rider)].join('\n\n');
 }
 
 /** "bola ahmed" → "Bola Ahmed", for addressing people in messages (stored names keep the customer's spelling). */

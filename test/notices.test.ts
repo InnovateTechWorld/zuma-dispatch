@@ -229,15 +229,15 @@ describe('the message itself', async () => {
 
   it('after payment: amount, job, the rider, timing, and (only now) the handover code', () => {
     expect(paymentReceivedMessage({ ...JOB, rider_id: 'R-LA1' }, NOW)).toBe(
-      'Payment received: ₦1,950 for ZD-H01G4. Thank you!\n\nTunde (motorbike, LSD 553 XA) is on the way to the pickup now. Pickup is usually within 45 minutes.\nTunde\'s number: 0800 000 0104\n\nHandover code: 8960\nShare it with the recipient; Tunde will ask for it at drop-off.',
+      'Payment received: ₦1,950 for ZD-H01G4. Thank you!\n\nTunde (motorbike, LSD 553 XA) is on the way to the pickup now. Pickup is usually within 45 minutes.\nTunde (rider): 0800 000 0104\n\nHandover code: 8960\nShare it with the recipient; Tunde (rider) will ask for it at drop-off.',
     );
     expect(paymentReceivedMessage(JOB, NOW)).toContain('A dispatcher is assigning a rider now');
     // With the recipient's name, the message uses it.
-    expect(paymentReceivedMessage({ ...JOB, rider_id: 'R-LA1', recipient_name: 'micheal okafor' }, NOW)).toContain('Share it with Micheal; Tunde will ask for it at drop-off.');
+    expect(paymentReceivedMessage({ ...JOB, rider_id: 'R-LA1', recipient_name: 'micheal okafor' }, NOW)).toContain('Share it with Micheal (recipient); Tunde (rider) will ask for it at drop-off.');
   });
   it('stays true when re-sent after dispatch or delivery', () => {
     expect(paymentReceivedMessage({ ...JOB, status: 'dispatched', rider_id: 'R-LA1' }, NOW)).toBe(
-      `Payment received: ₦1,950 for ZD-H01G4. Thank you!\n\n${riderLine(tunde)} has the package.\nTunde's number: 0800 000 0104\n\nHandover code: 8960\nShare it with the recipient; Tunde will ask for it at drop-off.`,
+      `Payment received: ₦1,950 for ZD-H01G4. Thank you!\n\n${riderLine(tunde)} has the package.\nTunde (rider): 0800 000 0104\n\nHandover code: 8960\nShare it with the recipient; Tunde (rider) will ask for it at drop-off.`,
     );
     expect(paymentReceivedMessage({ ...JOB, status: 'delivered' }, NOW)).toBe('Payment received: ₦1,950 for ZD-H01G4. Thank you!\n\nIt has been delivered.');
   });
