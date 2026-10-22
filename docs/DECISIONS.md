@@ -18,6 +18,8 @@ marked "FN #" refer to the full build log, [FIELD_NOTES_FULL.md](FIELD_NOTES_FUL
 11. [Hosting: Cloudflare Workers and D1](#11-hosting-cloudflare-workers-and-d1)
 12. [The dispatcher board: server-rendered, no JavaScript](#12-the-dispatcher-board-server-rendered-no-javascript)
 13. [What we left out](#13-what-we-left-out)
+14. [The rider side: designed, not built](#14-the-rider-side-designed-not-built)
+15. [What stopped us, and what we'd build with more time or resources](#15-what-stopped-us-and-what-wed-build-with-more-time-or-resources)
 
 ---
 
@@ -224,7 +226,89 @@ board.
 | Left out | Why |
 |---|---|
 | Interstate and other states | A different product (waybills, parks, multi-day) |
-| Real riders, GPS and a rider app | Out of scope; simulated (section 8) |
+| Real riders, GPS and a rider app | Simulated (section 8); the rider side is designed in section 14 |
 | Cash on delivery | Needs rider cash handling and reconciliation; payment first keeps the dispatcher whole |
 | Live money and a real WhatsApp number | The brief forbids connecting personal numbers; see [GO_LIVE.md](GO_LIVE.md) |
 | Multi-stop deliveries and choosing a pickup time | One pickup, one drop-off, as soon as a rider is free (next working day after hours) |
+
+## 14. The rider side: designed, not built
+
+**Decision:** no rider teammate in this submission. The dispatcher board plays the rider's part: marking a
+job dispatched or delivered moves the simulated rider and changes what Zuma tells the customer. Below is
+how it would be built.
+
+**Why not now.**
+1. **The brief rewards a small agent that works end to end.** It asks for one useful job, done start
+   to finish, and says a small agent that works beats an ambitious one that half runs. The customer
+   side took 19 skill versions to get right. A second teammate would add new failure points days before
+   the deadline.
+2. **The result can't be shown in the simulator.** Its whole value is "rider says delivered → customer
+   is told". That message would be pushed into the customer's chat, and the simulator never displays
+   pushed messages. The AI would also read it as its own words (FIELD_NOTES #3).
+3. **A rider can't be identified in the simulator.** Every new simulator chat arrives as a new person
+   (FIELD_NOTES_FULL #14), and MCP tools get no caller identity. So nothing could stop a customer from
+   typing "delivered" as if they were the rider. That would be a security hole, not a feature.
+
+**The design (about 1–1.5 days on a real WhatsApp number):**
+- **Teammate and number.** A second teammate, "Zuma Rider", on its own WhatsApp number. Chord assigns
+  each number to one teammate, so riders never talk to the customer agent. It has a short skill:
+  "you help Zuma Dispatch riders update their jobs; you never talk to customers".
+- **Who is the rider.** The rider's WhatsApp phone must match a phone on the roster
+  (`src/business/riders.ts` already has a `phone` per rider). Unknown numbers get "this number is not
+  registered as a rider" and nothing else.
+  - Chord doesn't pass the sender to tools, so until it does (the FIELD_NOTES #3 ask), the server finds
+    the chat the way `hand_to_team` does and reads the participant's phone from the thread.
+  - If that can't be done safely, the rider tools refuse rather than guess.
+- **Rider tools** (on the same MCP server, behind the same token):
+  - `my_jobs`: the rider's paid and dispatched jobs today. It shows pickup, drop-off, recipient first name
+    and a masked phone, and never the payment.
+  - `update_job(job_id, step)`, where `step` is one of:
+    - `at_pickup`: tells the customer "Tunde is at the pickup".
+    - `collected`: the job becomes `dispatched`, the same transition the board's "Mark dispatched" uses,
+      with the same version check, so the board and the rider can't race each other.
+    - `delivered`: needs the recipient's handover code. A wrong code is refused. After three wrong codes
+      the job goes to the board as "check with the recipient", and nothing is marked delivered.
+  - `share_location`: the rider sends WhatsApp's live or current location. Then `get_job_status` gives
+    the customer the real position when it is under 10 minutes old, and the simulated one otherwise.
+    Whether Chord passes location messages through to the agent still needs to be checked.
+- **Customer messages.** "Picked up" and "Delivered" go out through the same notice route as "Payment
+  received": WhatsApp only, once per job and step, and inside WhatsApp's 24-hour window.
+- **Board.** Each status change shows who made it ("by rider Tunde" or "by dispatcher"). A job assigned
+  to a rider who hasn't sent `collected` within 45 minutes shows as an alert on Home.
+- **Assignment.** This stays automatic at payment. With real riders, add "accept within 5 minutes or it
+  goes to the next rider", using the same `chooseRider` ranking.
+- **Cost.** Each rider message is an AI turn (about 0.1 credit). If that grows, WhatsApp quick-reply
+  buttons ("Collected", "Delivered") keep messages short, or a web page per job removes the AI from the
+  rider's side entirely.
+
+## 15. What stopped us, and what we'd build with more time or resources
+
+The brief allows not building everything, provided we say what stopped us, what we tried, and what we'd
+build with more time or resources. A short version is in [SUBMISSION.md](../SUBMISSION.md).
+
+**What stopped us, and what we tried:**
+
+| Stopped by | What we tried | Where it landed |
+|---|---|---|
+| NIPOST test keys locate nothing. The docs' "always resolve" sandbox codes return `not_found`, and level 2 and up is `403 level_not_granted` | Every code format, NIPOST's own sandbox codes, the reference endpoints (FN #1, #15) | Real postcodes give the state and LGA. Four marked demo codes stand in for exact places (section 2) |
+| The simulator never shows operator or pushed messages | Chord's scheduled MESSAGE, then take-over → message → hand-back; asked TSG (FN #14, #21) | Zuma confirms payments and handovers in its own reply. Pushed notices are kept for WhatsApp |
+| Tools get no conversation id | Searched recent threads for the job id; needed a Full access key for `thread:read` (FN #14) | Works, but costs Chord API calls; the board hit the key's rate limit once (FN #24) |
+| No WhatsApp number to connect | Chord's rent-a-number pool: "No numbers are available to rent right now". The brief rules out personal numbers | Everything runs in the simulator; the WhatsApp steps are in [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md) |
+| Paystack test mode can't make money arrive at an API-issued transfer account | Proved the transfer path through checkout's "I've sent the money" button instead (FN #7) | Transfer details work in the chat; confirmation is proven through checkout |
+
+**What we'd build next, in order:**
+
+| # | Feature | Needs | Why this order |
+|---|---|---|---|
+| 1 | A real WhatsApp number on Zuma | A business number, or Chord's rental pool | It makes "Payment received" visible to customers. Everything else assumes it |
+| 2 | The rider side (section 14) | Item 1, plus real riders with phones | It replaces the simulated map with real positions and checks the handover code at delivery |
+| 3 | "Picked up" and "Delivered" messages to the sender | Item 1 (same route as "Payment received") | It is the most common customer question after "where is my rider?" |
+| 4 | Refunds from the board | Paystack Refund API; dispatcher approval on the board | Today a person refunds in Paystack's dashboard; the board can approve and record it |
+| 5 | Exact addresses from postcodes | A live NIPOST key with business verification (level 5) | It retires the four demo codes; customers give a postcode instead of directions |
+| 6 | Deliveries to the next state (Mararaba, Ota, Suleja) | A partner courier, priced per zone | These are the most common refusals today: suburbs just across the state line |
+| 7 | Drop the thread search | Chord passing the thread id to tools (FIELD_NOTES #3) | Fewer Chord API calls, no Full access key, no rate-limit risk |
+| 8 | Production hardening | Cloudflare Workers paid plan ($5 a month), rotated secrets, owner-run Google billing | It removes the 10 ms CPU ceiling (FN #2) before real traffic |
+
+Deliberately **not** on the list: cash on delivery. It puts cash with riders and needs daily reconciliation;
+paying first keeps the dispatcher whole.
+

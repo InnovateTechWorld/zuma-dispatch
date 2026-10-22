@@ -45,10 +45,13 @@ mode only, as the brief asks).
 | No WhatsApp number to connect (the brief rules out personal numbers) | Chord's rent-a-number pool was empty | Everything runs in the simulator; the WhatsApp steps are in [GO_LIVE_CHECKLIST.md](docs/GO_LIVE_CHECKLIST.md) |
 | Paystack test mode can't simulate money arriving at an API-issued transfer account | Proved the transfer path through checkout's "I've sent the money" button instead | Transfer details work in the chat; confirmation is proven through checkout |
 
-**With more time:**
-- A rider app with GPS, replacing the simulated position, that checks the handover code at drop-off.
-- A "delivered" message to the sender.
-- Live NIPOST lookups at level 5.
-- A real WhatsApp number.
-- Delivery to the next state over (Mararaba, Ota) with a partner courier.
+**With more time or resources:**
+1. A real WhatsApp number.
+2. A rider side: a second teammate that checks the handover code at drop-off and shares real positions.
+3. "Picked up" and "Delivered" messages.
+4. Refunds approved from the board.
+5. Live NIPOST lookups at level 5.
+6. Delivery to the suburbs just across the state line.
 
+The ordered plan, and the full rider design, are in
+[DECISIONS §14–15](docs/DECISIONS.md#14-the-rider-side-designed-not-built).
