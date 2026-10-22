@@ -217,7 +217,7 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
 /** Pickup timing worded for after payment (the quote-time wording says "as soon as payment is confirmed"). */
 // ------------------------------------------------------------------ verify_payment
 /** In a live test the model replied only "Your delivery is paid and booked", dropping the rider and the code. */
-const PAID_TODO = 'It is paid. Reply with message_for_customer word for word, even if an earlier message in the chat seems to say the same: it has the payment confirmation, the rider and the handover code the customer needs. Do not shorten it, skip it or replace it with your own summary. Then answer anything else they asked.';
+const PAID_TODO = 'It is paid. Do not call any more tools after this one. Reply with message_for_customer word for word as your whole reply, even if an earlier message in the chat seems to say the same: it has the payment confirmation, the rider and the handover code the customer needs. Do not shorten it, skip it or replace it with your own summary. Then answer anything else they asked.';
 export async function verifyPayment(args: { job_id: string }, ctx: ToolContext): Promise<Record<string, unknown>> {
   let job = await loadJob(ctx, args.job_id);
   // Already paid by our records (webhook, return page, an earlier check, or a dispatcher's approval):

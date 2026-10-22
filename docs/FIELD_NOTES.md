@@ -802,3 +802,16 @@ reason.
 **Fix:** our server no longer posts notices into chats whose channel can't display them
 (`channel_cannot_show`). In those chats Zuma confirms in its own reply, which the customer sees. On
 WhatsApp nothing changes.
+
+## 23. Text written before a later tool call never reaches the customer
+
+This is the same Chord behaviour behind the silent handover (#22).
+- In a live run (ZD-0H5SF), `verify_payment` returned the full paid message. Zuma then saved a memory
+  note, as the skill told it to.
+- Its only delivered text was "I've saved the payment on your account too, so it's all in one place."
+  The confirmation, rider and code were dropped.
+- Chord sends the text that follows the last tool call of a turn.
+
+**Rule (skill v18):** every tool first, including memory; the reply last and once. Memory is saved only
+at booking, never mentioned, and there is no note after payment. The note on every tool result repeats
+the rule.
