@@ -35,7 +35,8 @@ place a pickup.
 
 **What would help.** A sandbox health check in the NIPOST dashboard, or one documented
 sandbox code that the docs' own CI verifies resolves. Also, the docs say a postcode is
-"12 characters across 5 segments", but the compact form `EK01A03FK01` is 11.
+"12 characters across 5 segments", but the compact form `EK01A03FK01` is 11. *(Update 22 Oct 2026: coverage of the
+national launch on 1 October describes the codes as 11 characters, so it is the docs' "12" that is off.)*
 
 ---
 

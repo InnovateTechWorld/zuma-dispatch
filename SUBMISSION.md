@@ -5,13 +5,22 @@
 ## Problem statement
 
 Zuma Dispatch is a made-up same-day courier in Abuja and Lagos that, like many small Nigerian dispatch
-businesses, takes its bookings on WhatsApp, where a person must work out where "opposite the Shoprite"
-is, quote, chase payment, find a rider and answer "where is my rider?" for every chat. Bookings stall
-after hours and whenever that person is busy. Zuma, a Chord agent, books and takes payment for a delivery
-inside the chat in a few minutes at any hour, and hands refunds and complaints to a person, so the
+firms, takes bookings on WhatsApp (used by about 95% of Nigerians online), where one person must work out
+where "opposite the Shoprite" is, quote, check that a transfer really arrived and find a rider, so nothing
+gets booked while that person is busy or asleep. Those steps are where money leaks: poor addressing is
+blamed for ₦50–80 billion a year in failed deliveries, and bank transfers, 58% of Paystack's Nigerian
+payments in 2023, come with routine fake-alert fraud. Zuma, a Chord agent, books a delivery inside the
+chat in minutes at any hour: it checks both addresses with the customer, confirms payment with Paystack
+rather than trusting a screenshot, assigns a rider and hands refunds and complaints to a person, so the
 business takes more bookings without paying someone to watch WhatsApp. Left out: deliveries between
-states, cash on delivery, real riders and GPS (simulated), and live money or a real WhatsApp number (test
-mode only, as the brief asks).
+states, cash on delivery, real riders and GPS (simulated), and live money or a real WhatsApp number
+(test mode only, as the brief asks).
+
+<sub>Sources:
+[WhatsApp use (Statista, Q3 2024)](https://www.statista.com/statistics/1176101/leading-social-media-platforms-nigeria/) ·
+[₦50–80 billion (BusinessDay, NIPOST postcode launch, 1 Oct 2026)](https://businessday.ng/technology/article/nigeria-launches-digital-postcode-to-solve-the-where-problem-behind-n80bn-losses/) ·
+[58% transfers (Paystack 2023 report, via Techpoint)](https://techpoint.africa/insight/techpoint-africa-podcast-224/) ·
+[fake transfer alerts (allAfrica, Jan 2025)](https://allafrica.com/stories/202501160400.html)</sub>
 
 ## The six deliverables
 

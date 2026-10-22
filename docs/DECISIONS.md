@@ -47,6 +47,16 @@ marked "FN #" refer to the full build log, [FIELD_NOTES_FULL.md](FIELD_NOTES_FUL
 Exact coordinates need level 5, which means a live key and business verification (KYB). A test key can
 therefore tell us a code's state and LGA, but never a building.
 
+**Why postcodes are worth supporting now.** NIPOST's national digital postcode system went live on
+**1 October 2026**. It gives each building an 11-character code over five levels (state, LGA, district,
+area, building), the same structure our parser reads ([Leadership](https://leadership.ng/nipost-launches-digital-postcode-system-to-improve-deliveries-emergency-response/)).
+- At the launch, poor addressing was blamed for ₦50–80 billion a year in missed and failed deliveries
+  ([BusinessDay](https://businessday.ng/technology/article/nigeria-launches-digital-postcode-to-solve-the-where-problem-behind-n80bn-losses/)).
+- BusinessDay calls adoption "the immediate challenge": the codes only pay off once couriers build them
+  into their booking.
+- A courier that accepts postcodes in the chat today is early, and nothing here has to be rebuilt when a
+  live level-5 key arrives. Only the demo table comes out.
+
 **Options considered.**
 1. *Use NIPOST's sandbox codes.* They don't resolve, and all five are in Abaji, 89 km from central Abuja.
 2. *Mock NIPOST's API.* This would hide real behaviour from a reviewer, and the code path would differ
