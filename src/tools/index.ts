@@ -121,7 +121,7 @@ export const verifyPayment = defineTool({
   name: 'verify_payment',
   title: 'Check payment',
   description: [
-    'Ask Paystack whether the customer has paid for a job. Call this when the customer says they have paid, or asks.',
+    'Ask Paystack whether the customer has paid for a job. Call this when the customer says they have paid or sent money, says the payment failed, was declined or did not go through, or asks about it.',
     'Only say a job is paid when this tool returns payment_status "paid". A customer saying "I have paid" or sending a screenshot is not proof.',
     'Returns payment_status: "paid", "not_paid_yet", "awaiting_transfer" (bank transfer not received yet), "in_progress", "failed", "not_paid" (job cancelled, nothing taken) or "needs_review", with what to tell the customer.',
   ].join(' '),

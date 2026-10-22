@@ -12,7 +12,15 @@ export const RECHECK_INTERVAL_MS = 10_000;
 /** How many recent attempts are re-verified per check. Older open ones are still re-verified when the job is cancelled. */
 const MAX_ATTEMPTS_CHECKED = 3;
 
-const FINAL: PaymentStatus[] = ['success', 'failed', 'reversed', 'mismatch', 'not_found'];
+const FINAL: PaymentStatus[] = ['success', 'reversed', 'mismatch', 'not_found'];
+/**
+ * A declined card is not the end of that payment: Paystack's checkout lets the customer try another
+ * card on the same page, under the same reference, so a "failed" attempt can still turn into a success.
+ * It is re-checked for a day (Paystack's own webhook also lands here, forced), then treated as final.
+ */
+export const FAILED_RECHECK_MS = 24 * 60 * 60_000;
+const isFinal = (p: { status: PaymentStatus; created_at: number }, now: number) =>
+  FINAL.includes(p.status) || (p.status === 'failed' && now - p.created_at > FAILED_RECHECK_MS);
 const WAITING: PaymentStatus[] = ['initialized', 'ongoing', 'pending', 'processing', 'queued'];
 /** A transfer sent just before its account expires can still confirm a little later. */
 export const TRANSFER_GRACE_MS = 15 * 60_000;
@@ -80,7 +88,7 @@ export async function checkPayments(ctx: ToolContext, job: JobRow, opts: CheckOp
   let throttled = false;
 
   for (const [i, p] of payments.entries()) {
-    const open = !FINAL.includes(p.status);
+    const open = !isFinal(p, now);
     const recent = !opts.force && p.last_checked_at !== null && now - p.last_checked_at < RECHECK_INTERVAL_MS;
     if (!open || (!opts.allOpen && i >= MAX_ATTEMPTS_CHECKED) || recent) {
       if (open && recent) throttled = true;
@@ -117,6 +125,9 @@ export async function checkPayments(ctx: ToolContext, job: JobRow, opts: CheckOp
       await eventStmt(ctx.db, { jobId: job.id, type: 'payment_checked', from: p.status, to: status, actor: 'system', detail: { reference: p.reference }, at: now }).run();
     }
     p.status = status;
+    // Keep the in-memory row in step with what was just saved: replies read the reason from it.
+    p.gateway_response = v.kind === 'mismatch' ? v.reason : (result.data.gateway_response ?? null);
+    p.last_checked_at = now;
     verdicts.push(expiredTransfer(p, v, now));
   }
 

@@ -1,5 +1,5 @@
 import { pickupWindow, watTime } from '../business/profile';
-import { eventStmt, getJob, getPayment, listPayments, type JobRow, type PaymentRow } from '../db/repo';
+import { eventStmt, getJob, getPayment, listPayments, transitionJob, type JobRow, type PaymentRow } from '../db/repo';
 import { paymentReference } from '../lib/ids';
 import { log } from '../lib/log';
 import { formatNaira } from '../lib/money';
@@ -83,6 +83,11 @@ export async function createPaymentLink(args: { job_id: string; method?: Payment
     );
   }
   const payment = await newAttempt(ctx, job, nextAttempt, now, method);
+  // After a declined card, new details mean the job is waiting for payment again, not "failed":
+  // the board, Home's totals and get_job_status should say so.
+  if (job.status === 'payment_failed') {
+    await transitionJob(ctx.db, job.id, ['payment_failed'], 'awaiting_payment', 'agent', now, { via: 'new_payment_details', reference: payment.reference });
+  }
   queueSheetSync(ctx.env, ctx.waitUntil, ctx.publicOrigin, job.id);
   const view = method === 'link' ? linkView(job, payment, now, false) : transferView(job, payment, now, false);
 
@@ -218,6 +223,16 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
 // ------------------------------------------------------------------ verify_payment
 /** In a live test the model replied only "Your delivery is paid and booked", dropping the rider and the code. */
 const PAID_TODO = 'It is paid. Do not call any more tools after this one. Reply with message_for_customer word for word as your whole reply, even if an earlier message in the chat seems to say the same: it has the payment confirmation, the rider and the handover code the customer needs. Do not shorten it, skip it or replace it with your own summary. Then answer anything else they asked.';
+/**
+ * Paystack's gateway_response for a decline ("Declined", "Insufficient Funds") is useful to the
+ * customer; anything long, technical or odd-looking is left out rather than shown.
+ */
+export function bankReason(raw: string | null): string | null {
+  const text = (raw ?? '').replace(/[^\p{L}\p{N} .,'-]/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (!text || text.length > 60 || /\b(error|exception|null|undefined)\b/i.test(text)) return null;
+  return text.replace(/\.$/, '');
+}
+
 export async function verifyPayment(args: { job_id: string }, ctx: ToolContext): Promise<Record<string, unknown>> {
   let job = await loadJob(ctx, args.job_id);
   // Already paid by our records (webhook, return page, an earlier check, or a dispatcher's approval):
@@ -289,8 +304,28 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
         message_for_customer: `Thanks, I can see your ${base.amount} payment started, and Paystack is still processing it. Finish any OTP or bank step; I'll confirm here as soon as it lands, or message me again in a minute.`,
         what_to_do: 'Send message_for_customer. Do not say it is paid.',
       };
-    case 'failed':
-      return { ...base, payment_status: 'failed', what_to_do: 'The payment failed. Offer a new link or bank transfer details with create_payment_link.' };
+    case 'failed': {
+      const latestFailed = check.payments.find((p) => p.status === 'failed');
+      const reason = bankReason(latestFailed?.gateway_response ?? null);
+      const attemptsLeft = MAX_ATTEMPTS - (check.payments[0]?.attempt ?? 0);
+      const head = `Your ${base.amount} payment for ${job.id} didn't go through${reason ? ` (the bank said: ${reason})` : ''}. No money was taken.`;
+      return attemptsLeft > 0
+        ? {
+            ...base,
+            payment_status: 'failed',
+            reason: reason ?? null,
+            message_for_customer: `${head}\n\nWould you like a new payment link to try another card, or bank transfer details instead?`,
+            what_to_do:
+              'Reply with message_for_customer word for word. Never say it is paid. When they choose, call create_payment_link (it makes new details automatically; method "bank_transfer" for a transfer). If they say they retried on the same page, call verify_payment again.',
+          }
+        : {
+            ...base,
+            payment_status: 'failed',
+            reason: reason ?? null,
+            message_for_customer: `${head}\n\nI've passed this to our team so they can help you pay another way.`,
+            what_to_do: 'This job has used all its payment attempts. Call hand_to_team (reason: repeated failed payments), then reply with message_for_customer.',
+          };
+    }
     case 'not_paid_yet':
       return {
         ...base,

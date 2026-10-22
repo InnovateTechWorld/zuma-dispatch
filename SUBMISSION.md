@@ -24,6 +24,23 @@ mode only, as the brief asks).
 | 5 | **Deployment field notes** | [docs/FIELD_NOTES.md](docs/FIELD_NOTES.md): the three problems that mattered, with screenshots. The full log is in [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md), and the choices behind the build (NIPOST demo postcodes, geocoders, handover…) are in [DECISIONS.md](docs/DECISIONS.md) |
 | 6 | Go-live note for a non-technical owner | [docs/GO_LIVE.md](docs/GO_LIVE.md) (half a page); the technical steps are in [GO_LIVE_CHECKLIST.md](docs/GO_LIVE_CHECKLIST.md) |
 
+## Uses of Chord worth a look
+
+1. **A handover the customer actually sees.** Chord's built-in handover ends the AI's turn with no reply,
+   and the simulator hides Chord's own "connecting you" line. So `hand_to_team` returns Zuma's reply
+   first, and the server takes the chat over through the threads API only once that reply has been
+   posted ([handover.ts](src/chord/handover.ts), field note 1).
+2. **"Payment received" without the customer writing first.** Tool calls carry no conversation id, so
+   the server finds the chat by the job id Zuma sent and posts through Chord's scheduled messages. It
+   skips channels that can't show the message, so the AI never "remembers" something the customer didn't
+   see ([notices.ts](src/chord/notices.ts), field note 3).
+3. **The dispatcher board is an operator console on Chord's threads API.** It reads the whole chat,
+   takes it over, replies as the team (signed, so the AI doesn't mistake the reply for its own), and
+   hands it back. A person's reply costs no credits ([handovers.ts](src/web/handovers.ts)).
+4. **Steering a model we can't choose.** Chord's model is fixed, and it never sees earlier tool results.
+   So every tool result carries a ready-made `message_for_customer` and a hidden context note, and the
+   facts live on the server, not in the prompt ([tooling.ts](src/mcp/tooling.ts), field note 2).
+
 ## In one line each: the field notes
 
 1. **Only the text after a turn's last tool call reaches the customer, and Chord's built-in handover sends

@@ -69,7 +69,9 @@ export async function payReturn(url: URL, env: Env, config: Config, ctx: Executi
     } else if (check.outcome === 'paid') {
       headline = `Payment received for ${h(job.id)}`;
       detail = noticeStatus(env) === 'enabled'
-        ? `${formatNaira(job.amount_kobo)} paid. Go back to WhatsApp: the confirmation and pickup time will be there in a minute.`
+        // Not "it will be there in a minute": on channels that can't show pushed messages (the TSG
+        // simulator) the confirmation only comes when the customer writes (FIELD_NOTES #3).
+        ? `${formatNaira(job.amount_kobo)} paid. Go back to WhatsApp for your rider and handover code. If you don't see them yet, reply <b>paid</b>.`
         : `${formatNaira(job.amount_kobo)} paid. Go back to WhatsApp and reply <b>paid</b>. We'll confirm your pickup there.`;
     } else if (check.outcome === 'in_progress') {
       headline = 'Your payment is still processing';
