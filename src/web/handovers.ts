@@ -1,4 +1,4 @@
-import { chord, chordError, noticeConfig, sendsAllowed, type NoticeConfig } from '../chord/notices';
+import { chord, chordError, chordProblem, noticeConfig, sendsAllowed, type NoticeConfig } from '../chord/notices';
 import type { Config } from '../config';
 import type { Env } from '../env';
 import { normalizeNigerianPhone } from '../lib/phone';
@@ -7,7 +7,7 @@ import { log } from '../lib/log';
 import { backTo } from './flash';
 import { notice, time } from './layout';
 import { blank, pageHead, shell, type BoardSession } from './shell';
-import { readSignals } from './signals';
+import { readSignals, WAITING_CACHE_MS } from './signals';
 import { HANDOVER_REASON_PREFIX } from '../chord/handover';
 import { crossSite } from './session';
 
@@ -39,6 +39,9 @@ export function signed(text: string): string {
 export const MAX_REPLY = 4000; // Chord's limit for an operator message
 const THREAD_RE = /^[0-9a-f]{24}$/;
 const TIMEOUT_MS = 5000;
+/** Earlier handovers whose customer name is looked up in Chord, and how long a name is reused. */
+const NAME_LOOKUPS = 6;
+const NAME_CACHE_MS = 10 * 60_000;
 
 interface Thread {
   id: string;
@@ -210,7 +213,8 @@ async function inbox(url: URL, env: Env, config: Config, session: BoardSession):
   if (!cfg) return notConfigured(url, env, config, session, 'Replying from the board needs CHORD_API_KEY (scopes thread:read and thread:write). Until then, reply in Chord → Teammates → Zuma → Escalated.');
   const sigP = readSignals(env, Date.now()).catch(() => null);
   const [live, recent] = await Promise.all([
-    chord<{ threads?: Thread[] }>(cfg, `/v1/threads?${new URLSearchParams({ workspace_id: cfg.workspaceId, control_state: 'human_active,paused', limit: '50' })}`, TIMEOUT_MS),
+    // Same request as the tab badge (readSignals), so the two share one cached Chord call.
+    chord<{ threads?: Thread[] }>(cfg, `/v1/threads?${new URLSearchParams({ workspace_id: cfg.workspaceId, control_state: 'human_active,paused', limit: '50' })}`, TIMEOUT_MS, undefined, { cacheMs: WAITING_CACHE_MS }),
     env.DB.prepare(`SELECT thread_id, initiator, reason, received_at FROM chord_events WHERE type = 'conversation.escalated' AND thread_id IS NOT NULL ORDER BY received_at DESC LIMIT 40`).all<{
       thread_id: string; initiator: string | null; reason: string | null; received_at: number;
     }>(),
@@ -233,13 +237,15 @@ async function inbox(url: URL, env: Env, config: Config, session: BoardSession):
           return card(t.id, displayName(t), controlState(t.control_state), e?.reason ?? null, t.last_handoff_at ?? e?.received_at ?? t.last_turn_at ?? null, `${contact(t)} · last message: ${clip(t.last_turn_preview ?? '', 80)}`);
         })
         .join('')}</ul>`
-    : `<div style="margin-bottom:var(--space-lg)">${live.ok ? blank('Nobody is waiting for a person.', ' When Zuma hands a customer over, the chat appears here with the reason.') : notice(`Could not reach Chord (${chordError(live)}). Recent handovers below come from the webhook log.`, 'error')}</div>`;
+    : `<div style="margin-bottom:var(--space-lg)">${live.ok ? blank('Nobody is waiting for a person.', ' When Zuma hands a customer over, the chat appears here with the reason.') : notice(`Could not reach Chord (${chordProblem(live)}). Recent handovers below come from the webhook log.`, 'error')}</div>`;
   const earlier = [...latest.entries()].filter(([id]) => !waitingIds.has(id)).slice(0, 20);
-  // The webhook log has no customer name: ask Chord for each earlier chat (in parallel, 2.5 s cap; reads cost no credits).
+  // The webhook log has no customer name, so the newest few earlier chats are looked up in Chord
+  // (in parallel, 2.5 s cap). Names don't change, so each lookup is cached for 10 minutes; the rest are
+  // named by job or chat id. Asking for all 20 at once used most of the key's 30-a-minute limit.
   const names = new Map<string, Thread | 'gone'>();
   if (live.ok && earlier.length) {
     const found = await Promise.race([
-      Promise.all(earlier.map(([id]) => chord<Thread>(cfg, `/v1/threads/${id}`, 2000).then((r) => (r.ok ? ([id, r.data] as const) : r.failure === 'http' && r.status === 404 ? ([id, 'gone'] as const) : null)).catch(() => null))),
+      Promise.all(earlier.slice(0, NAME_LOOKUPS).map(([id]) => chord<Thread>(cfg, `/v1/threads/${id}`, 2000, undefined, { cacheMs: NAME_CACHE_MS }).then((r) => (r.ok ? ([id, r.data] as const) : r.failure === 'http' && r.status === 404 ? ([id, 'gone'] as const) : null)).catch(() => null))),
       new Promise<null[]>((r) => setTimeout(() => r([]), 2500)),
     ]);
     for (const f of found) if (f) names.set(f[0], f[1]);
@@ -274,7 +280,7 @@ async function conversation(threadId: string, url: URL, env: Env, config: Config
     const status = th.failure === 'http' && th.status === 404 ? 404 : 502;
     return shell({
       env, config, session, url, active: 'handovers', title: 'Conversation', status, css: CSS, signals: await sigP,
-      body: `${pageHead(status === 404 ? 'No such conversation' : 'Could not reach Chord', '', '', '<a class="crumb" href="/board/handovers">← Handovers</a>')}${blank(status === 404 ? 'Chord has no conversation with this id.' : 'The conversation could not be loaded.', ` ${h(chordError(th))}. <a href="${h(`/board/handovers/${threadId}`)}">Try again</a>.`)}`,
+      body: `${pageHead(status === 404 ? 'No such conversation' : 'Could not reach Chord', '', '', '<a class="crumb" href="/board/handovers">← Handovers</a>')}${blank(status === 404 ? 'Chord has no conversation with this id.' : 'The conversation could not be loaded.', ` ${h(chordProblem(th))}. <a href="${h(`/board/handovers/${threadId}`)}">Try again</a>.`)}`,
     });
   }
   const t = th.data;
@@ -333,7 +339,7 @@ ${reasons[0] ? `<dt>Why</dt><dd>${h(shownReason(reasons[0]))}</dd>` : ''}</dl>`;
 <section class="thread" aria-label="Conversation">
 <div class="thread__bar"><span class="muted">${turns.length} message${turns.length === 1 ? '' : 's'}${before ? ' (earlier page)' : ''} · newest at the bottom</span><a href="${h(self)}">Refresh</a></div>
 ${sideSmall}
-<div class="chat" role="log" aria-label="Messages, oldest first" tabindex="0">${bubbles || `<p class="chat__empty">${tu.ok ? 'No messages yet.' : `Could not load messages (${h(chordError(tu))}).`}</p>`}${newestLink}${earlierLink}</div>
+<div class="chat" role="log" aria-label="Messages, oldest first" tabindex="0">${bubbles || `<p class="chat__empty">${tu.ok ? 'No messages yet.' : `Could not load messages (${h(chordProblem(tu))}).`}</p>`}${newestLink}${earlierLink}</div>
 ${composer}
 </section>
 ${side}
@@ -371,6 +377,7 @@ function explain(step: string, r: { ok: boolean; status?: number | null; failure
   }
   if (r.failure === 'http' && r.status === 403) return 'The Chord API key lacks thread:write. Use a key with that scope.';
   if (r.failure === 'http' && r.status === 404) return 'Chord does not know this conversation.';
+  if (r.failure === 'http' && r.status === 429) return 'Not sent: Chord is limiting how fast the board can act (rate limit). Nothing was changed; try again in a few seconds.';
   return `Chord did not accept it (${err}). Nothing was changed; try again.`;
 }
 

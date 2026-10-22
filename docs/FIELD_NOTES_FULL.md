@@ -815,3 +815,35 @@ This is the same Chord behaviour behind the silent handover (#22).
 **Rule (skill v18):** every tool first, including memory; the reply last and once. Memory is saved only
 at booking, never mentioned, and there is no note after payment. The note on every tool result repeats
 the rule.
+
+## 24. The board hit Chord's rate limit: "chord_http_429: Rate limit exceeded. Retry after 1 seconds."
+
+**What happened (2026-10-22).**
+- Opening a conversation from **Handovers** showed "Could not reach Chord: The conversation could not be
+  loaded. chord_http_429: Rate limit exceeded. Retry after 1 seconds..", twice in a row.
+
+**How we found the cause.**
+- Our Chord API key was created with a limit of **30 requests a minute** (#14).
+- The Handovers list made up to **22 Chord calls at once**:
+  - the waiting-chat list;
+  - the same list again for the tab badge;
+  - one lookup per earlier handover (up to 20), only to show the customer's name.
+- Opening a conversation right after added three more, and Chord refused them.
+- `hand_to_team` polling and the payment-notice search draw on the same key.
+
+**Fix.**
+- **Retries:** every Chord call retries a 429 up to twice, waiting what Chord asks (capped at 2.5 s). A
+  429 means Chord didn't run the request, so retrying a POST is safe too.
+- **Shared reads:** the tab badge and the Handovers list share one cached read of the waiting chats
+  (10 s per Worker instance).
+- **Fewer lookups:** names are looked up for the newest 6 earlier handovers only, and each name is cached
+  for 10 minutes. Any board action (a POST) clears the cache.
+- **Plain words:** if Chord still refuses, the page says "Chord is limiting how fast the board can read
+  conversations right now (rate limit). Wait a few seconds, then try again". Board actions say nothing
+  was changed.
+- **Verified live:** 12 Handovers and conversation pages loaded back to back, with none refused.
+
+**What would help (Chord).**
+- Show the key's remaining budget in response headers (`X-RateLimit-Remaining`), so a client can slow
+  down before it is refused.
+- Allow a list call to return the display names, so a console doesn't need one call per conversation.

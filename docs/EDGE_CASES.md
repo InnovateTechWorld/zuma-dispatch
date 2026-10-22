@@ -245,6 +245,7 @@ Every row names the code that handles the case and the evidence that it works.
 | B30 | Phone width with five tabs | Fixed bottom tab bar (icons + labels, 60 px targets, safe-area inset); the body is padded so it never covers content; the theme switch becomes one button | M: 320 px, no overflow, no wrapped labels |
 | B31 | Badge numbers get huge | Badges cap at "99+"; screen readers hear "Handovers, 3 waiting" | Code path in `tabLinks` |
 | B32 | Unknown board path, unknown job, bad conversation id | 404 inside the board shell with tabs and a link onward; no Chord call is made for it | Local run: `/board/nope` 404, `/board/jobs/ZD-00000` 404 |
+| B34 | Chord answers 429 ("Rate limit exceeded. Retry after 1 seconds."): the API key allows 30 calls a minute and the Handovers list used up to 22 at once | Every Chord call retries a 429 twice (waits what Chord asks, ≤ 2.5 s); the badge and the list share one cached read (10 s); names looked up for the newest 6 earlier handovers only, cached 10 min; any POST clears the cache; plain-words message if still refused | U `chord-rate-limit.test.ts` (11); live: 12 pages back to back, none refused (FIELD_NOTES_FULL #24) |
 
 ## Google Sheet mirror
 

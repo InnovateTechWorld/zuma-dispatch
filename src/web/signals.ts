@@ -1,5 +1,5 @@
 import type { Env } from '../env';
-import { chord, chordError, noticeConfig, noticeStatus } from '../chord/notices';
+import { chord, chordProblem, noticeConfig, noticeStatus } from '../chord/notices';
 import { mirrorStatus } from '../sheets/mirror';
 
 /**
@@ -41,11 +41,14 @@ function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
 }
 
+/** The waiting-chat count on every tab is read from Chord at most this often per Worker instance. */
+export const WAITING_CACHE_MS = 10_000;
+
 export async function readSignals(env: Env, now: number): Promise<Signals> {
   const cfg = noticeConfig(env);
   const live = cfg
     ? within(
-        chord<{ threads?: { id: string }[] }>(cfg, `/v1/threads?${new URLSearchParams({ workspace_id: cfg.workspaceId, control_state: 'human_active,paused', limit: '50' })}`, 2000),
+        chord<{ threads?: { id: string }[] }>(cfg, `/v1/threads?${new URLSearchParams({ workspace_id: cfg.workspaceId, control_state: 'human_active,paused', limit: '50' })}`, 2000, undefined, { cacheMs: WAITING_CACHE_MS }),
         2500,
         null,
       )
@@ -75,7 +78,7 @@ export async function readSignals(env: Env, now: number): Promise<Signals> {
   return {
     waiting: liveRes?.ok ? (liveRes.data.threads ?? []).length : null,
     chord: nstate === 'not_configured' ? 'off' : nstate === 'invalid_config' ? 'invalid' : liveRes?.ok ? 'ok' : 'unreachable',
-    chordDetail: liveRes && !liveRes.ok ? chordError(liveRes) : cfg && !liveRes ? 'no answer within 2.5 s' : null,
+    chordDetail: liveRes && !liveRes.ok ? chordProblem(liveRes) : cfg && !liveRes ? 'no answer within 2.5 s' : null,
     review: by.amount_mismatch ?? 0,
     ready: by.paid ?? 0,
     out: by.dispatched ?? 0,

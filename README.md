@@ -49,7 +49,7 @@ npm install && cp .env.example .env && npm run db:migrate:local && npm run dev
 npm test
 ```
 
-- `npm test`: 224 unit tests, no network and no credits.
+- `npm test`: 235 unit tests, no network and no credits.
 - `scripts/mcp-smoke.sh`: 24 protocol, auth and webhook checks.
 - `python3 scripts/e2e.py`: 54 end-to-end checks against the real providers.
 - What was tested by hand in the simulator: [docs/TESTING.md](docs/TESTING.md).
@@ -59,7 +59,7 @@ npm test
 | | |
 |---|---|
 | [FIELD_NOTES.md](docs/FIELD_NOTES.md) | The three Chord problems that mattered, with screenshots |
-| [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md) | All 23 problems in the order we hit them |
+| [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md) | All 24 problems in the order we hit them |
 | [DECISIONS.md](docs/DECISIONS.md) | Why: NIPOST demo postcodes, geocoders, state boundaries, handover, tracking, hosting |
 | [GO_LIVE.md](docs/GO_LIVE.md) · [checklist](docs/GO_LIVE_CHECKLIST.md) | The owner's half page, and the technical steps |
 | [FEATURES.md](docs/FEATURES.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [EDGE_CASES.md](docs/EDGE_CASES.md) | Detail |

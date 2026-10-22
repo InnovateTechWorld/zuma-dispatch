@@ -152,14 +152,80 @@ export function chordError(r: HttpResult<unknown>): string {
   return `chord_http_${r.status}${msg ? `: ${msg.slice(0, 120)}` : ''}`;
 }
 
-export async function chord<T>(cfg: NoticeConfig, path: string, timeoutMs: number, body?: unknown): Promise<HttpResult<T>> {
-  // POSTs here always carry a JSON body (Chord's transition endpoints accept {} as "no options").
-  return fetchJson<T>(`${cfg.base}${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${cfg.key}` },
-    body,
-    timeoutMs,
+/** True when Chord refused the call for going over the API key's rate limit (30 a minute on ours). */
+export const isRateLimited = (r: HttpResult<unknown>) => !r.ok && r.failure === 'http' && r.status === 429;
+
+/** How long Chord asked us to wait: the Retry-After header, else "Retry after N seconds" in the body. */
+export function retryAfterMs(r: HttpResult<unknown>): number {
+  if (r.ok) return 0;
+  const header = Number(r.headers?.get('retry-after'));
+  if (Number.isFinite(header) && header > 0) return header * 1000;
+  const inBody = /retry after (\d+(?:\.\d+)?)\s*s/i.exec(r.body ?? '');
+  return inBody ? Number(inBody[1]) * 1000 : 1000;
+}
+
+/** Waits between rate-limit retries; replaced in tests so they don't sleep. */
+export const chordTiming = { sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)), maxWaitMs: 2500 };
+
+/**
+ * Board reads that many pages share (the waiting-chat count on every tab, customer names on the
+ * Handovers list) are cached per Worker instance for a few seconds, and identical reads in flight are
+ * shared. Without this, one Handovers page made up to 22 Chord calls at once and the next page hit
+ * Chord's 429 (2026-10-22). Any POST clears the cache, so the board never shows a chat as it was before
+ * the dispatcher's own action.
+ */
+const readCache = new Map<string, { at: number; ttl: number; result: Promise<HttpResult<unknown>> }>();
+export const clearChordCache = () => readCache.clear();
+
+export interface ChordCallOptions {
+  /** Reuse a successful GET for this long (board reads only; never for state the tools act on). */
+  cacheMs?: number;
+}
+
+async function chordOnce<T>(cfg: NoticeConfig, path: string, timeoutMs: number, body?: unknown): Promise<HttpResult<T>> {
+  // A 429 means Chord did not run the request, so retrying a POST is as safe as retrying a GET.
+  // Up to two retries, waiting what Chord asks (capped, so a page never hangs on a long wait).
+  let r: HttpResult<T> | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // POSTs here always carry a JSON body (Chord's transition endpoints accept {} as "no options").
+    r = await fetchJson<T>(`${cfg.base}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { Authorization: `Bearer ${cfg.key}` },
+      body,
+      timeoutMs,
+    });
+    if (!isRateLimited(r) || attempt === 2) break;
+    const wait = retryAfterMs(r);
+    if (wait > chordTiming.maxWaitMs) break;
+    await chordTiming.sleep(wait + Math.floor(Math.random() * 250));
+  }
+  return r!;
+}
+
+export async function chord<T>(cfg: NoticeConfig, path: string, timeoutMs: number, body?: unknown, opts: ChordCallOptions = {}): Promise<HttpResult<T>> {
+  if (body !== undefined) {
+    readCache.clear();
+    return chordOnce<T>(cfg, path, timeoutMs, body);
+  }
+  if (!opts.cacheMs) return chordOnce<T>(cfg, path, timeoutMs);
+  const key = `${cfg.base}${path}`;
+  const now = Date.now();
+  const hit = readCache.get(key);
+  if (hit && now - hit.at < hit.ttl) return hit.result as Promise<HttpResult<T>>;
+  const result = chordOnce<T>(cfg, path, timeoutMs);
+  readCache.set(key, { at: now, ttl: opts.cacheMs, result });
+  if (readCache.size > 200) readCache.delete(readCache.keys().next().value!);
+  // Only successes are reused: a failed read is retried by the next page.
+  void result.then((r) => {
+    if (!r.ok && readCache.get(key)?.result === result) readCache.delete(key);
   });
+  return result;
+}
+
+/** What a dispatcher reads when Chord is unreachable: plain words for a rate limit, the code otherwise. */
+export function chordProblem(r: HttpResult<unknown>): string {
+  if (isRateLimited(r)) return 'Chord is limiting how fast the board can read conversations right now (rate limit). Wait a few seconds, then try again';
+  return chordError(r).replace(/\.+$/, '');
 }
 
 async function findThread(cfg: NoticeConfig, jobId: string, since: number, now: number, timeoutMs: number): Promise<Pick | { ok: false; reason: string; thread?: ThreadRow }> {

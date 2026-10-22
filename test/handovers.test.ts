@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { clearChordCache } from '../src/chord/notices';
 import type { Env } from '../src/env';
 import { checkReply, controlState, handovers, jobIdIn, MAX_REPLY, OPERATOR_ID, speakerOf } from '../src/web/handovers';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  clearChordCache();
+});
 
 const KEY = 'chord_live_' + 'x'.repeat(43);
 const T = 'aaaaaaaaaaaaaaaaaaaaaaaa';

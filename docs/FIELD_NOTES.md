@@ -4,7 +4,7 @@ The three problems that cost the most time getting Zuma to work on Chord, plus s
 Each says what happened, how we found the cause, what we did about it, and what we'd change in Chord.
 All runs took place in the TSG WhatsApp simulator between 2026-10-20 and 2026-10-22. Times are WAT.
 
-The full log of 23 entries, including Cloudflare, Paystack, NIPOST and Google issues, is in
+The full log of 24 entries, including Cloudflare, Paystack, NIPOST and Google issues, is in
 [FIELD_NOTES_FULL.md](FIELD_NOTES_FULL.md). The design choices these problems led to are in
 [DECISIONS.md](DECISIONS.md).
 
