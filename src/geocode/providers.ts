@@ -57,6 +57,17 @@ function googlePrecision(types: string[] = []): Precision {
   if (types.some((t) => t.startsWith('sublocality') || t === 'neighborhood')) return 'area';
   return 'lga';
 }
+/** Name plus address, without repeating the name when the address already starts with it ("23 St Finbarr's College Rd"). */
+export function googleLabel(name: string | undefined, address: string | undefined): string {
+  const n = (name ?? '').trim();
+  const a = (address ?? '').trim();
+  if (!n) return a;
+  // Repeated only when the name is the address's whole first part (not "St Finbarr's College" vs "… College Rd").
+  if (!a) return n;
+  if (a.toLowerCase() === n.toLowerCase() || a.toLowerCase().startsWith(`${n.toLowerCase()},`)) return a;
+  return `${n}, ${a}`;
+}
+
 const google: Geocoder = {
   name: 'google',
   unavailable: (c) => (c.googleMapsApiKey ? null : 'no GOOGLE_MAPS_API_KEY'),
@@ -79,7 +90,7 @@ const google: Geocoder = {
     if (!r.ok) return failed('google', r);
     const candidates = keep(
       (r.data.places ?? []).map((p) => ({
-        label: [p.displayName?.text, p.formattedAddress].filter(Boolean).join(', '),
+        label: googleLabel(p.displayName?.text, p.formattedAddress),
         lat: p.location?.latitude as number,
         lng: p.location?.longitude as number,
         precision: googlePrecision(p.types),

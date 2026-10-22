@@ -36,3 +36,13 @@ describe('how customers write addresses vs how the map has them', () => {
     expect(isRelevant('Anything', 'the school')).toBe(true);
   });
 });
+
+describe('Google labels', () => {
+  it('does not repeat the name when the address starts with it', async () => {
+    const { googleLabel } = await import('../src/geocode/providers');
+    expect(googleLabel("23 St Finbarr's College Rd", "23 St Finbarr's College Rd, Akoka, Lagos 100001")).toBe("23 St Finbarr's College Rd, Akoka, Lagos 100001");
+    expect(googleLabel("St Finbarr's College", "St Finbarr's College Rd, Yaba, Lagos")).toBe("St Finbarr's College, St Finbarr's College Rd, Yaba, Lagos");
+    expect(googleLabel(undefined, 'Akoka, Lagos')).toBe('Akoka, Lagos');
+    expect(googleLabel('Jabi Lake Mall', undefined)).toBe('Jabi Lake Mall');
+  });
+});

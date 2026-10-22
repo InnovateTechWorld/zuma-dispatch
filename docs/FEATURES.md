@@ -73,7 +73,19 @@ so the model can never invent a location.
 - When the customer said which city, same-named places in other states lose to that area.
 - The house number is kept in the label ("23 Finbarr road, …").
 - **Map data:** OpenStreetMap doesn't have every school or business (St Finbarr's College is missing).
-  `GOOGLE_MAPS_API_KEY` (optional, first in `GEOCODER_CHAIN`) would cover more businesses.
+- **Google Places is on (2026-10-22).** `GOOGLE_MAPS_API_KEY` is first in `GEOCODER_CHAIN`, and Google
+  finds the college ("St Finbarr's College, St Finbarr's College Rd, Yaba"). It also fixed the old
+  "Yaba Market" rough spot.
+- **What it costs:** Places API (New) Text Search with our fields is billed as Text Search Pro: 5,000
+  free a month, then $32 per 1,000 (Google Cloud console, checked 2026-10-22).
+- **How it stays free:**
+  - The project has a quota of **150 SearchText requests per day**, so at most 4,650 in a 31-day month.
+  - The key works only for Places API (New).
+  - Once the daily cap is reached, Google refuses the call and the chain falls back to Nominatim,
+    Photon and ORS. Nothing breaks.
+- **Labels:** Google's name and address are joined without repeating the name ("23 St Finbarr's
+  College Rd, Akoka"). Provider cache keys carry a version (`geo:google2:`), so a label change is never
+  served from an old cache.
 
 **Statuses:** `confirmed` · `ambiguous` · `needs_detail` · `not_found` · `out_of_area`. Each carries a
 `what_to_do` for the model.

@@ -26,7 +26,9 @@ async function searchCached(name: GeocoderName, query: string, config: Config, d
   const why = provider.unavailable(config);
   if (why) return { provider: name, outcome: 'skipped', candidates: [], trace: `${name}:skipped(${why})` };
   // Abuja-biased answers keep their original keys (existing cache stays valid); other states get their own.
-  const key = bias && bias !== 'FC' ? `geo:${name}:${bias.toLowerCase()}:${normalizeQuery(query)}` : `geo:${name}:${normalizeQuery(query)}`;
+  // A provider's version changes when its labels change, so old cached answers are not reused.
+  const tag = name === 'google' ? 'google2' : name;
+  const key = bias && bias !== 'FC' ? `geo:${tag}:${bias.toLowerCase()}:${normalizeQuery(query)}` : `geo:${tag}:${normalizeQuery(query)}`;
   const cached = await cacheGet<Candidate[]>(db, key, now);
   if (cached) return { provider: name, outcome: 'ok', candidates: cached, trace: `${name}:cache:${cached.length}` };
   const result = await provider.search(query, config, bias);

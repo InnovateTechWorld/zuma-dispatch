@@ -56,8 +56,9 @@ export async function resolveAddress(args: ResolveArgs, ctx: ToolContext): Promi
   // v2: postcode areas from the fixed FCT table and landmark matches limited to the postcode's area.
   // v4: service area = FCT + Lagos State (hint in the key); duplicate labels merged; all-outside matches collapsed.
   // v5: `confirm` (in_quote for demo postcodes, ask_first otherwise) added to confirmed results.
+  // v8: Google Places joins the chain (GOOGLE_MAPS_API_KEY set 2026-10-22).
   // v6/v7: relevance filter (place name first), cleaned-spelling retry, area fallback, house number kept (src/geocode/query.ts).
-  const stableKey = `resolve:v7:${args.state ?? 'any'}:${normalizeQuery(text)}`;
+  const stableKey = `resolve:v10:${args.state ?? 'any'}:${normalizeQuery(text)}`;
   try {
     const prior = await ctx.db
       .prepare('SELECT result_json, created_at FROM geocode_cache WHERE cache_key = ?')

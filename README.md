@@ -68,7 +68,7 @@ Set in `wrangler.jsonc` → `vars`. A provider without a key is skipped automati
 | NIPOST Postcode API | postcode validity (L1), LGA names | `NIPOST_API_KEY` (test) | Test key: free, 600/min; sandbox data effectively empty (FIELD_NOTES #1) | 0.6–0.7 s |
 | Nominatim (OSM) | geocoding | none | ≤1 req/s, identifying UA, must cache; **tracking apps must self-host** | 0.3–1.1 s, good on landmarks |
 | Photon (komoot) | geocoding | none | "please be fair", no SLA | 1–4 s, often > 4 s |
-| Google Places (New) | geocoding (best Nigerian POI coverage) | `GOOGLE_MAPS_API_KEY` | Text Search Pro 5,000 free/month; needs billing account | not enabled |
+| Google Places (New) | geocoding (best Nigerian POI coverage) | `GOOGLE_MAPS_API_KEY` | Text Search Pro 5,000 free/month (then $32/1,000); needs billing account | **enabled 2026-10-22**: key restricted to Places API (New), daily cap 150 Text Search requests (≤ 4,650/month, inside the free tier) |
 | OpenRouteService | geocoding + routing fallback | `OPENROUTE_BASIC_KEY` | Geocoding 3,000/day, Directions 2,000/day | frequent 502s / 4 s timeouts; directions up to 18 s |
 | OSRM demo | road distance | none | non-commercial, ≤1 req/s, no SLA | ~0.5 s |
 | Paystack | payment links + verification | `PAYSTACK_TEST_SECRET_KEY` | Test mode 100 req/min | initialize ~0.9 s; a link request incl. verify ~0.4–1.7 s |
