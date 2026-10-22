@@ -6,7 +6,7 @@
 
 Zuma Dispatch is a made-up same-day courier in Abuja and Lagos that, like many small Nigerian dispatch
 firms, takes bookings on WhatsApp (used by about 95% of Nigerians online), where one person must work out
-where "opposite the Shoprite" is, quote, check that a transfer really arrived and find a rider, so any customer
+where "opposite the Shoprite" is, quote, check that a transfer really arrived and find a rider, and any customer
 who messages while that person is busy or offline has to wait. Those steps are where money leaks: poor addressing is
 blamed for ₦50–80 billion a year in failed deliveries, and bank transfers, 58% of Paystack's Nigerian
 payments in 2023, come with routine fake-alert fraud. Zuma, a Chord agent, books a delivery inside the
