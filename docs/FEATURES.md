@@ -612,7 +612,7 @@ and the browser runs in `docs/EDGE_CASES.md` B1–B16.
   - If it can't find the chat, Zuma falls back to Chord's built-in handover.
 - **Rider tracking** (`src/business/tracking.ts`): `get_job_status` returns `rider_location` and a
   ready message ("Tunde … is on the way to the pickup at Paystack office, about 9 minutes away (2.1 km)"
-  plus a map link).
+  plus a Google Maps pin link).
   - It is **simulated** (`simulated: true`): test mode has no riders or GPS. The position comes from the
     job's own timestamps.
   - To see the rider move to the drop-off, mark the job **dispatched** on the board.

@@ -31,11 +31,8 @@ export interface RiderUpdate {
 
 const short = (label: string) => label.split(',')[0]!.trim();
 const lerp = (a: Point, b: { lat: number; lng: number }, f: number) => ({ lat: a.lat + (b.lat - a.lat) * f, lng: a.lng + (b.lng - a.lng) * f });
-export const mapUrl = (p: { lat: number; lng: number }) => {
-  const lat = p.lat.toFixed(5);
-  const lng = p.lng.toFixed(5);
-  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
-};
+/** A Google Maps pin (a plain Maps URL: opens the Maps app on phones; no API key, nothing billed). */
+export const mapUrl = (p: { lat: number; lng: number }) => `https://www.google.com/maps/search/?api=1&query=${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
 
 /** A start point ~3 km from the pickup, in a direction fixed by the job id (so it never jumps around). */
 export function startPoint(jobId: string, pickup: Point): Point {

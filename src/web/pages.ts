@@ -436,7 +436,7 @@ ${subTabs('Job views', [
           ? `<p>${h(p.label)}</p><p class="typed">Customer typed “${h(p.query_text)}”</p>
 <dl class="facts"><dt>Precision</dt><dd>${h(p.precision)}</dd><dt>Found by</dt><dd>${h(p.provider)} · ${h(p.confidence)} confidence</dd>
 <dt>Postcode</dt><dd>${p.postcode ? `${h(p.postcode)} · NIPOST ${h(p.postcode_status ?? '?')}` : '—'}</dd><dt>State</dt><dd>${stateOf(p) ? h(stateLabel(p)) : '<b>Outside Abuja and Lagos</b>'}</dd>
-<dt>Map</dt><dd><a href="https://www.openstreetmap.org/?mlat=${p.lat}&amp;mlon=${p.lng}#map=17/${p.lat}/${p.lng}" rel="noopener noreferrer" target="_blank">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</a></dd></dl>`
+<dt>Map</dt><dd><a href="https://www.google.com/maps/search/?api=1&amp;query=${p.lat},${p.lng}" rel="noopener noreferrer" target="_blank">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</a></dd></dl>`
           : '<p class="muted">Not found.</p>'
       }</section>`;
     const rider = riderById(job.rider_id);

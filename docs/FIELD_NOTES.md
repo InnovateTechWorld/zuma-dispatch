@@ -788,7 +788,7 @@ to use:
   it moves forward with time and never jumps:
   - The rider rides to the pickup over 15 minutes, then waits there.
   - Once the board marks the job dispatched, the rider moves to the drop-off over the quoted trip time.
-  - Each update carries an OpenStreetMap link.
+  - Each update carries a Google Maps pin link (a plain Maps URL: no API key, nothing billed).
 
 **Follow-up, next run (ZD-XSE4F, 2026-10-22):** the payment confirmation still went missing, for a new
 reason.

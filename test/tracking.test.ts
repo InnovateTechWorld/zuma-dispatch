@@ -18,7 +18,7 @@ describe('simulated rider tracking (test mode)', () => {
     expect(b.minutes_away).toBe(APPROACH_MIN - 10);
     expect(b.km_away!).toBeLessThan(a.km_away!);
     expect(a.message).toContain('on the way to the pickup at Paystack office');
-    expect(a.map_url).toMatch(/^https:\/\/www\.openstreetmap\.org\/\?mlat=/);
+    expect(a.map_url).toMatch(/^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=6\.\d+,3\.\d+$/);
     expect(a.simulated).toBe(true);
     expect(a.message).toContain('You can call Tunde on 0800 000 0104.');
   });
