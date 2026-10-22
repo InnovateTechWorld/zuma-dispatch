@@ -9,3 +9,4 @@ coverage/
 dist/
 .DS_Store
 .impeccable/review/
+backups/
