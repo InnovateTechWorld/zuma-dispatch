@@ -22,6 +22,10 @@ first: the whole run is about 8 AI turns, which is roughly 1 credit.
 
 ## The run
 
+The brief asks you to "show the moment your tool does its job". Here that is 1:15–1:45: Paystack
+confirms the money, our server marks the job paid and assigns a rider, and Zuma's reply carries the
+result. Say so out loud, and keep the board tab ready to show it.
+
 | Time | Type or do | Say (short) | You should see |
 |---|---|---|---|
 | 0:00 | Show the simulator | "Zuma books same-day deliveries for a courier in Abuja and Lagos, on WhatsApp. This is TSG's simulator." | Empty chat |
@@ -31,7 +35,7 @@ first: the whole run is about 8 AI turns, which is roughly 1 credit.
 | 0:55 | `sorry 08035182746` | | "reserved as ZD-…", number read back, "How would you like to pay…" |
 | 1:05 | `card` | | A Paystack link |
 | 1:15 | Open the link and choose **Success** | "Paystack's test mode. Paid means Paystack confirms it, not the customer saying so." | Paystack success page |
-| 1:35 | `paid` | | **Payment received**, the rider by name and role (for example "Tunde (rider)") with plate and number, and a handover code to "share with Anthony (recipient)" |
+| 1:35 | `paid` | "**This is the moment the tool does its job:** `verify_payment` asks Paystack, marks the job paid and assigns a rider." | **Payment received**, the rider by name and role (for example "Tunde (rider)") with plate and number, and a handover code to "share with Anthony (recipient)" |
 | 1:55 | `where is the rider now?` | "There are no real riders in a take-home, so the position is simulated from the job's timestamps." | "about N minutes away (x km)" and a Google Maps link. Click it once |
 | 2:15 | `i want a refund` | "Refunds need a person. Zuma tells the customer, then hands the chat to the team." | "I've passed this to our support team…" |
 | 2:25 | Switch to the board, **Home** | "The dispatcher sees what needs them." | Two alerts: "1 chat is waiting for a person" and "1 paid job is ready to dispatch". Booked today: 1 |

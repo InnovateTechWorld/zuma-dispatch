@@ -847,3 +847,34 @@ the rule.
 - Show the key's remaining budget in response headers (`X-RateLimit-Remaining`), so a client can slow
   down before it is refused.
 - Allow a list call to return the display names, so a console doesn't need one call per conversation.
+
+## 25. The Chord sign-up code email landed in Gmail Spam
+
+**What happened (sign-up).**
+- The verification email from `onboarding@chordhq.xyz` was in Gmail **Spam**, under the banner "This
+  message is similar to messages that were identified as spam in the past". The code expires in
+  10 minutes.
+- The code screen already says to check the spam folder, and that is how the email was found in time.
+
+**How we checked the cause.**
+- "Show original" on a Chord sign-in code email (20 Oct, 9:44 AM; sent through Amazon SES eu-west-1
+  and Resend):
+  - SPF **pass**;
+  - DKIM **pass** for `chordhq.xyz` (selector `resend`) and for `amazonses.com`;
+  - DMARC **pass** (`p=QUARANTINE`).
+- Authentication is therefore not the cause. Possible causes:
+  - the reputation of a young `.xyz` sending domain;
+  - a one-line body with nothing else in it.
+
+  Neither can be proven from the inbox side, so neither is claimed.
+- One sign-in produced **two different codes in the same minute**, and the screen didn't say which one
+  was valid.
+
+**Workaround.** Used the code from Spam, pressed "Not spam", and added a Gmail filter for
+`chordhq.xyz`.
+
+**What would help (Chord).**
+- One code per request, or say plainly that the newest code replaces earlier ones.
+- A fuller email body: who it's from, why you got it, and a plain-text part. Over time this helps the
+  domain's reputation.
+- A resend button with a countdown, so nobody requests several codes at once.

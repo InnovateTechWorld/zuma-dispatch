@@ -40,26 +40,50 @@ The 8 tools are `resolve_address`, `quote_delivery`, `create_dispatch_job`, `cre
 `verify_payment`, `get_job_status`, `cancel_job` and `hand_to_team`. What each one does, and how to run,
 deploy and connect it, is in [docs/SETUP.md](docs/SETUP.md).
 
-## Run and test
+## How to run it
 
-```bash
-npm install && cp .env.example .env && npm run db:migrate:local && npm run dev
-```
-```bash
-npm test
-```
+You need Node 20+, a free Cloudflare account, and test keys from Paystack and NIPOST. Google Maps and
+OpenRouteService keys are optional: without them the free OpenStreetMap providers answer.
 
-- `npm test`: 273 unit tests, no network and no credits.
-- `scripts/mcp-smoke.sh`: 25 protocol, auth and webhook checks. Both scripts delete their own test data when they finish.
-- `python3 scripts/e2e.py`: 54 end-to-end checks against the real providers.
-- What was tested by hand in the simulator: [docs/TESTING.md](docs/TESTING.md).
+1. **Install and configure:**
+   ```bash
+   npm install && cp .env.example .env
+   ```
+   Fill in `.env`:
+   - `PAYSTACK_TEST_SECRET_KEY` (must start `sk_test_`);
+   - `NIPOST_API_KEY` (must start `nipost_test_`);
+   - two random tokens, `MCP_BEARER_TOKEN` and `BOARD_TOKEN` (generate each with `openssl rand -hex 32`).
+
+   The rest are optional.
+2. **Run locally:**
+   ```bash
+   npm run db:migrate:local && npm run dev
+   ```
+   The tools are then at `http://127.0.0.1:8787/mcp` and the board at `/board`.
+3. **Deploy:** run `npx wrangler login`, create the D1 database, apply `npm run db:migrate:remote`, load
+   the secrets, then `npm run deploy`. The exact commands are in [SETUP.md](docs/SETUP.md#deploy).
+4. **Connect it to Chord:**
+   1. Admin → Channels & Tools → Custom tools (MCP) → Add server, with the `/mcp` URL and
+      `MCP_BEARER_TOKEN` as the bearer token.
+   2. Create a teammate from a ZIP of the *contents* of `skill/zuma-dispatch/`.
+   3. Set it to Act independently, and resume it (it starts paused).
+   4. Make a chat link at chat.tsglabs.dev.
+
+   The steps, and what goes wrong at each one, are in [SETUP.md](docs/SETUP.md#connect-it-to-chord).
+
+**Tests (no Chord credits):**
+- `npm test`: 273 unit tests, no network.
+- `scripts/mcp-smoke.sh [url]`: 25 protocol, auth and webhook checks.
+- `python3 scripts/e2e.py [url]`: 54 end-to-end checks against the real providers and Paystack test mode.
+- Both scripts delete their own test data when they finish.
+- What was tested by hand in the simulator: [TESTING.md](docs/TESTING.md).
 
 ## Docs
 
 | | |
 |---|---|
 | [FIELD_NOTES.md](docs/FIELD_NOTES.md) | The three Chord problems that mattered, with screenshots |
-| [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md) | All 24 problems in the order we hit them |
+| [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md) | All 25 problems in the order we hit them |
 | [DECISIONS.md](docs/DECISIONS.md) | Why: NIPOST demo postcodes, geocoders, state boundaries, handover, tracking, hosting |
 | [GO_LIVE.md](docs/GO_LIVE.md) · [checklist](docs/GO_LIVE_CHECKLIST.md) | The owner's half page, and the technical steps |
 | [FEATURES.md](docs/FEATURES.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [EDGE_CASES.md](docs/EDGE_CASES.md) | Detail |

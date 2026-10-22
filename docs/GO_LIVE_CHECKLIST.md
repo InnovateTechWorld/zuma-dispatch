@@ -43,18 +43,32 @@ WhatsApp is a **channel** in Chord, set up in the dashboard, not in our code:
 - A QR-paired number behaves like a linked device on that phone. Keep the phone online and the WhatsApp
   account in good standing, and use a dedicated business number, not a personal one.
 
-## 2. Switch to live money (in this order)
+## 2. Switch to live keys and money (in this order)
 
 1. **Paystack live keys.** The server refuses non-test keys on purpose (`loadConfig`). Going live is a code
    change: drop that guard, and keep a `PAYSTACK_MODE` var so it can be flipped back.
-2. Set the **live webhook URL** in Paystack (Settings → API Keys & Webhooks → Live): `/hooks/paystack`.
-3. Decide **who absorbs Paystack's fees** (1.5% + ₦100, waived under ₦2,500, capped at ₦2,000) and update
+2. **NIPOST live key** with business verification (KYB) and lookup level 5, which returns coordinates.
+   - The server refuses non-test NIPOST keys (`loadConfig`) on purpose; drop that guard deliberately.
+   - Then remove the four `ZDM` demo postcodes (`src/geocode/postcode.ts`), because they answer only
+     with a test key (DECISIONS §2).
+   - Until level 5 is granted, real postcodes still give the state and LGA, and Zuma asks for a
+     landmark.
+3. **Google Maps API key** in the owner's Google Cloud project, with the owner's billing account.
+   - Enable Places API (New) and restrict the key to it.
+   - Set the Text Search quota: 150 a day today, which keeps it inside the 5,000 free a month; then
+     $32 per 1,000. Raise it to about 3 × expected bookings a day.
+   - Set a budget alert in Cloud Billing.
+   - Put the key in the Worker secret `GOOGLE_MAPS_API_KEY`.
+   - Without the key, or once the cap is hit, the free OpenStreetMap providers answer, less precisely.
+   - Delete the old unrestricted "API key" in the current project.
+4. Set the **live webhook URL** in Paystack (Settings → API Keys & Webhooks → Live): `/hooks/paystack`.
+5. Decide **who absorbs Paystack's fees** (1.5% + ₦100, waived under ₦2,500, capped at ₦2,000) and update
    the rate card.
-4. **Cloudflare Workers paid plan** ($5/month): removes the 10 ms CPU ceiling (FIELD_NOTES_FULL #2).
-5. **Rotate** `MCP_BEARER_TOKEN`, `BOARD_TOKEN` and the Chord API key. Rotating `BOARD_TOKEN` signs every
+6. **Cloudflare Workers paid plan** ($5/month): removes the 10 ms CPU ceiling (FIELD_NOTES_FULL #2).
+7. **Rotate** `MCP_BEARER_TOKEN`, `BOARD_TOKEN` and the Chord API key. Rotating `BOARD_TOKEN` signs every
    dispatcher out.
-6. Point the sheet mirror at the owner's real sheet (a separate one from testing).
-7. Revoke the unused narrow Chord key ("zuma-dispatch server: payment notices").
+8. Point the sheet mirror at the owner's real sheet (a separate one from testing).
+9. Revoke the unused narrow Chord key ("zuma-dispatch server: payment notices").
 
 ## 3. First-day test script on WhatsApp (about 15 minutes)
 
