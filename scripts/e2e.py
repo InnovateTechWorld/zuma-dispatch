@@ -4,12 +4,22 @@ End-to-end run of the booking flow against a live server, calling the MCP tools 
 as Chord does (JSON-RPC over POST, bearer auth). Uses real geocoders and Paystack TEST mode.
 Costs no Chord credits.
 
-Usage:  python3 scripts/e2e.py [base_url]        (default http://127.0.0.1:8787)
+Usage:  python3 scripts/e2e.py [base_url] [--keep]   (default http://127.0.0.1:8787)
 Reads MCP_BEARER_TOKEN from the environment or .env. Never prints it.
-"""
-import hashlib, hmac, json, os, sys, time, urllib.request, urllib.error
 
-BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8787").rstrip("/")
+Cleans up after itself: on exit (pass, fail, error or Ctrl-C) it asks the server to delete this run's
+jobs, payments, events, webhook log entries and tool calls (POST /mcp/test-cleanup), so the board, the
+owner's sheet and the tool-call stats show no trace of it. --keep leaves the data for debugging; clean
+it up later with:  python3 scripts/e2e.py <base_url> --cleanup <run>
+"""
+import atexit, hashlib, hmac, json, os, sys, time, urllib.request, urllib.error
+
+_argv = sys.argv[1:]
+if "--cleanup" in _argv:  # the run id after --cleanup is not the base URL
+    del _argv[_argv.index("--cleanup") + 1 : _argv.index("--cleanup") + 2]
+ARGS = [a for a in _argv if not a.startswith("--")]
+KEEP = "--keep" in sys.argv
+BASE = (ARGS[0] if ARGS else "http://127.0.0.1:8787").rstrip("/")
 TOKEN = os.environ.get("MCP_BEARER_TOKEN")
 if not TOKEN and os.path.exists(".env"):
     for line in open(".env", encoding="utf-8"):
@@ -40,6 +50,8 @@ _id = 0
 # Unique per-run test identities: production is shared with real (simulator) conversations, and the
 # server's duplicate-booking guard matches on sender + recipient + route. Never reuse fixed names.
 RUN = format(int(time.time()) % 100000, "05d")
+if "--cleanup" in sys.argv:
+    RUN = sys.argv[sys.argv.index("--cleanup") + 1]
 SENDER = f"E2E Sender {RUN}"
 RECIPIENT = f"E2E Recipient {RUN}"
 PHONE_A = f"0809{RUN}11"[:11]
@@ -52,6 +64,8 @@ def call(tool, **args):
     body = json.dumps({"jsonrpc": "2.0", "id": _id, "method": "tools/call", "params": {"name": tool, "arguments": args}}).encode()
     req = urllib.request.Request(f"{BASE}/mcp", data=body, method="POST", headers={
         "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "Authorization": f"Bearer {TOKEN}",
+        # Tags the server's tool-call log with this run, so the cleanup can remove exactly these rows.
+        "X-Request-ID": f"test-{RUN}-{_id}",
         # Cloudflare answers the default Python-urllib UA with error 1010 before the Worker runs.
         "User-Agent": "zuma-dispatch-e2e/1.0"})
     t = time.time()
@@ -60,6 +74,31 @@ def call(tool, **args):
     ms = int((time.time() - t) * 1000)
     data = res.get("structuredContent") or json.loads(res["content"][0]["text"])
     return data, bool(res.get("isError")), ms
+
+
+def cleanup():
+    """Deletes everything this run created. Runs on every exit unless --keep."""
+    body = json.dumps({"run": RUN}).encode()
+    req = urllib.request.Request(f"{BASE}/mcp/test-cleanup", data=body, method="POST", headers={
+        "Content-Type": "application/json", "Authorization": f"Bearer {TOKEN}", "User-Agent": "zuma-dispatch-e2e/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            out = json.load(r)
+        d = out["deleted"]
+        print(f"\nCleaned up run {RUN}: {out['jobs']} job(s), {d['payments']} payment(s), {d['job_events']} event(s), "
+              f"{d['paystack_events']} webhook log entr{'y' if d['paystack_events'] == 1 else 'ies'}, {d['tool_calls']} tool call(s); sheet: {out['sheet']}.")
+    except urllib.error.HTTPError as e:
+        print(f"\nCLEANUP FAILED for run {RUN}: HTTP {e.code} {e.read()[:300]!r}. Retry: python3 scripts/e2e.py {BASE} --cleanup {RUN}")
+    except Exception as e:  # network down, server not running
+        print(f"\nCLEANUP FAILED for run {RUN}: {e}. Retry: python3 scripts/e2e.py {BASE} --cleanup {RUN}")
+
+
+if "--cleanup" in sys.argv:
+    cleanup()
+    sys.exit(0)
+print(f"Run {RUN} against {BASE}" + (" (--keep: data stays)" if KEEP else " (cleans up on exit)"))
+if not KEEP:
+    atexit.register(cleanup)
 
 
 def check(name, cond, data, ms):
@@ -170,7 +209,7 @@ check("webhook with a bad signature -> 401", st == 401, {"status": st}, 0)
 st = paystack_hook("charge.success", l1["reference"])
 v_after, err, ms = call("verify_payment", job_id=job)
 check("signed 'charge.success' for an unpaid link -> 200, job stays unpaid (server re-verifies with Paystack)", st == 200 and not err and v_after["payment_status"] == "not_paid_yet", {"status": st, **v_after}, ms)
-st = paystack_hook("charge.success", "SOMEONE-ELSES-REF-1")
+st = paystack_hook("charge.success", f"E2E-{RUN}-NOT-OURS")
 check("event for a reference that isn't ours -> 200 (acknowledged, ignored)", st == 200, {"status": st}, 0)
 
 s, err, ms = call("get_job_status", job_id=job)
@@ -228,6 +267,7 @@ check("customer switches to a card link -> warned to pay only one way", not err 
 c3, err, ms = call("cancel_job", job_id=job3, reason="will pay later")
 check("cancel allowed while the transfer account is unpaid, with a 'don't transfer' warning", not err and c3["status"] == "cancelled" and "transfer account" in c3["what_to_do"], c3, ms)
 
-print(f"\nPAYMENT LINK (pay with test card 4084 0840 8408 4081 / CVV 408 to test 'paid' manually; job is cancelled so it will flag needs_review):\n  {l1.get('payment_url')}")
+if KEEP:
+    print(f"\nPAYMENT LINK (pay with test card 4084 0840 8408 4081 / CVV 408 to test 'paid' manually; job is cancelled so it will flag needs_review):\n  {l1.get('payment_url')}")
 print(f"\n{sum(results)} passed, {len(results) - sum(results)} failed")
 sys.exit(0 if all(results) else 1)

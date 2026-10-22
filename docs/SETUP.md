@@ -82,10 +82,10 @@ npm run dev             # http://127.0.0.1:8787
 Test it, no Chord credits needed:
 
 ```bash
-npm test                              # 267 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config, board sign-in, Home alerts, theme, charts, sheet mirror, handovers
+npm test                              # 273 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config, board sign-in, Home alerts, theme, charts, sheet mirror, handovers
 ```
 ```bash
-scripts/mcp-smoke.sh                  # protocol, auth, board sign-in, CSRF, webhook checks (24)
+scripts/mcp-smoke.sh                  # protocol, auth, board sign-in, CSRF, webhook checks (25)
 ```
 ```bash
 python3 scripts/e2e.py                # booking, payment, webhooks, lookup, lost-context guards and edge cases against real providers (54)
@@ -93,6 +93,22 @@ python3 scripts/e2e.py                # booking, payment, webhooks, lookup, lost
 ```bash
 python3 scripts/check-skill.py        # skill package vs Chord's limits
 ```
+
+**The scripts clean up after themselves.**
+- `e2e.py` and `mcp-smoke.sh` tag every tool call with `X-Request-ID: test-<run>-…`. On exit they call
+  `POST /mcp/test-cleanup {"run": "<run>"}`, which uses the same bearer token as `/mcp`. This happens
+  whether the run passes, fails, errors or is stopped with Ctrl-C.
+- The endpoint deletes only that run's data:
+  - jobs whose sender **and** recipient carry the run's `E2E … <run>` names, booked in the last 24 hours;
+  - their payments, events, notices, sheet rows and quotes;
+  - Paystack webhook log entries for those jobs, or for the run's made-up `E2E-<run>-…` references;
+  - the tagged tool calls.
+- If the owner's Google Sheet had rows for those jobs, it is rebuilt without them.
+- It refuses a run id that isn't 5 digits, and deletes nothing if more than 40 jobs match.
+- Resolved places stay. Real customers share them through the 6-hour address cache.
+- `python3 scripts/e2e.py <url> --keep` leaves a run's data for debugging, and
+  `python3 scripts/e2e.py <url> --cleanup <run>` removes it later.
+
 
 To test a successful payment, open the printed checkout link and choose **Success** on
 Paystack's test page (or card `4084 0840 8408 4081`, CVV `408`, any future expiry).

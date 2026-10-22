@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import type { Env } from '../src/env';
 import { listHref, listQuery } from '../src/web/jobsShared';
@@ -8,6 +6,7 @@ import {
 } from '../src/web/listFilters';
 import { board } from '../src/web/pages';
 import { safeNext } from '../src/web/session';
+import { addJob, d1 } from './helpers/sqliteD1';
 
 /** Epoch ms for a WAT wall-clock time. */
 const wat = (iso: string) => Date.parse(`${iso}+01:00`);
@@ -138,35 +137,6 @@ describe('labels and links', () => {
     expect(safeNext(href)).toBe(href);
   });
 });
-
-// ---------------------------------------------------------------- against real SQLite (D1 is SQLite)
-function d1(): { env: Env; db: DatabaseSync } {
-  const db = new DatabaseSync(':memory:');
-  for (const f of readdirSync('migrations').filter((n) => n.endsWith('.sql')).sort()) db.exec(readFileSync(`migrations/${f}`, 'utf8'));
-  const stmt = (sql: string, args: unknown[] = []) => ({
-    bind: (...a: unknown[]) => stmt(sql, a),
-    all: async () => ({ results: db.prepare(sql).all(...(args as never[])) as unknown[], success: true, meta: {} }),
-    first: async () => db.prepare(sql).get(...(args as never[])) ?? null,
-    run: async () => (db.prepare(sql).run(...(args as never[])), { success: true, meta: {} }),
-  });
-  const D1 = { prepare: (sql: string) => stmt(sql), batch: (list: ReturnType<typeof stmt>[]) => Promise.all(list.map((s) => s.all())) };
-  return { db, env: { DB: D1 } as unknown as Env };
-}
-
-let n = 0;
-function addJob(db: DatabaseSync, o: { booked: string; status?: string; paid?: string; delivered?: string; kobo?: number; km?: number; state?: 'FC' | 'LA'; sender?: string }): string {
-  n++;
-  const id = `ZD-T${String(n).padStart(4, '0')}`;
-  const created = wat(o.booked);
-  db.prepare(`INSERT INTO places (id, query_text, label, lat, lng, precision, provider, confidence, in_service_area, created_at, state) VALUES (?, 'x', ?, 6.5, 3.4, 'exact', 'test', 'high', 1, ?, ?)`).run(`P-A${n}`, `Pickup ${n}`, created, o.state ?? 'LA');
-  db.prepare(`INSERT INTO places (id, query_text, label, lat, lng, precision, provider, confidence, in_service_area, created_at, state) VALUES (?, 'x', ?, 6.5, 3.4, 'exact', 'test', 'high', 1, ?, ?)`).run(`P-B${n}`, `Dropoff ${n}`, created, o.state ?? 'LA');
-  db.prepare(`INSERT INTO quotes (id, pickup_place_id, dropoff_place_id, package_size, distance_m, distance_source, approximate, amount_kobo, breakdown_json, rate_card_version, created_at, expires_at)
-              VALUES (?, ?, ?, 'small', ?, 'osrm', 0, ?, '[]', 'v', ?, ?)`).run(`Q-${n}`, `P-A${n}`, `P-B${n}`, (o.km ?? 5) * 1000, o.kobo ?? 150_000, created, created + 1);
-  db.prepare(`INSERT INTO jobs (id, quote_id, sender_name, recipient_name, recipient_phone, amount_kobo, status, handover_code, created_at, updated_at, paid_at)
-              VALUES (?, ?, ?, 'Bola', '+2348035182746', ?, ?, '1234', ?, ?, ?)`).run(id, `Q-${n}`, o.sender ?? 'Ada', o.kobo ?? 150_000, o.status ?? 'awaiting_payment', created, created, o.paid ? wat(o.paid) : null);
-  if (o.delivered) db.prepare(`INSERT INTO job_events (job_id, type, from_status, to_status, actor, created_at) VALUES (?, 'status_changed', 'dispatched', 'delivered', 'dispatcher', ?)`).run(id, wat(o.delivered));
-  return id;
-}
 
 async function listed(env: Env, search: string): Promise<{ ids: string[]; html: string }> {
   const url = new URL(`https://x/board/deliveries${search ? `?${search}` : ''}`);

@@ -1,4 +1,5 @@
 import { loadConfig } from './config';
+import { cleanupTestRun } from './admin/testCleanup';
 import type { Env } from './env';
 import { bearerToken, secretsMatch } from './lib/auth';
 import { log } from './lib/log';
@@ -81,7 +82,7 @@ async function route(request: Request, url: URL, env: Env, ctx: ExecutionContext
     );
   }
 
-  if (url.pathname === '/mcp') {
+  if (url.pathname === '/mcp' || url.pathname === '/mcp/test-cleanup') {
     if (!cfg.ok) {
       log('error', 'config_invalid', { problems: cfg.problems.join(' | '), request_id: requestId });
       return json({ error: 'server_misconfigured', detail: 'See /health for which settings are missing.' }, 503);
@@ -98,6 +99,12 @@ async function route(request: Request, url: URL, env: Env, ctx: ExecutionContext
     if (!token || !(await secretsMatch(token, cfg.config.mcpBearerToken))) {
       log('warn', 'mcp_auth_failed', { request_id: requestId, had_token: Boolean(token) });
       return json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': 'Bearer realm="zuma-dispatch"' });
+    }
+    if (url.pathname === '/mcp/test-cleanup') {
+      if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405, { Allow: 'POST' });
+      const body = (await request.json().catch(() => null)) as { run?: unknown } | null;
+      const r = await cleanupTestRun(env, typeof body?.run === 'string' ? body.run : '', Date.now(), url.origin);
+      return r.ok ? json(r.result) : json({ error: r.error }, r.status);
     }
     if (request.method !== 'POST') {
       // Stateless server: no standalone SSE stream (GET) and no sessions to delete (DELETE).
