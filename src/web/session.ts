@@ -42,10 +42,16 @@ export function sessionCookie(url: URL, value: string, maxAgeSeconds: number): s
 
 /** Only same-site board paths may be a post-login destination (no open redirect). */
 export function safeNext(raw: string | null): string {
-  if (!raw || raw.length > 300) return '/board';
-  if (!/^\/board(\/[A-Za-z0-9-]+)*\/?(\?[A-Za-z0-9_.~%+=&-]*)?$/.test(raw)) return '/board';
-  if (raw.startsWith('/board/login') || raw.startsWith('/board/logout')) return '/board';
-  return raw;
+  if (!raw || raw.length > 1000) return '/board';
+  // Browsers send some characters in a query unencoded (the ":" in time_from=20:00). Re-encoding the
+  // query first keeps such links, while the strict pattern below still decides what is allowed.
+  const at = raw.indexOf('?');
+  const qs = at === -1 ? '' : new URLSearchParams(raw.slice(at + 1)).toString();
+  const next = at === -1 ? raw : qs ? `${raw.slice(0, at)}?${qs}` : raw.slice(0, at);
+  if (next.length > 1000) return '/board';
+  if (!/^\/board(\/[A-Za-z0-9-]+)*\/?(\?[A-Za-z0-9_.~%+=&-]*)?$/.test(next)) return '/board';
+  if (next.startsWith('/board/login') || next.startsWith('/board/logout')) return '/board';
+  return next;
 }
 
 async function passwordFingerprint(boardToken: string): Promise<string> {

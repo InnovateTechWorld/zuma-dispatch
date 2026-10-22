@@ -19,9 +19,10 @@ import { SERVICE_STATES, stateOf, type ServiceState } from '../business/states';
 import { assignRider, riderById, riderPhone } from '../business/riders';
 import { blank, pageHead, shell, subTabs, type BoardSession } from './shell';
 import {
-  ACTIONS, actionForms, CITY_LABEL, CITY_PARAM, JOB_ROW_SQL, JOBS_CSS, jobRow, jobTable, LIST_LIMIT, listHref, listQuery, NOTICE_REASONS, PAID_VIA,
-  searchFilter, STATUSES, type BoardRow,
+  ACTIONS, actionForms, CITY_LABEL, CITY_PARAM, JOB_FROM, JOB_ROW_SQL, JOBS_CSS, jobRow, jobTable, LIST_LIMIT, listHref, listQuery, NOTICE_REASONS, PAID_VIA,
+  searchFilter, STATUSES, type BoardRow, type ListQuery,
 } from './jobsShared';
+import { BY_LABEL, dateConditions, orderBy, resolveRange, SORT_LABEL, TIME_PRESETS, timeLabel, watDay, WHEN_LABEL, type DateBy, type Sort, type When } from './listFilters';
 import { home } from './home';
 import { paymentsPage, systemPage } from './ops';
 export { readFlash } from './flash';
@@ -89,7 +90,7 @@ export async function payReturn(url: URL, env: Env, config: Config, ctx: Executi
 }
 
 // ------------------------------------------------------------------ /board
-const LIST_PARAMS = ['status', 'q', 'city'];
+const LIST_PARAMS = ['status', 'q', 'city', 'when', 'date_from', 'date_to', 'time_from', 'time_to', 'by', 'sort', 'page'];
 
 export async function board(request: Request, url: URL, env: Env, config: Config, execCtx: ExecutionContext, session: BoardSession): Promise<Response> {
   if (url.pathname.startsWith('/board/handovers')) {
@@ -125,11 +126,11 @@ export async function board(request: Request, url: URL, env: Env, config: Config
 }
 
 // ------------------------------------------------------------------ Deliveries › List
-async function deliveries(url: URL, env: Env, config: Config, session: BoardSession): Promise<Response> {
-  const f = listQuery(url);
+/** Builds the WHERE clause, leaving out one filter when counting the chips for that filter. */
+function listWhere(f: ListQuery, now: number, skip: 'status' | 'city' | null = null): { sql: string; binds: unknown[] } {
   const where: string[] = [];
   const binds: unknown[] = [];
-  if (f.status) {
+  if (f.status && skip !== 'status') {
     where.push('j.status = ?');
     binds.push(f.status);
   }
@@ -138,51 +139,153 @@ async function deliveries(url: URL, env: Env, config: Config, session: BoardSess
     where.push(sf.sql);
     binds.push(...sf.binds);
   }
-  if (f.city) {
+  if (f.city && skip !== 'city') {
     where.push('pu.state = ?');
     binds.push(CITY_PARAM[f.city]);
   }
+  const d = dateConditions(f, now);
+  where.push(...d.sql);
+  binds.push(...d.binds);
+  return { sql: where.length ? `WHERE ${where.join(' AND ')}` : '', binds };
+}
+
+const PAID_STATUSES = "('paid', 'dispatched', 'delivered')";
+
+async function deliveries(url: URL, env: Env, config: Config, session: BoardSession): Promise<Response> {
+  const f = listQuery(url);
+  const now = Date.now();
+  const all = listWhere(f, now);
+  const noStatus = listWhere(f, now, 'status');
+  const noCity = listWhere(f, now, 'city');
+  const offset = (f.page - 1) * LIST_LIMIT;
   const db = env.DB;
-  const [jobs, counts, cityCounts] = await db.batch([
-    db.prepare(`${JOB_ROW_SQL} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY j.created_at DESC LIMIT ${LIST_LIMIT + 1}`).bind(...binds),
-    db.prepare('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status'),
-    db.prepare('SELECT pu.state AS state, COUNT(*) AS n FROM jobs j JOIN quotes q ON q.id = j.quote_id LEFT JOIN places pu ON pu.id = q.pickup_place_id GROUP BY pu.state'),
+  const [jobs, summary, counts, cityCounts] = await db.batch([
+    db.prepare(`${JOB_ROW_SQL} ${all.sql} ORDER BY ${orderBy(f.sort, f.by)} LIMIT ${LIST_LIMIT + 1} OFFSET ${offset}`).bind(...all.binds),
+    db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(j.amount_kobo), 0) AS total, COALESCE(SUM(CASE WHEN j.status IN ${PAID_STATUSES} THEN j.amount_kobo ELSE 0 END), 0) AS paid,
+                       COALESCE(SUM(CASE WHEN j.status IN ${PAID_STATUSES} THEN 1 ELSE 0 END), 0) AS paid_n
+                  ${JOB_FROM} ${all.sql}`).bind(...all.binds),
+    db.prepare(`SELECT j.status AS status, COUNT(*) AS n ${JOB_FROM} ${noStatus.sql} GROUP BY j.status`).bind(...noStatus.binds),
+    db.prepare(`SELECT pu.state AS state, COUNT(*) AS n ${JOB_FROM} ${noCity.sql} GROUP BY pu.state`).bind(...noCity.binds),
   ]);
   const list = (jobs!.results as unknown as BoardRow[]).slice(0, LIST_LIMIT);
   const more = jobs!.results.length > LIST_LIMIT;
+  const sum = (summary!.results[0] as { n: number; total: number; paid: number; paid_n: number } | undefined) ?? { n: 0, total: 0, paid: 0, paid_n: 0 };
   const statusCounts: Record<string, number> = Object.fromEntries((counts!.results as unknown as { status: string; n: number }[]).map((c) => [c.status, c.n]));
-  const totalJobs = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+  const statusTotal = Object.values(statusCounts).reduce((a, b) => a + b, 0);
   const byCity: Record<string, number> = Object.fromEntries((cityCounts!.results as unknown as { state: string | null; n: number }[]).map((c) => [c.state ?? '', c.n]));
+  const cityTotal = Object.values(byCity).reduce((a, b) => a + b, 0);
+  const keep = { ...f, page: 1 };
   const back = listHref(f);
-  const rows = list.map((j) => jobRow(j, back)).join('');
+  const rows = list.map((j) => jobRow(j, back, false, f.by)).join('');
+  const chip = (href: string, current: boolean, label: string, n?: number) =>
+    `<li><a href="${h(href)}"${current ? ' aria-current="page"' : ''}>${h(label)}${n === undefined ? '' : `<span class="num">${n}</span>`}</a></li>`;
 
   // Status chips: All, then only statuses that have jobs (plus the selected one), so the row stays short.
-  const statusChips = [{ key: '', label: 'All', n: totalJobs }, ...STATUSES.filter((s) => (statusCounts[s] ?? 0) > 0 || s === f.status).map((s) => ({ key: s, label: s.replaceAll('_', ' '), n: statusCounts[s] ?? 0 }))]
-    .map((t) => `<li><a href="${h(listHref({ ...f, status: t.key }))}"${t.key === f.status ? ' aria-current="page"' : ''}>${h(t.label[0]!.toUpperCase() + t.label.slice(1))}<span class="num">${t.n}</span></a></li>`)
+  // Counts follow every other filter (dates, city, search), so they add up to what the list would show.
+  const statusChips = [{ key: '', label: 'All', n: statusTotal }, ...STATUSES.filter((s) => (statusCounts[s] ?? 0) > 0 || s === f.status).map((s) => ({ key: s, label: s.replaceAll('_', ' '), n: statusCounts[s] ?? 0 }))]
+    .map((t) => chip(listHref({ ...keep, status: t.key }), t.key === f.status, t.label[0]!.toUpperCase() + t.label.slice(1), t.n))
     .join('');
-  const cityChips = [{ key: '', label: 'Both cities', n: totalJobs }, { key: 'abuja', label: 'Abuja', n: byCity.FC ?? 0 }, { key: 'lagos', label: 'Lagos', n: byCity.LA ?? 0 }]
-    .map((t) => `<li><a href="${h(listHref({ ...f, city: t.key }))}"${t.key === (f.city ?? '') ? ' aria-current="page"' : ''}>${h(t.label)}<span class="num">${t.n}</span></a></li>`)
+  const cityChips = [{ key: '', label: 'Both cities', n: cityTotal }, { key: 'abuja', label: 'Abuja', n: byCity.FC ?? 0 }, { key: 'lagos', label: 'Lagos', n: byCity.LA ?? 0 }]
+    .map((t) => chip(listHref({ ...keep, city: t.key }), t.key === (f.city ?? ''), t.label, t.n))
     .join('');
-  const filtered = Boolean(f.q || f.status || f.city);
-  const resultLine = `<p class="result" role="status"><span>${filtered ? `${list.length}${more ? '+' : ''} matching` : `${list.length}${more ? '+' : ''} most recent`}${f.city ? ` · ${h(CITY_LABEL[CITY_PARAM[f.city]!])}` : ''}${f.status ? ` · ${h(f.status.replaceAll('_', ' '))}` : ''}${f.q ? ` · “${h(f.q)}”` : ''}</span>${more ? `<span>Showing the latest ${LIST_LIMIT}. Search to find older ones.</span>` : ''}${filtered ? `<a href="${h(listHref({ live: f.live }))}">Clear filters</a>` : ''}</p>`;
+  const customDates = Boolean(f.dateFrom || f.dateTo);
+  const whenChips = [chip(listHref({ ...keep, when: '', dateFrom: '', dateTo: '' }), !f.when && !customDates, 'Any time')]
+    .concat((Object.keys(WHEN_LABEL) as Exclude<When, ''>[]).map((k) => chip(listHref({ ...keep, when: k, dateFrom: '', dateTo: '' }), f.when === k, WHEN_LABEL[k])))
+    .concat(customDates ? [chip(listHref(keep), true, 'Custom dates')] : [])
+    .join('');
+  const timeChips = [chip(listHref({ ...keep, timeFrom: '', timeTo: '' }), !f.timeFrom && !f.timeTo, 'Any time of day')]
+    .concat(TIME_PRESETS.map((t) => chip(listHref({ ...keep, timeFrom: t.from, timeTo: t.to }), f.timeFrom === t.from && f.timeTo === t.to, t.label)))
+    .join('');
+
+  const range = resolveRange(f, now);
+  const tl = timeLabel(f);
+  const dated = Boolean(range.label || tl || f.by !== 'booked');
+  const filtered = Boolean(f.q || f.status || f.city || dated);
+  const describe = [
+    dated ? `${BY_LABEL[f.by].toLowerCase()}${range.label ? ` ${range.label}` : ''}${tl ? `, ${tl}` : ''}` : '',
+    f.city ? CITY_LABEL[CITY_PARAM[f.city]!] : '',
+    f.status ? f.status.replaceAll('_', ' ') : '',
+    f.q ? `“${f.q}”` : '',
+  ].filter(Boolean);
+  const first = sum.n ? offset + 1 : 0;
+  const last = offset + list.length;
+  const countText = sum.n === 0 ? 'No deliveries' : `${sum.n} deliver${sum.n === 1 ? 'y' : 'ies'}`;
+  const money = sum.n ? ` · ${formatNaira(sum.total)} booked · ${formatNaira(sum.paid)} paid (${sum.paid_n} job${sum.paid_n === 1 ? '' : 's'})` : '';
+  const resultLine = `<p class="result" role="status"><span>${h(countText)}${describe.length ? ` ${h(describe.join(' · '))}` : ''}${h(money)}</span>${
+    sum.n > LIST_LIMIT || f.page > 1 ? `<span>Showing ${first}–${last} · ${h(SORT_LABEL[f.sort].toLowerCase())}</span>` : f.sort !== 'newest' ? `<span>${h(SORT_LABEL[f.sort])}</span>` : ''
+  }${filtered || f.sort !== 'newest' ? `<a href="${h(listHref({ live: f.live }))}">Clear filters</a>` : ''}</p>`;
+  const notes = f.notes.length
+    ? `<div class="notice" role="status"><span class="label">Note</span><span>${f.notes.map(h).join(' ')}</span></div>`
+    : '';
+  const pager =
+    f.page > 1 || more
+      ? `<nav class="pager" aria-label="Pages">${f.page > 1 ? `<a class="btn btn--sm" href="${h(listHref({ ...f, page: f.page - 1 }))}" rel="prev">← Previous ${LIST_LIMIT}</a>` : '<span></span>'}<span class="muted">Page ${f.page} of ${Math.max(1, Math.ceil(sum.n / LIST_LIMIT))}</span>${
+          more ? `<a class="btn btn--sm" href="${h(listHref({ ...f, page: f.page + 1 }))}" rel="next">Next ${LIST_LIMIT} →</a>` : '<span></span>'
+        }</nav>`
+      : '';
+  const pastEnd = f.page > 1 && list.length === 0;
+  const empty = pastEnd
+    ? `There are no deliveries on page ${f.page}. <a href="${h(listHref(keep))}">Go to page 1</a>.`
+    : filtered
+      ? `No deliveries ${h(describe.join(' · ') || 'match')}.${f.by !== 'booked' ? ` Only jobs that were ${f.by} have a ${f.by} date.` : ''} Try another date or search, or <a href="${h(listHref({ live: f.live }))}">clear the filters</a>.`
+      : 'No deliveries yet. They appear here as soon as Zuma books one.';
   const refresh = f.live
     ? `<span>Refreshes every 30 s</span><a href="${h(listHref({ ...f, live: false }))}">Stop</a>`
     : `<a href="${h(listHref({ ...f, live: true }))}">Auto-refresh</a>`;
-  const body = `${pageHead('Deliveries', 'Every booking Zuma took, newest first. Open a job for its payment trail and timeline.', `<span>Updated ${time(Date.now())}</span>${refresh}`)}
+  // Closed by default so the list stays near the top on a phone; the heading says what is set. It opens
+  // only when we ignored or corrected something the dispatcher typed, so they see why.
+  const advOpen = f.notes.length > 0;
+  const advSet = [
+    f.by !== 'booked' ? `by ${BY_LABEL[f.by].toLowerCase()} date` : '',
+    customDates ? range.label : '',
+    tl,
+    f.sort !== 'newest' ? SORT_LABEL[f.sort].toLowerCase() : '',
+  ].filter(Boolean);
+  const hidden = (name: string, v: string | false | undefined) => (v ? `<input type="hidden" name="${name}" value="${h(v)}">` : '');
+  const opt = (value: string, label: string, current: string) => `<option value="${h(value)}"${value === current ? ' selected' : ''}>${h(label)}</option>`;
+  const today = watDay(now);
+  const form = `<form class="dl-form" method="get" action="/board/deliveries" role="search">
+<div class="search"><label class="sr" for="q">Search deliveries</label>
+<input class="input" id="q" name="q" value="${h(f.q)}" type="search" placeholder="Job id, phone or name" autocomplete="off" maxlength="80">
+<button class="btn btn--primary" type="submit">Search</button></div>
+${hidden('status', f.status)}${hidden('city', f.city)}${hidden('live', f.live && '1')}${customDates ? '' : hidden('when', f.when)}
+<details class="adv"${advOpen ? ' open' : ''}><summary>Dates, time of day and sort <span class="muted">· ${h(advSet.length ? advSet.join(' · ') : 'pick exact days, hours, or the order')}</span></summary>
+<div class="adv__grid">
+<fieldset><legend>Date</legend>
+<div class="adv__row"><label for="by">Date of</label><select class="select" id="by" name="by">${(Object.keys(BY_LABEL) as DateBy[]).map((k) => opt(k, BY_LABEL[k], f.by)).join('')}</select></div>
+<div class="adv__row"><label for="date_from">From</label><input class="input" id="date_from" name="date_from" type="date" value="${h(f.dateFrom)}" min="2020-01-01" max="2100-12-31" placeholder="21/10/2026"></div>
+<div class="adv__row"><label for="date_to">To</label><input class="input" id="date_to" name="date_to" type="date" value="${h(f.dateTo)}" min="2020-01-01" max="2100-12-31" placeholder="${h(today)}"></div>
+<p class="adv__hint">Both days included. Typed dates replace a preset. Days run midnight to midnight, WAT.</p></fieldset>
+<fieldset><legend>Time of day</legend>
+<div class="adv__row"><label for="time_from">From</label><input class="input" id="time_from" name="time_from" type="time" value="${h(f.timeFrom)}"></div>
+<div class="adv__row"><label for="time_to">To</label><input class="input" id="time_to" name="time_to" type="time" value="${h(f.timeTo)}"></div>
+<p class="adv__hint">On any day in the range. A start later than the end, like 20:00 to 06:59, means overnight.</p></fieldset>
+<fieldset><legend>Order</legend>
+<div class="adv__row"><label for="sort">Sort by</label><select class="select" id="sort" name="sort">${(Object.keys(SORT_LABEL) as Sort[]).map((k) => opt(k, SORT_LABEL[k], f.sort)).join('')}</select></div>
+<p class="adv__hint">"Newest" and "oldest" follow the date chosen above.</p></fieldset>
+</div>
+<div class="adv__actions"><button class="btn btn--primary" type="submit">Apply</button><a href="${h(listHref({ q: f.q, status: f.status, city: f.city, live: f.live }))}">Reset dates, time and sort</a></div>
+</details>
+</form>`;
+  const chipRows = `<nav aria-label="Filter by date"><ul class="chips">${whenChips}</ul></nav>
+<nav aria-label="Filter by time of day"><ul class="chips">${timeChips}</ul></nav>
+<div class="chips-row"><nav aria-label="Filter by city"><ul class="chips">${cityChips}</ul></nav><nav aria-label="Filter by status"><ul class="chips">${statusChips}</ul></nav></div>`;
+  const sortHead = {
+    current: f.sort,
+    href: (s: Sort) => listHref({ ...keep, sort: s }),
+  };
+  const body = `${pageHead('Deliveries', 'Every booking Zuma took. Filter by day, time or status, and open a job for its payment trail and timeline.', `<span>Updated ${time(now)}</span>${refresh}`)}
 ${subTabs('Deliveries views', [{ href: listHref({}), label: 'List', current: true }, { href: '/board/deliveries/overview', label: 'Overview', current: false }])}
 <div class="filters">
-<form class="search" method="get" action="/board/deliveries" role="search">
-<label class="sr" for="q">Search deliveries</label>
-<input class="input" id="q" name="q" value="${h(f.q)}" type="search" placeholder="Job id, phone or name" autocomplete="off" maxlength="80">
-${f.status ? `<input type="hidden" name="status" value="${h(f.status)}">` : ''}${f.city ? `<input type="hidden" name="city" value="${h(f.city)}">` : ''}${f.live ? '<input type="hidden" name="live" value="1">' : ''}
-<button class="btn btn--primary" type="submit">Search</button>
-</form>
-<div class="chips-row d-only"><nav aria-label="Filter by city"><ul class="chips">${cityChips}</ul></nav><nav aria-label="Filter by status"><ul class="chips">${statusChips}</ul></nav></div>
-<details class="m-only filt"><summary>Filters <span class="muted">· ${h(f.city ? CITY_LABEL[CITY_PARAM[f.city]!] : 'Both cities')} · ${h(f.status ? f.status.replaceAll('_', ' ') : 'all statuses')}</span></summary>
-<div class="chips-row"><nav aria-label="Filter by city (phone)"><ul class="chips">${cityChips}</ul></nav><nav aria-label="Filter by status (phone)"><ul class="chips">${statusChips}</ul></nav></div></details>
+${form}
+<div class="d-only filters__chips">${chipRows}</div>
+<details class="m-only filt"><summary>Filters <span class="muted">· ${h([range.label ? range.label : 'any time', tl, f.city ? CITY_LABEL[CITY_PARAM[f.city]!] : 'both cities', f.status ? f.status.replaceAll('_', ' ') : 'all statuses'].filter(Boolean).join(' · '))}</span></summary>
+<div class="filters__chips">${chipRows.replaceAll('aria-label="Filter by', 'aria-label="(phone) Filter by')}</div></details>
 </div>
+${notes}
 ${resultLine}
-${jobTable(rows, filtered ? 'No deliveries match. Try a job id like ZD-AB12C, a phone number, or part of a name.' : 'No deliveries yet. They appear here as soon as Zuma books one.')}`;
+${jobTable(rows, empty, false, sortHead)}
+${pager}`;
   return shell({ env, config, session, url, active: 'deliveries', title: 'Deliveries', css: JOBS_CSS, body, refreshSeconds: f.live ? 30 : undefined });
 }
 

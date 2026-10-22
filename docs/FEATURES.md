@@ -416,7 +416,36 @@ fixed bottom bar of five. Each tab can show a badge: red means urgent.
 - Search for a job id (`zd-k45v7` works), a recipient phone (any format), or part of a name or address.
 - City chips (Both cities / Abuja / Lagos) and status chips. Only statuses that have jobs are shown, so
   the row stays short.
-- Filters combine. "Clear filters" resets them. The latest 100 matches are shown.
+- **Dates** (`src/web/listFilters.ts`). All days are WAT, midnight to midnight; Nigeria has no daylight
+  saving.
+  - Presets: Any time · Today · Yesterday · Last 7 days · Last 30 days · This month · Last month.
+  - Custom From/To days using the date picker, or typed day-first (`21/10/2026`). Both days are included.
+  - "Date of" chooses **booked**, **paid** or **delivered**. A paid or delivered filter only shows jobs
+    that have that date, and each row shows that date under the job id.
+- **Time of day:** From/To in 24-hour time, also accepting `8pm`, plus chips for Morning, Afternoon,
+  Evening and After hours (8pm–7am). A start later than the end means overnight (20:00 to 06:59).
+- **Sort:**
+  - newest or oldest (by the chosen date);
+  - highest or lowest amount;
+  - longest trip;
+  - recently changed.
+  - The Job, Package and Amount headers are sort links: clicking again flips the direction, and
+    `aria-sort` marks the sorted column.
+- **Paging:** 100 a page, "Previous / Next 100", "Page 2 of 3". Every sort ends on the job id, so pages
+  never overlap or skip a job.
+- **Counts follow the filters.** The status and city chips count within the other filters, and the result
+  line gives the number of jobs, the amount booked and the amount paid, for example "86 deliveries booked
+  20–21 Oct 2026 · ₦293,750 booked · ₦17,150 paid (5 jobs)".
+- **Bad input never empties the list silently.**
+  - An impossible date (30 February), a time like 25:00, or equal start and end times are ignored with a
+    note, which opens the panel.
+  - A reversed range is swapped, with a note.
+  - Typed dates replace a preset.
+  - Unknown sort, page or preset values fall back to the defaults.
+  - A page past the end links back to page 1.
+- **Links keep everything.** Filters, actions (they return to the same filtered page) and sign-in (a
+  filtered link opened while signed out comes back to it) all keep the full set of filters.
+- Filters combine. "Clear filters" resets them.
 - Old links such as `/board?status=paid` (sheet, bookmarks) redirect here with the same filters.
 - **Each row:** job id and time, status (how it was paid, rider), city, route, package and distance,
   amount, sender → recipient with phone and handover code, and the actions for that status.

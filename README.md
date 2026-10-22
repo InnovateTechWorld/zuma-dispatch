@@ -49,7 +49,7 @@ npm install && cp .env.example .env && npm run db:migrate:local && npm run dev
 npm test
 ```
 
-- `npm test`: 235 unit tests, no network and no credits.
+- `npm test`: 267 unit tests, no network and no credits.
 - `scripts/mcp-smoke.sh`: 24 protocol, auth and webhook checks.
 - `python3 scripts/e2e.py`: 54 end-to-end checks against the real providers.
 - What was tested by hand in the simulator: [docs/TESTING.md](docs/TESTING.md).

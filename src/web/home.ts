@@ -81,7 +81,7 @@ export async function home(url: URL, env: Env, config: Config, session: BoardSes
     : `<div class="clear" role="status"><span class="clear__mark" aria-hidden="true"></span><div><b>Nothing needs you right now.</b><span>This list fills in when a chat waits for a person, a payment needs review, a job is ready to dispatch, or an integration fails.</span></div></div>`;
   const s = (n: number) => (n === 1 ? '' : 's');
   const figures = `<dl class="today">
-<div><a href="/board/deliveries"><dt>Booked today</dt><dd class="today__v">${b.n}</dd><dd class="today__sub">${b.paid} of them paid (WAT day)</dd></a></div>
+<div><a href="/board/deliveries?when=today"><dt>Booked today</dt><dd class="today__v">${b.n}</dd><dd class="today__sub">${b.paid} of them paid (WAT day)</dd></a></div>
 <div><dt>Paid today</dt><dd class="today__v">${formatNaira(p.kobo)}</dd><dd class="today__sub">${p.n} job${s(p.n)}, any booking day</dd></div>
 <div><a href="/board/deliveries?status=awaiting_payment"><dt>Awaiting payment now</dt><dd class="today__v">${formatNaira(o.kobo)}</dd><dd class="today__sub">${o.n} open job${s(o.n)}, any booking day</dd></a></div>
 <div><a href="/board/deliveries?status=dispatched"><dt>Out with riders now</dt><dd class="today__v">${sig.out}</dd><dd class="today__sub">${sig.ready} more ready to dispatch</dd></a></div>

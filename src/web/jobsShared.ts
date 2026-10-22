@@ -6,6 +6,7 @@ import { normalizeNigerianPhone } from '../lib/phone';
 import { escapeHtml as h } from '../lib/text';
 import { STATUS_ORDER } from './charts';
 import { stateOf, type ServiceState } from '../business/states';
+import { readDateFilters, SORT_LABEL, type DateBy, type DateFilters, type Sort } from './listFilters';
 
 /** Pieces shared by the Home, Deliveries, Payments and job pages. */
 
@@ -51,7 +52,7 @@ export function searchFilter(raw: string): { sql: string; binds: unknown[] } | n
   };
 }
 
-export interface ListQuery { status: string; q: string; live: boolean; city?: string }
+export interface ListQuery extends DateFilters { status: string; q: string; live: boolean; city?: string }
 
 /** Reads the list filters from the URL; an unknown status is ignored rather than matching nothing. */
 export function listQuery(url: URL): ListQuery {
@@ -61,15 +62,27 @@ export function listQuery(url: URL): ListQuery {
     q: (url.searchParams.get('q') ?? '').trim().slice(0, 80),
     live: url.searchParams.get('live') === '1',
     city: Object.hasOwn(CITY_PARAM, url.searchParams.get('city') ?? '') ? url.searchParams.get('city')! : '',
+    ...readDateFilters(url),
   };
 }
 
-/** A board URL for these filters; empty values are left out so links stay short and shareable. */
+/**
+ * A board URL for these filters; empty and default values are left out so links stay short and
+ * shareable. `page` is only kept when asked for: any change of filter starts again at page 1.
+ */
 export function listHref(f: Partial<ListQuery>): string {
   const p = new URLSearchParams();
   if (f.q) p.set('q', f.q);
   if (f.status) p.set('status', f.status);
   if (f.city) p.set('city', f.city);
+  if (f.when) p.set('when', f.when);
+  if (f.dateFrom) p.set('date_from', f.dateFrom);
+  if (f.dateTo) p.set('date_to', f.dateTo);
+  if (f.timeFrom) p.set('time_from', f.timeFrom);
+  if (f.timeTo) p.set('time_to', f.timeTo);
+  if (f.by && f.by !== 'booked') p.set('by', f.by);
+  if (f.sort && f.sort !== 'newest') p.set('sort', f.sort);
+  if (f.page && f.page > 1) p.set('page', String(f.page));
   if (f.live) p.set('live', '1');
   const s = p.toString();
   return s ? `/board/deliveries?${s}` : '/board/deliveries';
@@ -117,14 +130,19 @@ export interface BoardRow extends JobRow {
   pickup_state: ServiceState | null;
   pickup_lat: number | null;
   pickup_lng: number | null;
+  delivered_at: number | null;
 }
+
+/** The joins every Deliveries query shares (search and city filters read the place labels and state). */
+export const JOB_FROM = `FROM jobs j JOIN quotes q ON q.id = j.quote_id
+         LEFT JOIN places pu ON pu.id = q.pickup_place_id LEFT JOIN places dr ON dr.id = q.dropoff_place_id`;
 
 /** The rows the Deliveries list and Home's "latest" list both show. */
 export const JOB_ROW_SQL = `SELECT j.*, pu.label AS pickup_label, dr.label AS dropoff_label, q.package_size, q.approximate, q.distance_m,
               pu.state AS pickup_state, pu.lat AS pickup_lat, pu.lng AS pickup_lng,
-              (SELECT json_extract(e.detail_json, '$.via') FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'paid' ORDER BY e.id DESC LIMIT 1) AS paid_via
-         FROM jobs j JOIN quotes q ON q.id = j.quote_id
-         LEFT JOIN places pu ON pu.id = q.pickup_place_id LEFT JOIN places dr ON dr.id = q.dropoff_place_id`;
+              (SELECT json_extract(e.detail_json, '$.via') FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'paid' ORDER BY e.id DESC LIMIT 1) AS paid_via,
+              (SELECT MAX(e.created_at) FROM job_events e WHERE e.job_id = j.id AND e.to_status = 'delivered') AS delivered_at
+         ${JOB_FROM}`;
 
 export const JOBS_CSS = `
 .filters{display:grid;gap:var(--space-xs);margin-bottom:var(--space-sm)}
@@ -139,6 +157,25 @@ export const JOBS_CSS = `
 .filt>summary{font-size:var(--text-sm);color:var(--color-ink);min-height:var(--control-sm)}
 .filt .chips-row{padding-top:var(--space-2xs)}
 .search{display:flex;gap:var(--space-2xs);align-items:center}
+.filters__chips{display:grid;gap:var(--space-2xs)}
+.adv{border:1px solid var(--color-rule);border-radius:var(--radius-lg);background:var(--color-surface);margin-top:var(--space-2xs)}
+.adv>summary{padding:var(--space-2xs) var(--space-sm);font-size:var(--text-sm);color:var(--color-ink);cursor:pointer;min-height:var(--control-sm);display:flex;align-items:center;gap:var(--space-2xs)}
+.adv[open]>summary{border-bottom:1px solid var(--color-rule)}
+.adv__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:var(--space-sm) var(--space-md);padding:var(--space-sm)}
+.adv fieldset{border:0;margin:0;padding:0;min-width:0;display:grid;gap:var(--space-2xs);align-content:start}
+.adv legend{font-size:var(--text-xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--color-muted);padding:0;margin-bottom:var(--space-3xs)}
+.adv__row{display:grid;grid-template-columns:4.5rem minmax(0,1fr);align-items:center;gap:var(--space-2xs)}
+.adv__row label{font-size:var(--text-sm);color:var(--color-ink-2)}
+.adv__hint{font-size:var(--text-xs);color:var(--color-muted);margin:0;max-width:40ch}
+.adv__actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-xs) var(--space-sm);padding:0 var(--space-sm) var(--space-sm)}
+.adv__actions a{font-size:var(--text-sm)}
+.adv>summary,.filt>summary{display:block;line-height:1.45;padding-top:var(--space-2xs);padding-bottom:var(--space-2xs)}
+.adv>summary::before,.filt>summary::before{display:inline-block;margin-right:var(--space-2xs)}
+.jobs td.empty{white-space:normal}
+.th-sort{color:inherit;text-decoration:none;white-space:nowrap}.th-sort:hover{text-decoration:underline}
+th[aria-sort] .th-sort{color:var(--color-ink)}
+.pager{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:var(--space-xs);margin-top:var(--space-sm);font-size:var(--text-sm)}
+.pager>a:last-child{justify-self:end}
 .search .input{flex:1}
 .result{display:flex;flex-wrap:wrap;gap:var(--space-3xs) var(--space-sm);font-size:var(--text-sm);color:var(--color-muted);margin-bottom:var(--space-sm);min-height:1lh}
 .jobs td:first-child{white-space:nowrap}.jobs td:first-child a{font-family:var(--font-mono);font-weight:500}
@@ -157,24 +194,31 @@ export const JOBS_CSS = `
   .jobs td.c-city,.jobs td.c-pkg,.jobs td.people,.jobs td .sub.c-hide{display:none}
   .jobs td.route,.jobs td.act,.jobs td.empty{grid-column:1/-1}
   .jobs td.act.is-empty{display:none}
-  .jobs td:first-child .sub{display:none}
+  .jobs td:first-child .sub{font-size:var(--text-xs)}
   .jobs .route{min-width:0;font-size:var(--text-sm)}
   .jobs td:first-child{grid-row:1;grid-column:1}.jobs td[data-label="Status"]{grid-row:1;grid-column:2}.jobs td.amt{grid-row:1;grid-column:3;text-align:right}
   .jobs td.route{grid-row:2}.jobs td.act{grid-row:3}
+  .jobs td.empty:first-child{grid-row:1;grid-column:1/-1;white-space:normal}
   .jobs td.act{white-space:normal;padding-top:var(--space-3xs)}
   .jobs td.act .btn{height:var(--control)}
   tbody tr:hover>td{background:transparent}
 }`;
 
+/** The date under the job id: when it was booked, or (filtering by paid or delivered) that moment. */
+function rowDate(j: BoardRow, by: DateBy): string {
+  const at = by === 'paid' ? j.paid_at : by === 'delivered' ? j.delivered_at : null;
+  return by === 'booked' || at == null ? time(j.created_at) : `${by} ${time(at)}`;
+}
+
 /** One delivery as a table row (Deliveries list) — `compact` drops the people and package columns (Home). */
-export function jobRow(j: BoardRow, back: string, compact = false): string {
+export function jobRow(j: BoardRow, back: string, compact = false, by: DateBy = 'booked'): string {
   const phone = normalizeNigerianPhone(j.recipient_phone);
   const city = jobCity(j);
   const km = j.distance_m ? `${(j.distance_m / 1000).toFixed(1)} km${j.approximate ? ' (est.)' : ''}` : '';
   const actions = actionForms(j, back, true);
   const rider = riderById(j.rider_id);
   return `<tr>
-<td data-label="Job"><a href="/board/jobs/${h(j.id)}">${h(j.id)}</a><span class="sub">${time(j.created_at)}</span></td>
+<td data-label="Job"><a href="/board/jobs/${h(j.id)}">${h(j.id)}</a><span class="sub">${rowDate(j, by)}</span></td>
 <td data-label="Status">${statusPill(j.status)}${!compact && j.paid_via ? `<span class="sub c-hide">via ${h((PAID_VIA[j.paid_via] ?? j.paid_via).toLowerCase())}</span>` : ''}${rider ? `<span class="sub c-hide">rider ${h(rider.name)}</span>` : ''}</td>
 <td data-label="City" class="c-city">${h(city ? CITY_LABEL[city] : '—')}</td>
 <td data-label="Route" class="route">${h(j.pickup_label ?? '?')}<span class="sub">→ ${h(j.dropoff_label ?? '?')}</span></td>
@@ -184,11 +228,28 @@ ${compact ? '' : `<td data-label="Sender → recipient" class="people">${h(j.sen
 <td class="act${actions ? '' : ' is-empty'}"><div class="actions">${actions || '<span class="muted">—</span>'}</div></td></tr>`;
 }
 
-export function jobTable(rows: string, empty: string, compact = false): string {
+export interface SortHead {
+  current: Sort;
+  href: (s: Sort) => string;
+}
+
+/**
+ * A column header that sorts the list. A plain link (the board has no scripts): clicking the sorted
+ * column again flips it. aria-sort tells screen readers which column the list is sorted by.
+ */
+function sortTh(label: string, sort: SortHead | undefined, desc: Sort, asc: Sort | null): string {
+  if (!sort) return `<th>${label}</th>`;
+  const on = sort.current === desc ? 'descending' : asc && sort.current === asc ? 'ascending' : null;
+  const next = sort.current === desc && asc ? asc : desc;
+  const arrow = on === 'descending' ? ' ↓' : on === 'ascending' ? ' ↑' : '';
+  const what = SORT_LABEL[next].toLowerCase();
+  return `<th${on ? ` aria-sort="${on}"` : ''}><a class="th-sort" href="${h(sort.href(next))}" title="Sort: ${h(what)}">${label}<span aria-hidden="true">${arrow}</span><span class="sr"> (sort ${h(what)})</span></a></th>`;
+}
+
+export function jobTable(rows: string, empty: string, compact = false, sort?: SortHead): string {
   const head = compact
     ? '<th>Job</th><th>Status</th><th>City</th><th>Route</th><th>Amount</th><th>Actions</th>'
-    : '<th>Job</th><th>Status</th><th>City</th><th>Route</th><th>Package</th><th>Amount</th><th>Sender → recipient</th><th>Actions</th>';
+    : `${sortTh('Job', sort, 'newest', 'oldest')}<th>Status</th><th>City</th><th>Route</th>${sortTh('Package', sort, 'distance_desc', null)}${sortTh('Amount', sort, 'amount_desc', 'amount_asc')}<th>Sender → recipient</th><th>Actions</th>`;
   return `<div class="table-wrap jobs-wrap"><table class="jobs"><thead><tr>${head}</tr></thead>
 <tbody>${rows || `<tr><td colspan="${compact ? 6 : 8}" class="empty">${empty}</td></tr>`}</tbody></table></div>`;
 }
-
