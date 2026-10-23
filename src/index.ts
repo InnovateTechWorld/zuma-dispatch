@@ -1,6 +1,6 @@
 import { loadConfig } from './config';
 import { cleanupTestRun } from './admin/testCleanup';
-import { runWatchdog } from './chord/watchdog';
+import { runWatchdogLoop } from './chord/watchdog';
 import type { Env } from './env';
 import { bearerToken, secretsMatch } from './lib/auth';
 import { log } from './lib/log';
@@ -34,7 +34,7 @@ export default {
         .run()
         .catch(() => undefined);
     ctx.waitUntil(
-      runWatchdog(env)
+      runWatchdogLoop(env)
         .then(async (r) => {
           if (r.actions.length) log('info', 'watchdog', { checked: r.checked, actions: r.actions.join(' ; ').slice(0, 900) });
           const failed = r.actions.some((x) => /^list failed/.test(x)) || r.actions.includes('skipped: CHORD_API_KEY not set');

@@ -15,13 +15,14 @@ import { acknowledgeHandover, chord, chordError, noticeConfig, sendsAllowed, typ
  *    "Track live: https://zuma.dispatch/track/ZD-F74B2". A sent message can't be taken back, so any link
  *    in Zuma's replies that we didn't issue is flagged on the board for a person to correct.
  *
- * Runs every minute (cron). Reads only chats whose last message is Zuma's, from the last 15 minutes, and
- * leaves 25 s for hand_to_team's own take-over (it waits up to 20 s for the reply to post). Every action
- * is recorded once per Zuma reply (watchdog_events), so nothing is done twice.
+ * Runs every minute (cron), checking 5 times 12 s apart (runWatchdogLoop). Reads only chats whose last
+ * message is Zuma's, from the last 15 minutes, and waits 8 s after that message; a chat where hand_to_team
+ * ran is left to it. Every action is recorded once per Zuma reply (watchdog_events), so nothing runs twice.
  */
 const THREAD_RE = /^[0-9a-f]{24}$/;
 const WINDOW_MS = 15 * 60_000;
-const GRACE_MS = 25_000;
+/** hand_to_team takes over 2–6 s after Zuma's reply posts, and runs are skipped when it was called, so a short wait is enough. */
+const GRACE_MS = 8_000;
 const MAX_THREADS = 6;
 
 export interface WatchTurn {
@@ -51,13 +52,17 @@ export function wantsPerson(text: string): boolean {
 export function promisedPerson(text: string): boolean {
   const t = text.toLowerCase();
   return (
-    /passed (this|it|your [a-z]+) (on )?to (our|the) (support )?team/.test(t) ||
+    // "I've passed this to our support team", "I'm passing your refund request for ZD-… to our team now"
+    /\b(pass(ed|ing)?|forward(ed|ing)?|escalat(ed|ing)|hand(ed|ing)) (this|it|that|your [a-z ]{1,30}?)( on| over)?( for zd-[0-9a-z]{5})? to (our|the|a) (support |customer care |dispatch )?(team|dispatcher|person|colleague)/.test(t) ||
+    /\b(dispatcher|teammate|team member|colleague|our team|support team)\b[^.]{0,40}\b(take it|take over|follow up|pick (it|this) up|get back|reach out|contact you)/.test(t) ||
     /\b(person|someone|somebody|teammate|team member|human|agent|dispatcher|support team|our team)\b[^.]{0,60}\b(will|is going to|'ll|shall)\b[^.]{0,30}\b(take over|reply|respond|help|contact|reach out|get back|be with you|join)/.test(t) ||
     /\b(connecting|transferring|handing) you (to|over to)\b/.test(t)
   );
 }
 
-/** Links we issue: Paystack checkout, Google Maps pins, and this server. Anything else was made up. */
+export const OUR_MAP_LINK = /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=-?\d{1,3}\.\d{5},-?\d{1,3}\.\d{5}$/;
+
+/** Links we issue: Paystack checkout, our exact Google Maps pin, and this server. Anything else was made up. */
 export function foreignLinks(text: string, ownHosts: string[]): string[] {
   const urls = text.match(/https?:\/\/[^\s)<>"']+/gi) ?? [];
   return urls.filter((u) => {
@@ -71,8 +76,9 @@ export function foreignLinks(text: string, ownHosts: string[]): string[] {
       return true; // not even a valid URL
     }
     if (host === 'checkout.paystack.com' || host === 'paystack.com' || host === 'paystack.shop') return false;
-    if ((host === 'www.google.com' || host === 'google.com') && path.startsWith('/maps')) return false;
-    if (host === 'maps.google.com' || host === 'maps.app.goo.gl') return false;
+    // Only the exact pin link our server makes (src/business/tracking.ts mapUrl). On 23 Oct Zuma wrote its own
+    // "https://maps.google.com/?q=6.601,3.351&zuma=ZD-F92SC" with made-up coordinates; that must be flagged.
+    if (OUR_MAP_LINK.test(u.replace(/[.,;:!?]+$/, ''))) return false;
     return !ownHosts.includes(host);
   });
 }
@@ -94,6 +100,18 @@ export function lastExchange(turns: WatchTurn[]): { customer: WatchTurn | null; 
   return { customer: sorted[i]!, replies: after.filter(isAgent), handled: after.some((t) => !isAgent(t)) };
 }
 
+/**
+ * The "Why" a dispatcher reads on the board, in plain words: what the customer wants, the job, their own
+ * words, and that the server (not Zuma) handed it over.
+ */
+export function reasonFor(customerText: string, turns: WatchTurn[], told: boolean): string {
+  const t = customerText.toLowerCase();
+  const what = /refund|money back|chargeback|reverse/.test(t) ? 'Refund request' : /complain/.test(t) ? 'Complaint' : 'Customer asked for a person';
+  const job = turns.map((x) => /\bZD-[0-9A-Z]{5}\b/.exec(x.content?.text ?? '')?.[0]).filter(Boolean).pop();
+  const said = customerText.replace(/\s+/g, ' ').trim().slice(0, 120);
+  return `${what}${job ? ` for ${job}` : ''}. Customer said: "${said}". Handed over automatically because Zuma didn't${told ? ' (the customer was told a person will reply)' : ''}.`;
+}
+
 export type WatchAction =
   | { kind: 'handover'; told: boolean; why: string; customerText: string; replyTs: number }
   | { kind: 'foreign_link'; urls: string[]; replyTs: number };
@@ -111,7 +129,7 @@ export function decide(turns: WatchTurn[], ownHosts: string[]): WatchAction[] {
     out.push({
       kind: 'handover',
       told,
-      why: told ? 'Zuma told the customer a person would help but did not hand over' : 'the customer asked for a refund or a person and Zuma did not hand over',
+      why: reasonFor(customer.content?.text ?? '', turns, told),
       customerText: (customer.content?.text ?? '').slice(0, 160),
       replyTs,
     });
@@ -129,7 +147,34 @@ async function once(db: D1Database, threadId: string, replyTs: number, kind: str
   return r.meta.changes === 1;
 }
 
-export async function runWatchdog(env: Env, now = Date.now()): Promise<{ checked: number; actions: string[] }> {
+/**
+ * Cloudflare runs a cron at most once a minute, so each run checks 5 times, 12 s apart: a promised person is
+ * handed over within about 8–20 s instead of up to 85 s. A chat is only re-read when it has a new message
+ * (`seen`), so a quiet minute costs 5 list calls and nothing else, well inside the key's 30 a minute.
+ */
+export async function runWatchdogLoop(
+  env: Env,
+  opts: { rounds?: number; everyMs?: number; sleep?: (ms: number) => Promise<void>; clock?: () => number } = {},
+): Promise<{ checked: number; actions: string[] }> {
+  const rounds = opts.rounds ?? 5;
+  const everyMs = opts.everyMs ?? 12_000;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const clock = opts.clock ?? Date.now;
+  const seen = new Map<string, number>();
+  const all: string[] = [];
+  let checked = 0;
+  for (let i = 0; i < rounds; i++) {
+    const r = await runWatchdog(env, clock(), seen);
+    checked += r.checked;
+    all.push(...r.actions);
+    // Nothing to do without a key or on a local server: don't keep asking.
+    if (r.actions.some((x) => x.startsWith('skipped'))) break;
+    if (i < rounds - 1) await sleep(everyMs);
+  }
+  return { checked, actions: [...new Set(all)] };
+}
+
+export async function runWatchdog(env: Env, now = Date.now(), seen?: Map<string, number>): Promise<{ checked: number; actions: string[] }> {
   const cfg = noticeConfig(env);
   if (!cfg) return { checked: 0, actions: ['skipped: CHORD_API_KEY not set'] };
   const origin = env.PUBLIC_ORIGIN?.trim() || 'https://zuma-dispatch.obimz123.workers.dev';
@@ -145,6 +190,10 @@ export async function runWatchdog(env: Env, now = Date.now()): Promise<{ checked
     .slice(0, MAX_THREADS);
   const actions: string[] = [];
   for (const t of recent) {
+    if (seen) {
+      if (seen.get(t.id) === t.last_turn_at) continue; // no new message since this run last read it
+      seen.set(t.id, t.last_turn_at ?? 0);
+    }
     const turns = await chord<{ turns?: WatchTurn[] }>(cfg, `/v1/threads/${t.id}/turns?limit=12`, 5000);
     if (!turns.ok) {
       actions.push(`${t.id}: turns failed ${chordError(turns)}`);
@@ -164,7 +213,7 @@ export async function runWatchdog(env: Env, now = Date.now()): Promise<{ checked
         .first();
       if (recentHandover) continue;
       if (!(await once(env.DB, t.id, a.replyTs, 'handover', a.why, now))) continue;
-      const reason = `${HANDOVER_REASON_PREFIX}safety net: ${a.why}. Customer said: "${a.customerText}"`.slice(0, 300);
+      const reason = `${HANDOVER_REASON_PREFIX}${a.why}`.slice(0, 300);
       const take = await chord<ThreadRow>(cfg, `/v1/threads/${t.id}/take-over`, 6000, { reason });
       if (!take.ok) {
         const outcome = take.failure === 'http' && take.status === 409 ? 'already with a person' : `take-over failed: ${chordError(take)}`;

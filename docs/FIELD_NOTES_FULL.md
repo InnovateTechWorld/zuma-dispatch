@@ -954,3 +954,45 @@ enforces, would remove this whole class of error.
   enforced by Chord.
 - Or offer an output check that blocks links not returned by a tool. Prompting alone cannot guarantee
   either, on a model the builder can't choose.
+
+## 28. The safety net worked but was slow, and one of our own instructions was the likely trigger
+
+**What happened (23 Oct 2026, 13:51–13:57, ZD-F92SC, skill v20).**
+- After the payment was confirmed, Zuma again called no tools:
+  - it sent a made-up `https://maps.google.com/?q=6.601,3.351&zuma=ZD-F92SC`;
+  - it answered "i want a refund" with its own "I'm passing your refund request… to our team now",
+    without `hand_to_team`.
+- The safety net (#27) handed the chat over at 13:56:31, about a minute after the request.
+- It missed that Zuma had already told the customer, so the customer also got our "You're now connected"
+  line.
+- The board's "Why" read "safety net: the customer asked for a refund or a person and Zuma did not hand
+  over".
+
+**How we found the cause.**
+- **The trigger.** In all three chats that went wrong, the last tool call was `verify_payment`
+  returning paid, and its instruction began "It is paid. **Do not call any more tools after this one.**"
+  The model kept to that for the rest of the conversation.
+- **The delay.** A Cloudflare cron fires at most once a minute, and the safety net also waited 25 s after
+  Zuma's reply.
+- **The second message.** The promise patterns knew "passed this to our support team" but not "passing
+  your refund request to our team" or "a dispatcher will take it from here".
+- **The map link.** The link check accepted any Google Maps URL.
+
+**Fix.**
+- **The paid instruction** now limits itself to that reply, and says later requests still need their
+  tools: rider → `get_job_status`, refund → `hand_to_team`.
+- **Faster checks:** the safety net checks 5 times a minute, 12 s apart, and waits 8 s instead of 25 s.
+  A chat where `hand_to_team` ran is left to it, and a chat is re-read only when it has a new message.
+  Worst case drops from about 85 s to about 20 s.
+- **Promise detection** now covers passing, forwarding and handing over, and a dispatcher or team taking
+  it, following up or getting back.
+- **Map links:** only the exact pin our server makes
+  (`google.com/maps/search/?api=1&query=<lat>,<lng>`, 5 decimals) passes. Anything else raises the
+  board alert.
+- **The board's "Why"** now reads, for example: 'Refund request for ZD-F92SC. Customer said: "i want a
+  refund". Handed over automatically because Zuma didn't (the customer was told a person will reply).'
+
+**What would help (Chord).**
+- A `chat.completed` webhook that carries the thread id and the reply text would let the safety net act
+  in seconds instead of polling. Today it carries only `session_id` and `teammate_id`.
+- Required tools per kind of request (#27) would remove the need for the safety net altogether.

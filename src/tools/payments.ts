@@ -222,7 +222,10 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
 /** Pickup timing worded for after payment (the quote-time wording says "as soon as payment is confirmed"). */
 // ------------------------------------------------------------------ verify_payment
 /** In a live test the model replied only "Your delivery is paid and booked", dropping the rider and the code. */
-const PAID_TODO = 'It is paid. Do not call any more tools after this one. Reply with message_for_customer word for word as your whole reply, even if an earlier message in the chat seems to say the same: it has the payment confirmation, the rider and the handover code the customer needs. Do not shorten it, skip it or replace it with your own summary. Then answer anything else they asked.';
+// 23 Oct 2026: this used to say "Do not call any more tools after this one". In both failing chats Zuma called no
+// tool again for the rest of the conversation (an invented rider position, a promised person never called).
+// It now limits itself to this reply and says later requests still need their tools.
+const PAID_TODO = 'It is paid. For this reply, call nothing else: reply with message_for_customer word for word as your whole reply, even if an earlier message in the chat seems to say the same: it has the payment confirmation, the rider and the handover code the customer needs. Do not shorten it, skip it or replace it with your own summary. Later messages still need their tools: where the rider is → get_job_status, a refund or a person → hand_to_team.';
 /**
  * Paystack's gateway_response for a decline ("Declined", "Insufficient Funds") is useful to the
  * customer; anything long, technical or odd-looking is left out rather than shown.

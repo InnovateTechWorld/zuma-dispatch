@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearChordCache } from '../src/chord/notices';
-import { decide, foreignLinks, lastExchange, promisedPerson, runWatchdog, wantsPerson, type WatchTurn } from '../src/chord/watchdog';
+import { decide, foreignLinks, lastExchange, OUR_MAP_LINK, promisedPerson, reasonFor, runWatchdog, runWatchdogLoop, wantsPerson, type WatchTurn } from '../src/chord/watchdog';
+import { mapUrl } from '../src/business/tracking';
 import { alertsFrom, tabBadges, type Signals } from '../src/web/signals';
 import { d1 } from './helpers/sqliteD1';
 
@@ -29,7 +30,7 @@ describe('what counts as asking for a person', () => {
 
 describe("what counts as Zuma promising a person", () => {
   it('promises', () => {
-    for (const t of ['Got it, Ada. A person from our team will take over from here to help with your refund.', "I've passed this to our support team. Someone from the team will reply here shortly.", 'Someone from our team will get back to you shortly.', "I'm connecting you to our support team."])
+    for (const t of ["I'm passing your refund request for ZD-F92SC to our team now. A dispatcher will take it from here and follow up with you in this chat.", 'I have forwarded this to our support team.', 'Got it, Ada. A person from our team will take over from here to help with your refund.', "I've passed this to our support team. Someone from the team will reply here shortly.", 'Someone from our team will get back to you shortly.', "I'm connecting you to our support team."])
       expect(promisedPerson(t), t).toBe(true);
   });
   it('not promises', () => {
@@ -43,7 +44,11 @@ describe('links we did not issue', () => {
     expect(foreignLinks('Track live: https://zuma.dispatch/track/ZD-F74B2', OWN)).toEqual(['https://zuma.dispatch/track/ZD-F74B2']);
     expect(foreignLinks('Track live: https://zumadispatch.example/track/ZD-5MHJZ.', OWN)).toHaveLength(1);
     expect(foreignLinks('Pay here:\nhttps://checkout.paystack.com/em37bgt7tmzbf4y', OWN)).toEqual([]);
-    expect(foreignLinks('Live map: https://www.google.com/maps/search/?api=1&query=6.59,3.35', OWN)).toEqual([]);
+    expect(foreignLinks(`Live map: ${mapUrl({ lat: 6.59215, lng: 3.37285 })}`, OWN)).toEqual([]); // our own pin link
+    expect(OUR_MAP_LINK.test(mapUrl({ lat: -1.5, lng: 103.12345 }))).toBe(true);
+    // 23 Oct: Zuma wrote its own Google link with made-up coordinates and an extra parameter.
+    expect(foreignLinks('Live map: https://maps.google.com/?q=6.601,3.351&zuma=ZD-F92SC', OWN)).toHaveLength(1);
+    expect(foreignLinks('https://www.google.com/maps/search/?api=1&query=6.59,3.35', OWN)).toHaveLength(1); // not our 5-decimal format
     expect(foreignLinks('Receipt: https://zuma-dispatch.obimz123.workers.dev/pay/return?reference=x', OWN)).toEqual([]);
     expect(foreignLinks('https://www.google.com/search?q=zuma', OWN)).toHaveLength(1); // Google, but not Maps
     expect(foreignLinks('no links here', OWN)).toEqual([]);
@@ -118,9 +123,9 @@ describe('runWatchdog against Chord (mocked) and SQLite', () => {
     await runWatchdog(envWith(env), NOW);
     expect(calls.some((c) => c.includes('take-over'))).toBe(false);
   });
-  it('waits 25 s after the reply (hand_to_team may still be taking over)', async () => {
+  it('waits 8 s after the reply (hand_to_team may still be taking over)', async () => {
     const { env } = d1();
-    const calls = chordApi([customer('i want a refund'), zuma('A person will take over.')], { lastAt: NOW - 10_000 });
+    const calls = chordApi([customer('i want a refund'), zuma('A person will take over.')], { lastAt: NOW - 5_000 });
     await runWatchdog(envWith(env), NOW);
     expect(calls.filter((c) => c.includes('/turns'))).toEqual([]);
   });
@@ -153,4 +158,50 @@ it('a local server never touches real chats', async () => {
   const local = { ...env, CHORD_API_KEY: 'chord_live_' + 'x'.repeat(43), CHORD_API_BASE: 'https://chord.test', CHORD_WORKSPACE_ID: 'ws-1', PUBLIC_ORIGIN: 'http://127.0.0.1:8787' } as never;
   expect(await runWatchdog(local, 10_000_000)).toEqual({ checked: 0, actions: ['skipped: local server'] });
   expect(calls).toEqual([]);
+});
+
+describe('the reason a dispatcher reads', () => {
+  it('plain words: what, which job, their words, and that the server handed it over', () => {
+    const turns = [zuma('Payment received: ₦1,950 for ZD-F92SC. Thank you!'), customer('i want a refund'), zuma("I'm passing your refund request for ZD-F92SC to our team now.")];
+    expect(reasonFor('i want a refund', turns, true)).toBe('Refund request for ZD-F92SC. Customer said: "i want a refund". Handed over automatically because Zuma didn\'t (the customer was told a person will reply).');
+    expect(reasonFor('let me talk to a person', [customer('let me talk to a person')], false)).toBe('Customer asked for a person. Customer said: "let me talk to a person". Handed over automatically because Zuma didn\'t.');
+    expect(reasonFor('I want to complain about the rider', [], false)).toMatch(/^Complaint\./);
+  });
+});
+
+describe('checking every 12 s within a minute', () => {
+  const T = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+  it('re-reads a chat only when it has a new message, and acts once', async () => {
+    const { env } = d1();
+    const lastAt = { v: 9_990_000 };
+    const turns: WatchTurn[] = [customer('hello')];
+    const calls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input); calls.push(url.replace('https://chord.test', ''));
+      if (url.includes('/v1/threads?')) return Response.json({ threads: [{ id: T, control_state: 'agent_active', last_turn_direction: 'outbound', last_turn_at: lastAt.v }] });
+      if (url.endsWith('/turns?limit=12')) return Response.json({ turns });
+      if (url.endsWith('/take-over')) return Response.json({ id: T, control_state: 'human_active' });
+      return Response.json({ id: 't', delivery_status: 'sent' }, { status: 201 });
+    });
+    let t = 10_000_000; let round = 0;
+    const env2 = { ...env, CHORD_API_KEY: 'chord_live_' + 'x'.repeat(43), CHORD_API_BASE: 'https://chord.test', CHORD_WORKSPACE_ID: 'ws-1', PUBLIC_ORIGIN: 'https://zuma-dispatch.obimz123.workers.dev' } as never;
+    const r = await runWatchdogLoop(env2, {
+      rounds: 4, everyMs: 12_000, clock: () => t,
+      sleep: async (ms) => {
+        t += ms; round++;
+        if (round === 2) { turns.push(customer('i want a refund'), zuma('Refunds take a few days.')); lastAt.v = t - 9_000; } // new reply arrives
+      },
+    });
+    expect(calls.filter((c) => c.includes('/v1/threads?'))).toHaveLength(4);
+    expect(calls.filter((c) => c.endsWith('/turns?limit=12'))).toHaveLength(2); // round 1 (first look) and round 3 (new message)
+    expect(calls.filter((c) => c.endsWith('/take-over'))).toHaveLength(1);
+    expect(r.actions).toEqual([`${T}: handed over (sent)`]);
+  });
+  it('stops early on a local server', async () => {
+    const { env } = d1();
+    let slept = 0;
+    const r = await runWatchdogLoop({ ...env, CHORD_API_KEY: 'chord_live_' + 'x'.repeat(43), CHORD_WORKSPACE_ID: 'ws-1', PUBLIC_ORIGIN: 'http://127.0.0.1:8787' } as never, { sleep: async () => { slept++; } });
+    expect(r.actions).toEqual(['skipped: local server']);
+    expect(slept).toBe(0);
+  });
 });
