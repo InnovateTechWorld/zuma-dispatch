@@ -1,5 +1,7 @@
 # Zuma Dispatch: a WhatsApp delivery-booking agent on Chord
 
+Built by **Joshua Obimba** for the TSG Labs build exercise (Forward-deployed Engineering).
+
 **Zuma** is a Chord teammate for a made-up same-day courier in Abuja and Lagos. A customer writes on
 WhatsApp with a pickup and a drop-off, in landmarks, street names or postcodes. Zuma then:
 1. finds both places and checks them with the customer;
