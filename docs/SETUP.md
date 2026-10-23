@@ -32,7 +32,7 @@ docs/, notes/               architecture, edge cases, field notes, research
 | `create_dispatch_job(quote_id, names, recipient_phone, customer_confirmed: true)` | Reserves the job and returns its id (the handover code comes only after payment) | Needs explicit yes; one job per quote; amount copied from quote; phone normalised |
 | `create_payment_link(job_id, method?)` | `link`: Paystack checkout (opens in WhatsApp; card, transfer, USSD). `bank_transfer`: one-time account number, bank and exact amount sent in the chat (30 min) | Reuses open details; checks Paystack first; timeout-safe references; warns if both methods are open |
 | `verify_payment(job_id)` | Asks Paystack; `paid` only if status + amount + currency + reference match | Compare-and-set; double payment / paid-after-cancel → human review |
-| `get_job_status(job_id \| recipient_phone + sender_name)` | Status set by dispatchers, in plain words; finds the customer's latest job without an id | Read-only; the lookup needs both phone and name and never returns the handover code |
+| `get_job_status(job_id \| recipient_phone + sender_name)` | Status set by dispatchers, in plain words, with the simulated rider position and the job's live tracking link (`/t/…`); finds the customer's latest job without an id | Read-only; the lookup needs both phone and name and never returns the handover code |
 | `cancel_job(job_id, reason)` | Cancels an unpaid job | Verifies Paystack first; paid jobs go to a human |
 | `hand_to_team(reason, customer_message, job_id?)` | Returns the line Zuma sends, then hands the chat to a person once that reply is posted | Matches exactly one recent chat or none; takes over within 20 s; Chord's built-in handover is the fallback |
 
@@ -85,7 +85,7 @@ Test it, no Chord credits needed:
 npm test                              # 311 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config, board sign-in, Home alerts, theme, charts, sheet mirror, handovers
 ```
 ```bash
-scripts/mcp-smoke.sh                  # protocol, auth, board sign-in, CSRF, webhook checks (25)
+scripts/mcp-smoke.sh                  # protocol, auth, board sign-in, CSRF, tracking-link and webhook checks (26)
 ```
 ```bash
 python3 scripts/e2e.py                # booking, payment, webhooks, lookup, lost-context guards and edge cases against real providers (54)
@@ -130,6 +130,11 @@ npx wrangler secret bulk secrets.json   # JSON of the secrets in .env.example; d
 ```bash
 npm run deploy && scripts/mcp-smoke.sh https://<your-worker>.workers.dev
 ```
+
+Set `PUBLIC_ORIGIN` in `wrangler.jsonc` to the Worker's address first. Tracking links are built from it,
+and the every-minute safety net (the cron trigger in `wrangler.jsonc`) acts only when it matches, so a
+local `npm run dev` never touches real chats. The safety net also needs `CHORD_API_KEY` (below); the
+board's System tab shows when it last ran.
 
 ## Webhooks (payment and escalation alerts)
 

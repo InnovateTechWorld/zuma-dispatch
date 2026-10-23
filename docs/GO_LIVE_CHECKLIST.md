@@ -69,6 +69,10 @@ WhatsApp is a **channel** in Chord, set up in the dashboard, not in our code:
    dispatcher out.
 8. Point the sheet mirror at the owner's real sheet (a separate one from testing).
 9. Revoke the unused narrow Chord key ("zuma-dispatch server: payment notices").
+10. **Own domain:** set `PUBLIC_ORIGIN` (wrangler.jsonc) to the live address. Tracking links use it, and
+    the safety net only acts when it matches the server it runs on. A new address or a rotated
+    `MCP_BEARER_TOKEN` breaks tracking links already sent, so do both before the first real booking.
+11. Check the **Safety net** row on the board's System tab says it ran in the last few minutes.
 
 ## 3. First-day test script on WhatsApp (about 15 minutes)
 
@@ -82,6 +86,7 @@ From a second phone, message the business number:
    - The board's job page should say *Chord reports it delivered*.
    - If it says `record_only` or `failed`, read the reason there.
 4. Ask "where is my package?" in a **new** chat: it is found by your phone, without the job id.
+   Then ask "where is the rider?": the link in the reply should open Google Maps at the rider.
 5. Ask for a refund: Zuma says it has passed this to the team, and the chat appears on the board under
    **Handovers**.
 6. On the board, mark the job dispatched → delivered, and ask again: the agent reports it.

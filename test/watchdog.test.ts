@@ -143,7 +143,7 @@ describe('runWatchdog against Chord (mocked) and SQLite', () => {
     expect((await runWatchdog(envWith(env), NOW + 60_000)).actions).toEqual([]);
     const s = { waiting: 0, chord: 'ok', chordDetail: null, review: 0, ready: 0, out: 0, awaiting: 0, stuck: 0, noticeFailed: 0, sheet: { state: 'ok', detail: null, at: 1 }, tools24h: { calls: 1, errors: 0, faults: 0 }, webhook: true, foreignLinks: { n: 1, thread: T } } as Signals;
     expect(alertsFrom(s)[0]).toMatchObject({ key: 'links', tone: 'urgent', href: `/board/handovers/${T}` });
-    expect(tabBadges(s).system.n).toBe(1);
+    expect(tabBadges(s).system?.n).toBe(1);
   });
   it('without a Chord key it does nothing', async () => {
     const { env } = d1();

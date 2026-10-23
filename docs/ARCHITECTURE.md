@@ -8,10 +8,12 @@
                         managed model                                             ├─ /mcp        8 tools (stateless JSON-RPC), incl. hand_to_team
                                                                                   ├─ /mcp/test-cleanup  test scripts remove their own runs (bearer)
                                                                                   ├─ /pay/return Paystack redirect → verify → "payment received"
+                                                                                  ├─ /t/ZD-…-<code>  customer's live tracking link → Google Maps at the rider's spot
                                                                                   ├─ /board      admin board: sign-in, overview charts, jobs, job pages
                                                                                   ├─ /hooks/paystack  payment notifications (HMAC-SHA512)
                                                                                   ├─ /hooks/chord     handover alerts (HMAC-SHA256)
                                                                                   ├─ → Chord API     "payment received" into the customer's chat (scheduled MESSAGE)
+                                                                                  ├─ cron (every minute)  safety net: hands over missed handovers, flags made-up links
                                                                                   └─ /health     config + DB check
                                                                                        │
           ┌──────────────────────┬─────────────────────┬──────────────────┬──────────┴─────────┐
@@ -121,7 +123,9 @@ times are epoch ms (UTC; displayed as WAT = UTC+1, no DST).
 ## Configuration
 
 `wrangler.jsonc` vars (non-secret): `GEOCODER_CHAIN`, `GEOCODER_MODE`, `ROUTER_CHAIN`,
-`QUOTE_TTL_MINUTES`, `PROVIDER_TIMEOUT_MS`, `BUSINESS_NAME`, `BUSINESS_CITY`. Secrets:
+`QUOTE_TTL_MINUTES`, `PROVIDER_TIMEOUT_MS`, `BUSINESS_NAME`, `BUSINESS_CITY`, `PUBLIC_ORIGIN` (the address
+used in tracking links; the safety net acts only when it matches the server it runs on, so a local copy
+never touches real chats). Secrets:
 `PAYSTACK_TEST_SECRET_KEY`, `NIPOST_API_KEY`, `MCP_BEARER_TOKEN`, `BOARD_TOKEN`, optional
 `OPENROUTE_BASIC_KEY`, `GOOGLE_MAPS_API_KEY`, `CHORD_WEBHOOK_SECRET`, `GOOGLE_SHEET_ID`,
 `GOOGLE_SERVICE_ACCOUNT_JSON`, `SHEET_MIRROR_ALLOW_LOCAL` (local only; leave unset), `CHORD_API_KEY` and

@@ -26,7 +26,7 @@ describe('Home alerts', () => {
     const a = alertsFrom({ ...quiet, waiting: null, chord: 'unreachable', chordDetail: 'chord_timeout' });
     expect(a.map((x) => x.key)).toEqual(['chord']);
     expect(a[0]!.detail).toContain('chord_timeout');
-    expect(tabBadges({ ...quiet, waiting: null, chord: 'unreachable' }).system.n).toBe(1);
+    expect(tabBadges({ ...quiet, waiting: null, chord: 'unreachable' }).system?.n).toBe(1);
   });
   it('flags misconfiguration and failed tools, and badges the right tabs', () => {
     const s = { ...quiet, chord: 'invalid' as const, waiting: null, tools24h: { calls: 9, errors: 3, faults: 2 }, stuck: 1, noticeFailed: 1 };

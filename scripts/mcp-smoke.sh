@@ -52,6 +52,7 @@ check "sign-in blocks cross-site POST"    'HTTP 403'  "$(curl -sS -m 15 -o /dev/
 check "browsers never get a password popup" 'no-challenge' "$(curl -sS -m 15 -D - -o /dev/null -u x:wrong "$BASE/board" | grep -qi '^www-authenticate' && echo challenge || echo no-challenge)"
 check "scripts can use Basic auth"        'HTTP 200'  "$(curl -sS -m 15 -o /dev/null -u "dispatcher:${BOARD_TOKEN:-x}" "$BASE/board" -w 'HTTP %{http_code}')"
 check "board blocks cross-site POST (CSRF)" 'HTTP 403'      "$(curl -sS -m 15 -u "dispatcher:${BOARD_TOKEN:-x}" -X POST "$BASE/board/jobs/ZD-00000" -H 'Origin: https://evil.example' -d 'action=dispatch&version=1' -w '\nHTTP %{http_code}')"
+check "made-up tracking link -> 404"     'HTTP 404'  "$(curl -sS -m 15 -o /dev/null "$BASE/t/ZD-AAAAA-0123456789" -w 'HTTP %{http_code}')"
 check "pay/return with unknown reference -> 404" 'HTTP 404' "$(curl -sS -m 15 "$BASE/pay/return?reference=ZD-NOPE0-1" -w '\nHTTP %{http_code}')"
 WH="$(curl -sS -m 15 -X POST "$BASE/hooks/chord" -H 'Content-Type: application/json' -H 'X-Chord-Signature: sha256=00' -d '{}' -w '\nHTTP %{http_code}')"
 if [[ "$WH" == *"HTTP 503"* ]]; then echo "  SKIP  chord webhook (CHORD_WEBHOOK_SECRET not set)"; else check "chord webhook rejects a bad signature" 'HTTP 401' "$WH"; fi

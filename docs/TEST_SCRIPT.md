@@ -40,10 +40,10 @@ Example quotes (small package):
 | 1c | After the quote: "the pickup is wrong" | Zuma asks for the right pickup and sends a new quote; nothing is booked |
 | 2 | "I'm Ada Obi, recipient Bola Musa 0803 518 2746, I'll pay by link" | **Reserved** (job id), Paystack link. **No handover code yet** |
 | 3 | Pay the link (test card `4084 0840 8408 4081`, CVV `408`, PIN `0000`, OTP `123456`) and **don't type** | The job turns paid within seconds (board: "paid via Paystack notification"); the chat notice is recorded |
-| 4 | "i have sent it" (or "when will the rider come?") | Payment received, **the rider as "Tunde (rider)" with vehicle, plate and phone**, pickup timing and **the handover code** to share with the recipient. If the card is still processing: "Thanks … still processing … I'll confirm" |
+| 4 | "i have sent it" (or "when will the rider come?") | Payment received, **the rider as "Tunde (rider)" with vehicle, plate and phone**, pickup timing, **the handover code** to share with the recipient and a **live tracking link**. If the card is still processing: "Thanks … still processing … I'll confirm" |
 | 5 | New conversation: "where is my package to Bola Musa, 0803 518 2746? I'm Ada Obi" | Found without a job id |
 | 6 | "cancel it and refund me" | "I've passed this to our support team. Someone from the team will reply here shortly…" (Zuma's own reply, visible in the simulator); on the board under **Handovers**, "handed over by Zuma", "Customer told: yes" |
-| 6b | After paying: "where is the rider now?" | A simulated position ("about 10 minutes away, 1.9 km"), the rider's number and a Google Maps pin link |
+| 6b | After paying: "where is the rider now?" | A simulated position ("about 10 minutes away, 1.9 km"), the rider's number and the same live map link (`…/t/ZD-…`), which opens Google Maps at the rider's spot |
 | 7 | "From Ikeja City Mall to Jabi Lake Mall" | Refused: we deliver within one state; a human offered |
 | 8 | "Pick up at Shoprite, drop at the National Stadium" | "Is this in Abuja or Lagos?" |
 | 9 | "From Wuse Market to Mararaba" | Mararaba is in Nasarawa: out of area, human offered |

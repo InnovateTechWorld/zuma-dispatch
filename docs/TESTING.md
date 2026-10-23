@@ -7,10 +7,10 @@ real Paystack test mode, and the real Chord teammate in the TSG simulator.
 
 | Suite | Command | Result | Covers |
 |---|---|---|---|
-| Unit | `npm test` | **169 / 169** (7 files) | pricing, payment verdicts, geocoder judgement and timing, phone and postcode parsing, config safety, webhook signatures, Paystack failures, sheet mirror, board sign-in / CSRF / lockout / filters / charts / progress / signed flash, chat notices, postcode areas, FCT + Lagos boundaries (22 towns vs OSM) |
+| Unit | `npm test` | **311 / 311** (20 files) | pricing, payment verdicts, geocoder judgement and timing, phone and postcode parsing, config safety, webhook signatures, Paystack failures, sheet mirror, board sign-in / CSRF / lockout / filters / charts / progress / signed flash, chat notices, postcode areas, FCT + Lagos boundaries (22 towns vs OSM) |
 | Typecheck | `npm run typecheck` | clean | `src/` and `test/` |
-| Smoke | `scripts/mcp-smoke.sh <url>` | **23 / 23** local and production | MCP protocol and auth, Origin guard, tool list, schema refusal, board sign-in redirect, wrong password, no browser password popup, Basic auth for scripts, CSRF, `/pay/return` 404, Chord webhook signature |
-| End to end | `python3 scripts/e2e.py <url>` | **53 / 53** local and production | the whole booking flow over MCP with real geocoders, routers, NIPOST and Paystack test mode: quotes, booking guards, link and bank transfer, verify, cancel, status lookup, webhook signature and replay, sheet sync; Lagos booking, Lagos→Abuja refused, border towns, sandbox postcode |
+| Smoke | `scripts/mcp-smoke.sh <url>` | **26 / 26** local and production | MCP protocol and auth, Origin guard, tool list, schema refusal, board sign-in redirect, wrong password, no browser password popup, Basic auth for scripts, CSRF, `/pay/return` 404, Chord webhook signature |
+| End to end | `python3 scripts/e2e.py <url>` | **54 / 54** local and production | the whole booking flow over MCP with real geocoders, routers, NIPOST and Paystack test mode: quotes, booking guards, link and bank transfer, verify, cancel, status lookup, webhook signature and replay, sheet sync; Lagos booking, Lagos→Abuja refused, border towns, sandbox postcode |
 | Skill check | `python3 scripts/check-skill.py` | OK | skill folder shape, front matter, size; `dist/` ZIP equals the folder |
 
 ## Live checks, by feature
@@ -40,6 +40,8 @@ real Paystack test mode, and the real Chord teammate in the TSG simulator.
 | Demo postcodes in the simulator + retraction fix | 4 runs × 3 turns (2026-10-21, skill v6→v9) | Demo codes read back exactly; ₦3,000 / ₦2,850 quotes; interstate refused. False apologies and retractions in v6–v8 fixed in v9 (FIELD_NOTES_FULL #18). 1.19 credits; 5.64 left |
 | Board handover console | Local browser (desktop, 375 px dark), real Chord data | Inbox listed the 2 chats waiting in Chord; transcript of the ZD-T30FJ refund chat read correctly; job linked; local Send refused by the local guard |
 | Handover end to end (board ↔ simulator) | Production, 2026-10-21 11:25–11:32 | Handover → acknowledgement sent → signed board reply → closing line → hand-back → Zuma took the new request (after the v11 fix). Chord marks every operator message sent; the simulator shows none (its limit). 0 credits for 7 board actions; 4 AI turns = 0.38 |
+| Safety net (missed handover) | Demo take 2, production, 23 Oct | Refund request reached the board in about 4 s through `hand_to_team`. In earlier chats where Zuma skipped the tool, the cron took over within a minute, with a readable reason. Cron outcome ok, 5–7 ms CPU (`wrangler tail`) |
+| Live tracking link | Production, 23 Oct (ZD-MTQ2B) | Real link → 302 to the rider's Google Maps pin; one character changed → 404 |
 | Raw NIPOST postcodes | `resolve_address` over MCP with the real NIPOST API, after the fix (2026-10-20 18:30) | `FC-02-A09-DB-09` → Abuja Municipal, ask for a landmark. `+ Wuse Market` → exact. `FC-03-…` → Bwari (27.9 km), ask for a landmark. Sandbox `FC-01-A01-KP-27` → Abaji (88.8 km), out of area. `LA-01-…` → Agege, Lagos, out of area. `900211` → old code, ask for a landmark. NIPOST's validity check answers `not_found` for every code with our test key, including its own sandbox codes |
 
 ## Not tested, and why

@@ -250,7 +250,7 @@ how it would be built.
 **Why not now.**
 1. **The brief rewards a small agent that works end to end.** It asks for one useful job, done start
    to finish, and says a small agent that works beats an ambitious one that half runs. The customer
-   side took 19 skill versions to get right. A second teammate would add new failure points days before
+   side took 21 skill versions to get right. A second teammate would add new failure points days before
    the deadline.
 2. **The result can't be shown in the simulator.** Its whole value is "rider says delivered → customer
    is told". That message would be pushed into the customer's chat, and the simulator never displays

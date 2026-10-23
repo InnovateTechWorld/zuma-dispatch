@@ -2,7 +2,7 @@
 
 Three problems that cost the most time getting Zuma to work on Chord. Each covers what happened, how I
 found the cause, the fix or workaround, and what I'd change in Chord, its docs or its API. All runs were
-in the TSG WhatsApp simulator, 20–22 Oct 2026, with times in WAT.
+in the TSG WhatsApp simulator, 20–23 Oct 2026, with times in WAT.
 
 Supporting material:
 - [FIELD_NOTES_FULL.md](FIELD_NOTES_FULL.md): the full build log of every problem, including Cloudflare,
@@ -129,6 +129,22 @@ Supporting material:
 
 ## Also hit, briefly
 
+- **Zuma sometimes answered without calling the tool it needed** (23 Oct, three chats; once in the
+  recording).
+  - **What happened:** asked where the rider was, it wrote its own Google Maps link instead of calling
+    `get_job_status`. Asked for a refund, it said "I'm passing your refund request to our team" without
+    calling `hand_to_team`, so nobody was told.
+  - **How I found the cause:** in all three chats the last tool call was `verify_payment`, and its result
+    said "Do not call any more tools after this one". The model obeyed that for the rest of the chat.
+  - **Fix:**
+    - The paid instruction now covers only that reply.
+    - Tool descriptions and the skill (v21) say which tool each kind of request needs.
+    - A once-a-minute safety net reads the chats through Chord's threads API. It hands over any chat where
+      a person was asked for or promised, and puts any link we didn't issue on the board's Home page.
+    - The payment confirmation now carries a real tracking link, so a link copied from the chat works.
+  - **Ask:** let a skill mark a tool as required for a kind of request, and send `chat.completed` with the
+    thread id and reply text so a check like this doesn't have to poll. The full story is in
+    [FIELD_NOTES_FULL #27–29](FIELD_NOTES_FULL.md#27-zuma-answered-without-calling-any-tool-an-invented-rider-position-and-a-person-promised-but-never-called).
 - **Sign-up email in spam.**
   - **What happened:** Chord's code email landed in Gmail Spam ("similar to messages that were
     identified as spam in the past"), and the code expires in 10 minutes. The code screen already said

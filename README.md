@@ -7,9 +7,10 @@ WhatsApp with a pickup and a drop-off, in landmarks, street names or postcodes. 
 3. reserves the job;
 4. takes payment through Paystack (test mode), by card link or bank transfer;
 5. assigns a rider and sends the customer the rider's name, number and a handover code;
-6. answers "where is my rider?".
+6. answers "where is my rider?" with a live map link.
 
-Refunds and complaints go to a person on the dispatcher board.
+Refunds and complaints go to a person on the dispatcher board. A once-a-minute safety net hands a chat
+over if Zuma promised a person but didn't call the handover tool, and flags any link we didn't issue.
 
 **Submission:** [SUBMISSION.md](SUBMISSION.md) has the role, problem statement and links to every
 deliverable. The most important document is [docs/FIELD_NOTES.md](docs/FIELD_NOTES.md).
@@ -19,7 +20,7 @@ deliverable. The most important document is [docs/FIELD_NOTES.md](docs/FIELD_NOT
 | Talk to it | https://chat.tsglabs.dev/c/i43ZuGQReP8Za95unSjXnHmG ([what to type](docs/TEST_SCRIPT.md)) |
 | Tool server (MCP) | `https://zuma-dispatch.obimz123.workers.dev/mcp` (bearer token) · [health](https://zuma-dispatch.obimz123.workers.dev/health) |
 | Dispatcher board | https://zuma-dispatch.obimz123.workers.dev/board (password on request) |
-| Skill | [`skill/zuma-dispatch/`](skill/zuma-dispatch/SKILL.md) (v19 on Chord) |
+| Skill | [`skill/zuma-dispatch/`](skill/zuma-dispatch/SKILL.md) (v21 on Chord) |
 
 Test keys and made-up data only. The server refuses to start with live Paystack or NIPOST keys.
 
@@ -34,6 +35,8 @@ WhatsApp / simulator ── Chord (Zuma: skill + managed model)
                ▼                    ▼                              ▼
    Google Places · Nominatim ·   Paystack (charge.success)     dispatchers / owner
    Photon · ORS · NIPOST · OSRM   Chord (handover)  ── Chord threads API (take over, reply, hand back)
+                                                       ▲
+                     cron, every minute: safety net ───┘ (missed handovers, made-up links)
 ```
 
 The 8 tools are `resolve_address`, `quote_delivery`, `create_dispatch_job`, `create_payment_link`,
@@ -73,7 +76,7 @@ OpenRouteService keys are optional: without them the free OpenStreetMap provider
 
 **Tests (no Chord credits):**
 - `npm test`: 311 unit tests, no network.
-- `scripts/mcp-smoke.sh [url]`: 25 protocol, auth and webhook checks.
+- `scripts/mcp-smoke.sh [url]`: 26 protocol, auth and webhook checks.
 - `python3 scripts/e2e.py [url]`: 54 end-to-end checks against the real providers and Paystack test mode.
 - Both scripts delete their own test data when they finish.
 - What was tested by hand in the simulator: [TESTING.md](docs/TESTING.md).
@@ -83,7 +86,7 @@ OpenRouteService keys are optional: without them the free OpenStreetMap provider
 | | |
 |---|---|
 | [FIELD_NOTES.md](docs/FIELD_NOTES.md) | The three Chord problems that mattered, with screenshots |
-| [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md) | All 28 problems in the order we hit them |
+| [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md) | All 29 problems in the order we hit them |
 | [DECISIONS.md](docs/DECISIONS.md) | Why: NIPOST demo postcodes, geocoders, state boundaries, handover, tracking, hosting |
 | [GO_LIVE.md](docs/GO_LIVE.md) · [checklist](docs/GO_LIVE_CHECKLIST.md) | The owner's half page, and the technical steps |
 | [FEATURES.md](docs/FEATURES.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [EDGE_CASES.md](docs/EDGE_CASES.md) | Detail |
@@ -102,7 +105,7 @@ the work.
 - **Code, tests and docs.** It wrote these, and each was checked against live behaviour. Numbers such as
   CPU per request, provider latency and credits per turn come from real logs.
 - **Debugging the agent.** The model's mistakes in the simulator (phantom corrections, a swallowed
-  payment confirmation, a silent handover) were traced through Chord's thread API and our own tool-call
+  payment confirmation, a silent handover, a made-up map link) were traced through Chord's thread API and our own tool-call
   log. Each was fixed on the server where possible, not only in the prompt.
 - **What stayed with me:**
   - choosing the business and its scope;

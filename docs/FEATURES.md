@@ -345,7 +345,16 @@ once-only, scope errors, Chord failures, local guard, the message text).
    14 days. The first name is enough, the phone can be in any format, and several matches are listed for
    the customer to choose. It shows status and route only, never the handover code.
 
-**Code:** `src/tools/jobs.ts` · **Tests:** `scripts/e2e.py` (Status without a job id).
+**The live tracking link** (`src/business/trackLink.ts`, 23 Oct):
+- The payment confirmation and every `get_job_status` reply carry `…/t/ZD-XXXXX-<code>`. It opens Google
+  Maps at the rider's current (simulated) position, so the same link stays right as the rider moves.
+- The code is an HMAC of the job id keyed on a server secret: a link can't be guessed from a job id. A
+  wrong code or unknown job gets a 404 page; a cancelled job says so; an unpaid one says tracking starts
+  once it's paid.
+- Why it's in the confirmation: the model sometimes answers "where is the rider?" from the chat without
+  calling the tool. With our link already in the chat, what it copies is correct (FIELD_NOTES_FULL #29).
+
+**Code:** `src/tools/jobs.ts`, `src/business/trackLink.ts` · **Tests:** `scripts/e2e.py` (Status without a job id), `test/tracking-reply.test.ts`.
 
 ## 7. Cancellation (`cancel_job`)
 
@@ -648,6 +657,22 @@ and the browser runs in `docs/EDGE_CASES.md` B1–B16.
 - **Board conversation page:** the messages sit in a fixed panel that scrolls on its own and opens at the
   newest one. The reply box stays under it, and the facts sit on the right (on phones, under "About this
   chat").
+
+### 9b. The safety net (`src/chord/watchdog.ts`, 23 Oct)
+- **Why:** the model sometimes promised a person, or was asked for one, without calling `hand_to_team`,
+  so nobody was told (FIELD_NOTES_FULL #27–28).
+- **What it does:** a Cloudflare cron runs every minute and checks four times, 14 s apart. It reads the
+  newest exchange of recently active chats through Chord's threads API. If the customer asked for a
+  refund or a person, or Zuma promised one, and no handover happened, it takes the chat over with a
+  plain reason ("Refund request for ZD-…. Customer said: …") and sends the acknowledgement only if Zuma
+  hadn't already told the customer.
+- **Made-up links:** any link that isn't Paystack's, our own server's or our exact Google Maps pin format
+  raises an alert on the board's Home page.
+- **Safe by design:** each reply is checked once (`watchdog_events`); chats a person holds, or where
+  `hand_to_team` ran, are left alone; a local copy never acts (`PUBLIC_ORIGIN`). A heartbeat
+  (`cron_runs`) shows on the System tab, late or failing. Each run uses 5–7 ms of CPU, under the free
+  plan's 10 ms.
+- **Tests:** `test/watchdog.test.ts`.
 
 ## 10. Conversation memory (Chord-specific behaviour)
 
