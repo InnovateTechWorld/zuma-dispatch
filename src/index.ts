@@ -1,5 +1,6 @@
 import { loadConfig } from './config';
 import { cleanupTestRun } from './admin/testCleanup';
+import { runWatchdog } from './chord/watchdog';
 import type { Env } from './env';
 import { bearerToken, secretsMatch } from './lib/auth';
 import { log } from './lib/log';
@@ -25,6 +26,26 @@ function json(body: unknown, status = 200, extra: Record<string, string> = {}): 
 }
 
 export default {
+  /** Every minute (wrangler.jsonc triggers): hand over chats where a person was promised, flag made-up links. */
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const beat = (ok: boolean, detail: string) =>
+      env.DB.prepare('INSERT INTO cron_runs (name, ran_at, ok, detail) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET ran_at = excluded.ran_at, ok = excluded.ok, detail = excluded.detail')
+        .bind('watchdog', Date.now(), ok ? 1 : 0, detail.slice(0, 500))
+        .run()
+        .catch(() => undefined);
+    ctx.waitUntil(
+      runWatchdog(env)
+        .then(async (r) => {
+          if (r.actions.length) log('info', 'watchdog', { checked: r.checked, actions: r.actions.join(' ; ').slice(0, 900) });
+          const failed = r.actions.some((x) => /^(list failed|skipped)/.test(x));
+          await beat(!failed, `checked ${r.checked} chat(s)${r.actions.length ? `; ${r.actions.join(' ; ')}` : ''}`);
+        })
+        .catch(async (e: unknown) => {
+          log('error', 'watchdog_failed', { message: e instanceof Error ? e.message : String(e) });
+          await beat(false, e instanceof Error ? e.message : String(e));
+        }),
+    );
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const requestId = request.headers.get('X-Request-ID')?.slice(0, 64) || crypto.randomUUID();

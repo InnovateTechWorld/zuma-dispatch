@@ -905,3 +905,52 @@ There is a unit test for this.
 
 **What would help (Chord).** An option on a tool result marking text as "send verbatim", which Chord
 enforces, would remove this whole class of error.
+
+## 27. Zuma answered without calling any tool: an invented rider position, and a person promised but never called
+
+**What happened (23 Oct 2026, ZD-F74B2, the second demo take).** After the payment was confirmed:
+- **"oh where is teh rider now":** Zuma replied "Tunde is about 5 minutes from the pickup point (Ikeja
+  City Mall). Track live: https://zuma.dispatch/track/ZD-F74B2". The position and the link were both
+  made up.
+- **"oh i want a refund.":** Zuma replied "Got it, Ada. A person from our team will take over from here".
+  The board's Handovers tab stayed empty; nobody was told.
+
+**How we found the cause.**
+- Our tool-call log has **no calls at all** after `verify_payment` at 13:23:46: no `get_job_status` and
+  no `hand_to_team`. So #26's fix, which lives inside `get_job_status`'s result, was never seen.
+- Our own instructions pushed it there:
+  - The note attached to every tool result said "never mention checks or re-run tools".
+  - The skill said "only call a tool again when you need a fresh state".
+  - Having just sent "Tunde is on the way", the model treated the rider question and the refund as
+    things it already knew.
+- That note only appears inside tool results, so in a turn with no tool call, nothing countered it.
+- The earlier take (13:05) did call `hand_to_team` correctly. The behaviour is not deterministic.
+
+**Fix: four layers, so it no longer rests on the model behaving.**
+1. **Tool descriptions**, which the model sees every turn:
+   - `get_job_status`: call it every time the rider or package is asked about, and never write a link
+     yourself.
+   - `hand_to_team`: call it before telling anyone a person will help, and never promise a person
+     without it.
+2. **The note on every tool result:** "re-run tools" removed. Each new request needs its tool (rider →
+   `get_job_status`, refund or person → `hand_to_team`, payment → `verify_payment`). No promised person
+   without `hand_to_team`, and no link a tool didn't give.
+3. **Skill v20** (published 23 Oct, 1:38 PM): the same three hard rules. "Only call a tool again when…"
+   replaced.
+4. **A safety net on the server** (`src/chord/watchdog.ts`, every minute):
+   - **Promised or requested handovers:** if a chat still with Zuma has the customer asking for a refund
+     or a person, or Zuma promising one, and nothing handed it over, the server takes the chat over
+     itself. If Zuma hadn't told the customer, it posts the acknowledgement too.
+   - **Made-up links:** any link in Zuma's reply that isn't Paystack, Google Maps or our server raises an
+     urgent alert on Home, pointing at the chat.
+   - **Safeguards:**
+     - every action is recorded once per reply;
+     - it waits 25 s, so `hand_to_team`'s own take-over goes first;
+     - it skips exchanges a person or Chord already stepped into;
+     - its heartbeat is shown on System.
+
+**What would help (Chord).**
+- Let a skill mark a tool as required for a kind of request ("every refund goes through `hand_to_team`"),
+  enforced by Chord.
+- Or offer an output check that blocks links not returned by a tool. Prompting alone cannot guarantee
+  either, on a model the builder can't choose.

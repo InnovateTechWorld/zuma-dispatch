@@ -6,7 +6,7 @@ import { alertsFrom, tabBadges, type Signals } from '../src/web/signals';
 
 const quiet: Signals = {
   waiting: 0, chord: 'ok', chordDetail: null, review: 0, ready: 0, out: 0, awaiting: 0, stuck: 0, noticeFailed: 0,
-  sheet: { state: 'ok', detail: null, at: 1 }, tools24h: { calls: 5, errors: 0, faults: 0 }, webhook: true,
+  sheet: { state: 'ok', detail: null, at: 1 }, tools24h: { calls: 5, errors: 0, faults: 0 }, webhook: true, foreignLinks: { n: 0, thread: null },
 };
 
 describe('Home alerts', () => {

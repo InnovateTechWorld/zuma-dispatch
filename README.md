@@ -72,7 +72,7 @@ OpenRouteService keys are optional: without them the free OpenStreetMap provider
    The steps, and what goes wrong at each one, are in [SETUP.md](docs/SETUP.md#connect-it-to-chord).
 
 **Tests (no Chord credits):**
-- `npm test`: 285 unit tests, no network.
+- `npm test`: 303 unit tests, no network.
 - `scripts/mcp-smoke.sh [url]`: 25 protocol, auth and webhook checks.
 - `python3 scripts/e2e.py [url]`: 54 end-to-end checks against the real providers and Paystack test mode.
 - Both scripts delete their own test data when they finish.
@@ -83,7 +83,7 @@ OpenRouteService keys are optional: without them the free OpenStreetMap provider
 | | |
 |---|---|
 | [FIELD_NOTES.md](docs/FIELD_NOTES.md) | The three Chord problems that mattered, with screenshots |
-| [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md) | All 26 problems in the order we hit them |
+| [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md) | All 27 problems in the order we hit them |
 | [DECISIONS.md](docs/DECISIONS.md) | Why: NIPOST demo postcodes, geocoders, state boundaries, handover, tracking, hosting |
 | [GO_LIVE.md](docs/GO_LIVE.md) · [checklist](docs/GO_LIVE_CHECKLIST.md) | The owner's half page, and the technical steps |
 | [FEATURES.md](docs/FEATURES.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [EDGE_CASES.md](docs/EDGE_CASES.md) | Detail |

@@ -24,6 +24,8 @@ export interface Signals {
   /** Agent tool calls in the last 24 h. Faults are our failures; refusals are expected answers (out of area, not found…). */
   tools24h: { calls: number; errors: number; faults: number };
   webhook: boolean;
+  /** Links in Zuma's replies that we did not issue, last 24 h (src/chord/watchdog.ts), and the latest chat. */
+  foreignLinks: { n: number; thread: string | null };
 }
 
 export const DAY_MS = 86_400_000;
@@ -65,10 +67,12 @@ export async function readSignals(env: Env, now: number): Promise<Signals> {
                 COALESCE(SUM(CASE WHEN ok = 0 AND ${FAULT_SQL} THEN 1 ELSE 0 END), 0) AS faults
            FROM tool_calls WHERE created_at >= ?`,
       ).bind(now - DAY_MS),
+      db.prepare("SELECT COUNT(*) AS n, (SELECT thread_id FROM watchdog_events WHERE kind = 'foreign_link' AND created_at >= ?1 ORDER BY created_at DESC LIMIT 1) AS thread FROM watchdog_events WHERE kind = 'foreign_link' AND created_at >= ?1").bind(now - DAY_MS),
     ]),
     live,
   ]);
-  const [counts, stuck, failed, sheetRow, tools] = batch;
+  const [counts, stuck, failed, sheetRow, tools, links] = batch;
+  const linkRow = (links?.results[0] as { n: number; thread: string | null } | undefined) ?? { n: 0, thread: null };
   const by: Record<string, number> = Object.fromEntries((counts!.results as { status: string; n: number }[]).map((c) => [c.status, c.n]));
   const n = (r: D1Result | undefined) => Number((r?.results[0] as { n?: number } | undefined)?.n ?? 0);
   const mirror = mirrorStatus(env);
@@ -94,6 +98,7 @@ export async function readSignals(env: Env, now: number): Promise<Signals> {
           : { state: 'never', detail: null, at: null },
     tools24h: { calls: Number(t.calls), errors: Number(t.errors), faults: Number(t.faults) },
     webhook: Boolean(env.CHORD_WEBHOOK_SECRET?.trim()),
+    foreignLinks: { n: Number(linkRow.n), thread: linkRow.thread },
   };
 }
 
@@ -107,6 +112,9 @@ export function alertsFrom(s: Signals): Alert[] {
   const a: Alert[] = [];
   if (s.waiting) {
     a.push({ key: 'waiting', tone: 'urgent', title: `${plural(s.waiting, 'chat is', 'chats are')} waiting for a person`, detail: 'Zuma handed these customers to the team. Zuma stays silent there until someone replies and hands back.', href: '/board/handovers', cta: 'Open handovers' });
+  }
+  if (s.foreignLinks.n > 0) {
+    a.push({ key: 'links', tone: 'urgent', title: `Zuma sent ${plural(s.foreignLinks.n, 'link', 'links')} we didn't issue`, detail: 'A made-up link reached a customer in the last 24 h. Open the chat, take it over and send the right details.', href: s.foreignLinks.thread ? `/board/handovers/${s.foreignLinks.thread}` : '/board/handovers', cta: 'Open the chat' });
   }
   if (s.review) {
     a.push({ key: 'review', tone: 'urgent', title: `${plural(s.review, 'payment needs', 'payments need')} review`, detail: 'Paystack said success, but the amount, currency or reference did not match. Approve or cancel.', href: '/board/payments', cta: 'Review payments' });
@@ -140,7 +148,7 @@ export function alertsFrom(s: Signals): Alert[] {
 
 /** Badge counts per tab: urgent ones are red. */
 export function tabBadges(s: Signals): Record<string, { n: number; urgent: boolean }> {
-  const system = (s.sheet.state === 'failed' ? 1 : 0) + (s.chord === 'unreachable' || s.chord === 'invalid' ? 1 : 0) + (s.sheet.state === 'invalid' ? 1 : 0) + (s.tools24h.faults ? 1 : 0);
+  const system = (s.foreignLinks.n > 0 ? 1 : 0) + (s.sheet.state === 'failed' ? 1 : 0) + (s.chord === 'unreachable' || s.chord === 'invalid' ? 1 : 0) + (s.sheet.state === 'invalid' ? 1 : 0) + (s.tools24h.faults ? 1 : 0);
   return {
     deliveries: { n: s.ready, urgent: false },
     handovers: { n: s.waiting ?? 0, urgent: true },

@@ -83,7 +83,13 @@ export function compileTools(defs: readonly ToolDefinition[]): Map<string, Compi
  * Putting the fact in every result means it is in front of the model at the moment it reasons.
  */
 export const HISTORY_NOTE =
-  'Context only, never mention it: what you told the customer earlier came from tools and is correct. Do not correct, retract or comment on it, and never mention checks or re-run tools. Reuse ids from the chat; just give the next step. Write your reply after your last tool call (text before a later tool call never reaches the customer), and never mention memory or saving.';
+  // 23 Oct 2026: "never … re-run tools" here was read as "don't call tools", and Zuma answered "where is the rider"
+  // with an invented position and link, and promised a person without calling hand_to_team. Each new request
+  // needs its tool; only re-checking an earlier answer is pointless.
+  'Context only, never mention it: what you told the customer earlier came from tools and is correct. Do not correct, retract or comment on it, and never mention checks. Reuse ids from the chat. ' +
+  'Every new request still needs its tool in that turn: where the rider or package is → get_job_status; a refund, complaint or wanting a person → hand_to_team; any payment claim → verify_payment. ' +
+  'Never answer those from earlier messages, never say a person will take over unless hand_to_team returned ok, and never write a link no tool gave you. ' +
+  'Write your reply after your last tool call (text before a later tool call never reaches the customer), and never mention memory or saving.';
 
 function ok(data: Record<string, unknown>): CallToolResult {
   data = { ...data, history_note: HISTORY_NOTE };

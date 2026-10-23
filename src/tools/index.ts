@@ -134,7 +134,9 @@ export const getJobStatus = defineTool({
   name: 'get_job_status',
   title: 'Look up a job',
   description: [
-    'Read the current status of a delivery, as set by the dispatcher: awaiting_payment, paid, dispatched, delivered, cancelled, payment_failed or amount_mismatch. Use it when the customer asks where their delivery is.',
+    'Read the current status of a delivery, as set by the dispatcher: awaiting_payment, paid, dispatched, delivered, cancelled, payment_failed or amount_mismatch.',
+    'Call it EVERY time the customer asks where the rider or package is, or when it will arrive, even if you answered before: the position changes every minute, so never answer from earlier messages.',
+    'Its message_for_customer is the only source of the rider\'s position and the only map link: send it word for word and never write a link yourself.',
     'Pass job_id if you have it (from Customer Memory or earlier messages). Otherwise pass recipient_phone and sender_name together; the customer does not need to remember the job id.',
   ].join(' '),
   inputSchema: {
@@ -166,6 +168,7 @@ export const handToTeam = defineTool({
   title: 'Hand the customer to a person',
   description: [
     'Pass the conversation to a human dispatcher (refunds, cancelling a paid job, complaints, out-of-scope requests, a customer who asks for a person).',
+    'Call it in the same turn, BEFORE telling the customer anyone will help: without this call no person sees the chat. Never say a person or the team will take over unless it returned ok in this turn.',
     'Use this instead of the built-in handover tool: it returns the line to send the customer, and a person takes over right after your reply.',
     'If it returns an error, use the built-in handover tool.',
   ].join(' '),

@@ -16,7 +16,10 @@
   ],
   // Non-secret configuration. Secrets (API keys, tokens) are set with
   // `wrangler secret put` in production and read from .env in local dev.
+  // Every minute: the safety net for promised handovers and made-up links (src/chord/watchdog.ts).
+  "triggers": { "crons": ["* * * * *"] },
   "vars": {
+    "PUBLIC_ORIGIN": "https://zuma-dispatch.obimz123.workers.dev",
     "BUSINESS_NAME": "Zuma Dispatch",
     "BUSINESS_CITY": "Abuja and Lagos",
     "GEOCODER_CHAIN": "google,nominatim,photon,ors",

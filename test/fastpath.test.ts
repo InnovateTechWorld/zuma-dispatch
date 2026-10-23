@@ -68,7 +68,12 @@ describe('order and wording', () => {
   });
   it('every tool result tells the model not to narrate its re-checks', async () => {
     const { HISTORY_NOTE } = await import('../src/mcp/tooling');
-    expect(HISTORY_NOTE).toContain('never mention checks or re-run tools'); expect(HISTORY_NOTE.length).toBeLessThan(400); expect(HISTORY_NOTE).toContain('after your last tool call');
+    expect(HISTORY_NOTE).not.toMatch(/re-run tools/); // read by the model as "don't call tools" (23 Oct)
+    expect(HISTORY_NOTE).toContain('where the rider or package is → get_job_status');
+    expect(HISTORY_NOTE).toContain('never say a person will take over unless hand_to_team returned ok');
+    expect(HISTORY_NOTE).toContain('never write a link no tool gave you');
+    expect(HISTORY_NOTE).toContain('after your last tool call');
+    expect(HISTORY_NOTE.length).toBeLessThan(700);
   });
 });
 

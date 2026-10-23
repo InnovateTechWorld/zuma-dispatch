@@ -124,9 +124,15 @@ export async function systemPage(path: string, url: URL, env: Env, config: Confi
       db.prepare("SELECT MAX(received_at) AS at, COUNT(*) AS n FROM chord_events"),
       db.prepare('SELECT MAX(received_at) AS at FROM paystack_events'),
       db.prepare('SELECT tool, ok, error_code, latency_ms, detail, created_at FROM tool_calls ORDER BY id DESC LIMIT 200'),
+      db.prepare("SELECT ran_at, ok, detail FROM cron_runs WHERE name = 'watchdog'"),
+      db.prepare("SELECT COALESCE(SUM(kind = 'handover'), 0) AS handovers, COALESCE(SUM(kind = 'foreign_link'), 0) AS links FROM watchdog_events WHERE created_at >= ?").bind(now - DAY_MS),
     ]),
   ]);
-  const [chordEv, payEv, calls] = batch;
+  const [chordEv, payEv, calls, wdRun, wdEv] = batch;
+  const wd = {
+    run: (wdRun?.results[0] as { ran_at: number; ok: number; detail: string | null } | undefined) ?? null,
+    ev: (wdEv?.results[0] as { handovers: number; links: number } | undefined) ?? { handovers: 0, links: 0 },
+  };
   const ce = chordEv!.results[0] as { at: number | null; n: number };
   const pe = payEv!.results[0] as { at: number | null };
   const toolRows = calls!.results as unknown as { tool: string; ok: number; error_code: string | null; latency_ms: number; detail: string | null; created_at: number }[];
@@ -139,7 +145,7 @@ export async function systemPage(path: string, url: URL, env: Env, config: Confi
 
   let body: string;
   if (view === 'status') {
-    body = `<ul class="svc">${services(env, sig, ce, pe, toolRows.length ? `${pct(okCalls, toolRows.length)}% ok over the last ${toolRows.length}${lat ? ` · median ${lat.p50} ms · p95 ${lat.p95} ms` : ''}` : 'No calls yet.')}</ul>`;
+    body = `<ul class="svc">${services(env, sig, ce, pe, wd, now, toolRows.length ? `${pct(okCalls, toolRows.length)}% ok over the last ${toolRows.length}${lat ? ` · median ${lat.p50} ms · p95 ${lat.p95} ms` : ''}` : 'No calls yet.')}</ul>`;
   } else {
     body = `<p class="lead">Every MCP tool call Zuma made, newest first. In the last 24 h: ${sig.tools24h.calls} calls, ${sig.tools24h.faults} broke, ${sig.tools24h.errors - sig.tools24h.faults} were refusals Zuma explained to the customer (out of area, not found, between states…).${lat ? ` Over the last ${toolRows.length}: median ${lat.p50} ms, p95 ${lat.p95} ms.` : ''}</p>${
       toolRows.length
@@ -156,7 +162,9 @@ export async function systemPage(path: string, url: URL, env: Env, config: Confi
   });
 }
 
-function services(env: Env, s: Signals, ce: { at: number | null; n: number }, pe: { at: number | null }, tools: string): string {
+type Watchdog = { run: { ran_at: number; ok: number; detail: string | null } | null; ev: { handovers: number; links: number } };
+
+function services(env: Env, s: Signals, ce: { at: number | null; n: number }, pe: { at: number | null }, wd: Watchdog, now: number, tools: string): string {
   const row = (name: string, sub: string, status: string, detail: string, action = '') =>
     `<li><span class="svc__name">${name}<span>${sub}</span></span><span>${status}</span><span class="svc__detail">${detail}</span>${action ? `<span class="actions">${action}</span>` : '<span></span>'}</li>`;
   const chordStatus = s.chord === 'ok' ? chip('ok', 'Working') : s.chord === 'off' ? chip('', 'Off') : s.chord === 'invalid' ? chip('bad', 'Misconfigured') : chip('warn', 'Unreachable');
@@ -177,6 +185,24 @@ function services(env: Env, s: Signals, ce: { at: number | null; n: number }, pe
     row('Paystack', 'payment notifications', pe.at ? chip('ok', 'Receiving') : chip('', 'Nothing yet'), pe.at ? `Last notification ${time(pe.at)}. Test keys only.` : 'No notification has arrived yet. Test keys only.', '<a class="btn btn--sm" href="/board/payments/paystack">View</a>'),
     row('Payment notices', '“Payment received” in the chat', notices === 'enabled' ? (s.noticeFailed || s.stuck ? chip('warn', 'Needs a look') : chip('ok', 'On')) : notices === 'invalid_config' ? chip('bad', 'Misconfigured') : chip('', 'Off'), notices === 'enabled' ? `${s.noticeFailed} failed in the last 24 h · ${s.stuck} left with a person.` : notices === 'invalid_config' ? 'CHORD_API_KEY or CHORD_WORKSPACE_ID is not valid.' : 'CHORD_API_KEY is not set; Zuma confirms when the customer writes.', '<a class="btn btn--sm" href="/board/payments/chat">View</a>'),
     row('Google Sheet', 'owner’s read-only copy', sheetStatus, sheetDetail, sheetAction),
+    safetyNet(wd, now, s, row),
     row('Agent tools', 'MCP calls from Zuma', s.tools24h.faults ? chip('warn', `${s.tools24h.faults} broke today`) : s.tools24h.calls ? chip('ok', 'Working') : chip('', 'Quiet'), h(tools), '<a class="btn btn--sm" href="/board/system/tools">View</a>'),
   ].join('');
+}
+
+/**
+ * The every-minute safety net (src/chord/watchdog.ts): hands over chats where a person was promised or
+ * asked for but Zuma didn't hand over, and flags links Zuma made up. A heartbeat older than 3 minutes
+ * means the scheduled job isn't running (cron missing, or the Worker failing).
+ */
+function safetyNet(wd: Watchdog, now: number, s: Signals, row: (name: string, sub: string, status: string, detail: string, action?: string) => string): string {
+  const late = !wd.run || now - wd.run.ran_at > 3 * 60_000;
+  const status = s.chord === 'off' ? chip('', 'Off') : !wd.run ? chip('warn', 'Not run yet') : late ? chip('warn', 'Late') : wd.run.ok ? chip('ok', 'Running') : chip('bad', 'Failing');
+  const ev = `${wd.ev.handovers} handover${wd.ev.handovers === 1 ? '' : 's'} and ${wd.ev.links} made-up link${wd.ev.links === 1 ? '' : 's'} caught in the last 24 h.`;
+  const detail = s.chord === 'off'
+    ? 'Needs CHORD_API_KEY.'
+    : !wd.run
+      ? 'Checks every minute once deployed with the cron trigger (wrangler.jsonc).'
+      : `Last check ${time(wd.run.ran_at)}${wd.run.ok ? '' : `: ${h(wd.run.detail ?? 'failed')}`}. ${ev}`;
+  return row('Safety net', 'promised handovers, made-up links', status, detail, '<a class="btn btn--sm" href="/board/handovers">Handovers</a>');
 }

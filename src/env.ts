@@ -6,6 +6,8 @@ export interface Env {
   BUSINESS_NAME: string;
   BUSINESS_CITY: string;
   GEOCODER_CHAIN: string;
+  /** https://host of this Worker, for jobs that run without a request (the cron safety net). */
+  PUBLIC_ORIGIN?: string;
   GEOCODER_MODE: string;
   ROUTER_CHAIN: string;
   QUOTE_TTL_MINUTES: string;
