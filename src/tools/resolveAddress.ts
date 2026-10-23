@@ -58,7 +58,9 @@ export async function resolveAddress(args: ResolveArgs, ctx: ToolContext): Promi
   // v5: `confirm` (in_quote for demo postcodes, ask_first otherwise) added to confirmed results.
   // v8: Google Places joins the chain (GOOGLE_MAPS_API_KEY set 2026-10-22).
   // v6/v7: relevance filter (place name first), cleaned-spelling retry, area fallback, house number kept (src/geocode/query.ts).
-  const stableKey = `resolve:v10:${args.state ?? 'any'}:${normalizeQuery(text)}`;
+  // v11: demo postcodes carry a "Pickup:/Drop-off: … (from your postcode)" line, so the role is part of the key
+  // (a cached drop-off must never be shown back to a customer as a pickup).
+  const stableKey = `resolve:v11:${args.state ?? 'any'}:${args.role}:${normalizeQuery(text)}`;
   try {
     const prior = await ctx.db
       .prepare('SELECT result_json, created_at FROM geocode_cache WHERE cache_key = ?')
@@ -110,7 +112,7 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
       place: { place_id: row.id, label: row.label, precision: row.precision, state: stateName(row), in_service_area: row.in_service_area === 1, km_from_city_centre: kmFromCentre(row) },
       confidence: 'high',
       postcode: demoPostcodeInfo,
-      ...demoConfirm(row, hint),
+      ...demoConfirm(row, hint, args.role),
     };
   }
   if (pc?.kind === 'nipost') {
@@ -325,7 +327,19 @@ async function resolveFresh(args: ResolveArgs, text: string, now: number, ctx: T
  * the quote message reads it back and the customer confirms it there together with the booking.
  * An address in the other state never takes the fast path: that has to be said first.
  */
-export function demoConfirm(row: { label: string; lat: number; lng: number }, hint: ServiceState | null | undefined): { confirm: 'in_quote' | 'ask_first'; what_to_do: string } {
+/**
+ * The line Zuma shows for a decoded postcode before the quote, so the customer sees straight away what
+ * their code means (asked for after a live run on 23 Oct where only the typed pickup was read back).
+ */
+export function postcodeLine(role: string, label: string): string {
+  return `${role === 'dropoff' ? 'Drop-off' : 'Pickup'}: ${label} (from your postcode)`;
+}
+
+export function demoConfirm(
+  row: { label: string; lat: number; lng: number },
+  hint: ServiceState | null | undefined,
+  role: string = 'pickup',
+): { confirm: 'in_quote' | 'ask_first'; what_to_do: string; say_in_reply?: string } {
   const st = stateOf(row);
   if (hint && st && st !== hint) {
     return {
@@ -333,9 +347,15 @@ export function demoConfirm(row: { label: string; lat: number; lng: number }, hi
       what_to_do: `Read the label back ("${row.label}"). Note: this is in ${SERVICE_STATES[st].name}, but the other address is in ${SERVICE_STATES[hint].name}. We only deliver within one state: tell the customer we cannot carry it between states and offer a human dispatcher.`,
     };
   }
+  const line = postcodeLine(role, row.label);
   return {
     confirm: 'in_quote',
-    what_to_do: `Exact place from the postcode: "${row.label}". Do not ask about this address on its own. Once you have both addresses and the package size, call quote_delivery: the quote message reads this address back and the customer confirms the addresses and the booking with one yes.`,
+    say_in_reply: line,
+    what_to_do:
+      `Exact place from the postcode. If your reply comes before the quote (to check the other address, ask for it, ` +
+      `or ask for the package size), include this line word for word so the customer sees what the postcode means: "${line}". ` +
+      `Do not ask the customer to confirm it: it is exact. If you send the quote in this same reply, leave the line out (the quote already shows it). ` +
+      `Once you have both addresses and the package size, call quote_delivery: the customer confirms the addresses and the booking with one yes.`,
   };
 }
 

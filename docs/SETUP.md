@@ -82,7 +82,7 @@ npm run dev             # http://127.0.0.1:8787
 Test it, no Chord credits needed:
 
 ```bash
-npm test                              # 283 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config, board sign-in, Home alerts, theme, charts, sheet mirror, handovers
+npm test                              # 285 unit tests: pricing, payment decisions, geocoder judgement + timing, webhook signatures, Paystack failures, parsing, config, board sign-in, Home alerts, theme, charts, sheet mirror, handovers
 ```
 ```bash
 scripts/mcp-smoke.sh                  # protocol, auth, board sign-in, CSRF, webhook checks (25)

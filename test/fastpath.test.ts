@@ -17,10 +17,20 @@ describe('fast path: demo postcodes are confirmed in the quote message', () => {
   it('a demo postcode needs no question of its own', () => {
     const r = demoConfirm(PAYSTACK, 'LA');
     expect(r.confirm).toBe('in_quote');
-    expect(r.what_to_do).toContain('Do not ask about this address on its own');
+    expect(r.what_to_do).toContain('Do not ask the customer to confirm it');
+    expect(r.say_in_reply).toBe('Pickup: Paystack office, 3A Ladoke Akintola Street, Ikeja GRA, Lagos (from your postcode)');
     expect(demoConfirm(PAYSTACK, null).confirm).toBe('in_quote');
   });
-  it('a demo postcode in the other state is never fast-pathed', () => {
+  it('shows the decoded postcode before the quote, labelled by role, without asking about it', () => {
+    const r = demoConfirm(PAYSTACK, 'LA', 'dropoff');
+    expect(r.say_in_reply).toBe('Drop-off: Paystack office, 3A Ladoke Akintola Street, Ikeja GRA, Lagos (from your postcode)');
+    expect(r.what_to_do).toContain(`"${r.say_in_reply}"`);
+    expect(r.what_to_do).toMatch(/If you send the quote in this same reply, leave the line out/);
+    expect(demoConfirm(PAYSTACK, 'LA').say_in_reply).toMatch(/^Pickup: /); // role defaults to pickup
+    expect(demoConfirm(PAYSTACK, 'LA', 'something-else').say_in_reply).toMatch(/^Pickup: /);
+  });
+  it('a demo postcode in the other state is never fast-pathed (and gets no "from your postcode" line)', () => {
+    expect(demoConfirm(PAYSTACK, 'FC', 'dropoff').say_in_reply).toBeUndefined();
     const r = demoConfirm(PAYSTACK, 'FC');
     expect(r.confirm).toBe('ask_first');
     expect(r.what_to_do).toContain('only deliver within one state');
