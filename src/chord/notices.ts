@@ -1,4 +1,5 @@
 import { paymentReceivedMessage } from '../business/messages';
+import { trackUrl } from '../business/trackLink';
 import { pickupWindow } from '../business/profile';
 import { eventStmt, getJob } from '../db/repo';
 import type { Env } from '../env';
@@ -361,7 +362,8 @@ export async function notifyPaymentReceived(env: Env, jobId: string, opts: { man
     if (!pick.ok) {
       result = { state: pick.reason.startsWith('chord_') ? 'failed' : 'skipped', reason: pick.reason, thread_id: pick.thread?.id };
     } else {
-      const body = paymentReceivedMessage(job, now);
+      const origin = opts.origin ?? env.PUBLIC_ORIGIN?.trim() ?? '';
+      const body = paymentReceivedMessage(job, now, origin && env.MCP_BEARER_TOKEN ? await trackUrl(origin, job.id, env.MCP_BEARER_TOKEN) : undefined);
       result = cfg.route === 'operator' ? await sendAsOperator(cfg, pick.thread, body, timeoutMs) : await sendScheduled(cfg, pick.thread, body, now, timeoutMs);
     }
     await finish(env.DB, jobId, result, Date.now());

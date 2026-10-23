@@ -72,7 +72,7 @@ OpenRouteService keys are optional: without them the free OpenStreetMap provider
    The steps, and what goes wrong at each one, are in [SETUP.md](docs/SETUP.md#connect-it-to-chord).
 
 **Tests (no Chord credits):**
-- `npm test`: 307 unit tests, no network.
+- `npm test`: 311 unit tests, no network.
 - `scripts/mcp-smoke.sh [url]`: 25 protocol, auth and webhook checks.
 - `python3 scripts/e2e.py [url]`: 54 end-to-end checks against the real providers and Paystack test mode.
 - Both scripts delete their own test data when they finish.

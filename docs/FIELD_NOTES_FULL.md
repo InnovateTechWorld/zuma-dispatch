@@ -981,7 +981,7 @@ enforces, would remove this whole class of error.
 **Fix.**
 - **The paid instruction** now limits itself to that reply, and says later requests still need their
   tools: rider → `get_job_status`, refund → `hand_to_team`.
-- **Faster checks:** the safety net checks 5 times a minute, 12 s apart, and waits 8 s instead of 25 s.
+- **Faster checks:** the safety net checks 5 times a minute, 12 s apart (later 4 times, 14 s apart: see #29), and waits 8 s instead of 25 s.
   A chat where `hand_to_team` ran is left to it, and a chat is re-read only when it has a new message.
   Worst case drops from about 85 s to about 20 s.
 - **Promise detection** now covers passing, forwarding and handing over, and a dispatcher or team taking
@@ -996,3 +996,39 @@ enforces, would remove this whole class of error.
 - A `chat.completed` webhook that carries the thread id and the reply text would let the safety net act
   in seconds instead of polling. Today it carries only `session_id` and `teammate_id`.
 - Required tools per kind of request (#27) would remove the need for the safety net altogether.
+
+## 29. Instructions still didn't stop the made-up map link, so the link the model copies is now a real one
+
+**What happened (23 Oct 2026, demo take 2, ZD-MTQ2B, skill v20).**
+- The fixes in #27 and #28 worked for handovers: the refund request reached the board within about 4 s,
+  through `hand_to_team`.
+- Asked where the rider was, Zuma again called no tool and wrote its own link
+  (`https://maps.google.com/?q=6.5697,3.3652`). The safety net flagged it on Home, but the customer had
+  already seen it.
+
+**Cause.** The rules were being read, so they weren't the problem. The model answers a follow-up from what
+is already in the chat, and the chat had no link in it, so it made one up.
+
+**Fix.**
+- **A real tracking link** (`/t/ZD-XXXXX-<10 hex>`) now goes into the payment confirmation, both the
+  `verify_payment` reply and the pushed notice. It opens Google Maps at the rider's current simulated
+  position (a 302 redirect, not cached), so it stays correct as the rider moves.
+- **The code after the job id** is an HMAC of the job id keyed on a server secret, so a link can't be
+  worked out from a job id. It is checked in constant time. A wrong code gets a 404 page, a cancelled
+  job says so, and an unpaid job says tracking starts once it's paid.
+- **`get_job_status`** returns the same link as `live_map`. **Skill v21** says the confirmation already
+  holds the customer's tracking link and to send that same link again if unsure.
+- **The safety net's cron** used 5–7 ms of the free plan's 10 ms CPU. It now runs 4 rounds 14 s apart and
+  reads at most 10 chats, which is well under the limit.
+
+**Checked live.** A real link redirects to the rider's pin, and the same link with one character changed
+gets a 404. The production e2e run passed 54 of 54.
+
+**Also found.** From this office network one of Cloudflare's two IPv4 addresses for workers.dev
+(172.67.166.29) can't be reached, so Python and curl calls sometimes sat for 45–60 s before connecting.
+The Worker itself answered in under 25 ms (`wrangler tail`), and Chord calls from its own servers were
+unaffected. The e2e run was pinned to the other address.
+
+**What would help (Chord).** The same as #27: let a skill mark a tool as required for a kind of request
+(rider location → `get_job_status`), so a reply without it is not sent. Until then, the safest design is
+to make sure that anything the model copies from the chat is correct.

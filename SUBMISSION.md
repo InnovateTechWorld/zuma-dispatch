@@ -27,9 +27,9 @@ states, cash on delivery, real riders and GPS (simulated), and live money or a r
 | # | Deliverable | Where |
 |---|---|---|
 | 1 | Role and problem statement | This page |
-| 2 | Working agent, live on Chord | Teammate **Zuma** in the simulator: https://chat.tsglabs.dev/c/i43ZuGQReP8Za95unSjXnHmG. [What to type](docs/TEST_SCRIPT.md); the demo postcode `LA-11-ZDM-PS-01` is the Paystack office |
-| 3 | Repo and README, including how AI tools were used | [README.md](README.md) |
-| 4 | 3-minute recording of one conversation | In the Drive folder |
+| 2 | Working agent, live on Chord | Teammate **Zuma** in the simulator: https://chat.tsglabs.dev/c/i43ZuGQReP8Za95unSjXnHmG. [What to type](docs/TEST_SCRIPT.md); the demo postcode `LA-11-ZDM-PS-01` is the Paystack office. Dispatcher board, where handovers land: https://zuma-dispatch.obimz123.workers.dev/board (password in my email) |
+| 3 | Repo and README, including how AI tools were used | https://github.com/InnovateTechWorld/zuma-dispatch. The [README](README.md) covers how to run it and how AI tools were used |
+| 4 | 3-minute recording of one conversation | In the Drive folder, next to this page |
 | 5 | **Deployment field notes** | [docs/FIELD_NOTES.md](docs/FIELD_NOTES.md): the three problems that mattered, with screenshots. The full log is in [FIELD_NOTES_FULL.md](docs/FIELD_NOTES_FULL.md), and the choices behind the build (NIPOST demo postcodes, geocoders, handover…) are in [DECISIONS.md](docs/DECISIONS.md) |
 | 6 | Go-live note for a non-technical owner | [docs/GO_LIVE.md](docs/GO_LIVE.md) (half a page); the technical steps are in [GO_LIVE_CHECKLIST.md](docs/GO_LIVE_CHECKLIST.md) |
 

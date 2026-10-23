@@ -9,6 +9,7 @@ import { assignRider, riderView } from '../business/riders';
 import { ToolError, type ToolContext } from '../mcp/tooling';
 import { chargeBankTransfer, initializeTransaction } from '../payments/paystack';
 import { checkPayments, isAwaitingTransfer, type PaymentCheck } from '../payments/service';
+import { trackUrl } from '../business/trackLink';
 import { loadJob } from './jobs';
 import { queueSheetSync } from '../sheets/queue';
 
@@ -222,6 +223,12 @@ export function transferView(job: JobRow, p: PaymentRow, now: number, reused: bo
 /** Pickup timing worded for after payment (the quote-time wording says "as soon as payment is confirmed"). */
 // ------------------------------------------------------------------ verify_payment
 /** In a live test the model replied only "Your delivery is paid and booked", dropping the rider and the code. */
+/** The paid confirmation, with the customer's live tracking link (or the short follow-up if they already saw it). */
+async function paidMessage(ctx: ToolContext, job: JobRow, now: number): Promise<string> {
+  const track = await trackUrl(ctx.publicOrigin, job.id, ctx.config.mcpBearerToken);
+  return (await noteAgentConfirmed(ctx.db, job.id, now)) === 'customer_already_told' ? paidFollowUp(job, now, track) : paymentReceivedMessage(job, now, track);
+}
+
 // 23 Oct 2026: this used to say "Do not call any more tools after this one". In both failing chats Zuma called no
 // tool again for the rest of the conversation (an invented rider position, a promised person never called).
 // It now limits itself to this reply and says later requests still need their tools.
@@ -251,7 +258,7 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
       pickup_timing: job.status === 'paid' ? afterPaymentTiming(ctx.now(), Boolean(job.rider_id)) : job.status === 'dispatched' ? 'A rider already has the package.' : 'The package has been delivered.',
       handover_code: job.handover_code,
       rider: riderView(job.rider_id),
-      message_for_customer: (await noteAgentConfirmed(ctx.db, job.id, ctx.now())) === 'customer_already_told' ? paidFollowUp(job, ctx.now()) : paymentReceivedMessage(job, ctx.now()),
+      message_for_customer: await paidMessage(ctx, job, ctx.now()),
       what_to_do: PAID_TODO,
     };
   }
@@ -285,7 +292,7 @@ export async function verifyPayment(args: { job_id: string }, ctx: ToolContext):
         pickup_timing: afterPaymentTiming(now, Boolean(check.job.rider_id)),
         // Ready-to-send text: in a live test the model once dropped the confirmation and the timing
         // and replied only "keep the envelope ready" (FIELD_NOTES_FULL #13). A full sentence to pass on is harder to drop.
-        message_for_customer: (await noteAgentConfirmed(ctx.db, check.job.id, now)) === 'customer_already_told' ? paidFollowUp(check.job, now) : paymentReceivedMessage(check.job, now),
+        message_for_customer: await paidMessage(ctx, check.job, now),
         what_to_do: PAID_TODO,
       };
     case 'in_progress':

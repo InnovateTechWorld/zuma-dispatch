@@ -5,7 +5,7 @@ found the cause, the fix or workaround, and what I'd change in Chord, its docs o
 in the TSG WhatsApp simulator, 20–22 Oct 2026, with times in WAT.
 
 Supporting material:
-- [FIELD_NOTES_FULL.md](FIELD_NOTES_FULL.md): the full build log, 25 entries including Cloudflare,
+- [FIELD_NOTES_FULL.md](FIELD_NOTES_FULL.md): the full build log of every problem, including Cloudflare,
   Paystack, NIPOST and Google.
 - [DECISIONS.md](DECISIONS.md): the choices these problems led to.
 

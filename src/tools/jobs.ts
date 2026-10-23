@@ -1,5 +1,5 @@
 import { riderById, riderView } from '../business/riders';
-import { simulateRider } from '../business/tracking';
+import { riderUpdate, trackUrl } from '../business/trackLink';
 import { displayName, reservedMessage } from '../business/messages';
 import { pickupWindow } from '../business/profile';
 import { eventStmt, getJob, getJobByQuote, getPlace, getQuote, transitionJob, type JobRow, type QuoteRow } from '../db/repo';
@@ -293,30 +293,18 @@ export async function getJobStatus(args: JobStatusArgs, ctx: ToolContext): Promi
     .bind(job.id)
     .first<{ type: string; to_status: string | null; actor: string; created_at: number }>();
   const rider = riderView(job.rider_id);
-  const r = riderById(job.rider_id);
   const now = ctx.now();
-  let tracking: ReturnType<typeof simulateRider> = null;
-  if (r && pickup && dropoff && ['paid', 'dispatched', 'delivered'].includes(job.status)) {
-    const dispatched = await ctx.db
-      .prepare("SELECT created_at FROM job_events WHERE job_id = ? AND to_status = 'dispatched' ORDER BY id DESC LIMIT 1")
-      .bind(job.id)
-      .first<{ created_at: number }>();
-    const w = pickupWindow(now);
-    tracking = simulateRider({
-      jobId: job.id, status: job.status, rider: r, pickup, dropoff,
-      assignedAt: job.rider_assigned_at ?? job.paid_at ?? job.updated_at,
-      dispatchedAt: dispatched?.created_at ?? null,
-      tripMinutes: quote?.duration_s ? quote.duration_s / 60 : null,
-      riderHoursNow: w.now, riderHoursNote: w.note, now,
-    });
-  }
+  const tracking = await riderUpdate(ctx.db, job, now);
+  // The customer's link is our /t/… page (always the live position), not a one-off pin: the model reuses
+  // links from the chat, so the same working link should be the only one it has seen.
+  const track = tracking ? await trackUrl(ctx.publicOrigin, job.id, ctx.config.mcpBearerToken) : null;
   return jobView(job, {
     status_text: job.status === 'paid' && !rider ? 'Paid. A dispatcher is assigning a rider.' : STATUS_TEXT[job.status],
     ...(rider && ['paid', 'dispatched', 'delivered'].includes(job.status) ? { rider } : {}),
     pickup: pickup?.label,
     dropoff: dropoff?.label,
     last_update_minutes_ago: last ? Math.round((now - last.created_at) / 60000) : null,
-    ...(tracking ? { rider_location: tracking, message_for_customer: `${tracking.message}\nLive map: ${tracking.map_url}` } : {}),
+    ...(tracking && track ? { rider_location: tracking, live_map: track, message_for_customer: `${tracking.message}\nLive map: ${track}` } : {}),
     what_to_do:
       job.status === 'awaiting_payment' || job.status === 'payment_failed'
         ? 'If the customer says they have paid, call verify_payment. Otherwise offer the payment link (create_payment_link).'
@@ -325,7 +313,7 @@ export async function getJobStatus(args: JobStatusArgs, ctx: ToolContext): Promi
           : tracking
             ? // In a live run (22 Oct) the model rewrote this reply and made up "Track live: https://zumadispatch.example/track/…",
               // a page that does not exist. The Google Maps link in message_for_customer is the only link it may send.
-              `Reply with message_for_customer word for word. Its Google Maps link (${tracking.map_url}) is the only link you may send: never write any other link, tracking page or URL. Never say you have no live location.`
+              `Reply with message_for_customer word for word. Its live map link (${track}) is the only link you may send: never write any other link, tracking page or URL. Never say you have no live location.`
             : 'Tell the customer the status in one short sentence.',
   });
 }

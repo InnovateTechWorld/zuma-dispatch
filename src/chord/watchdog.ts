@@ -15,7 +15,7 @@ import { acknowledgeHandover, chord, chordError, noticeConfig, sendsAllowed, typ
  *    "Track live: https://zuma.dispatch/track/ZD-F74B2". A sent message can't be taken back, so any link
  *    in Zuma's replies that we didn't issue is flagged on the board for a person to correct.
  *
- * Runs every minute (cron), checking 5 times 12 s apart (runWatchdogLoop). Reads only chats whose last
+ * Runs every minute (cron), checking 4 times 14 s apart (runWatchdogLoop). Reads only chats whose last
  * message is Zuma's, from the last 15 minutes, and waits 8 s after that message; a chat where hand_to_team
  * ran is left to it. Every action is recorded once per Zuma reply (watchdog_events), so nothing runs twice.
  */
@@ -148,16 +148,18 @@ async function once(db: D1Database, threadId: string, replyTs: number, kind: str
 }
 
 /**
- * Cloudflare runs a cron at most once a minute, so each run checks 5 times, 12 s apart: a promised person is
- * handed over within about 8–20 s instead of up to 85 s. A chat is only re-read when it has a new message
+ * Cloudflare runs a cron at most once a minute, so each run checks 4 times, 14 s apart: a promised person is
+ * handed over within about 8–22 s instead of up to 85 s. A chat is only re-read when it has a new message
  * (`seen`), so a quiet minute costs 5 list calls and nothing else, well inside the key's 30 a minute.
  */
 export async function runWatchdogLoop(
   env: Env,
   opts: { rounds?: number; everyMs?: number; sleep?: (ms: number) => Promise<void>; clock?: () => number } = {},
 ): Promise<{ checked: number; actions: string[] }> {
-  const rounds = opts.rounds ?? 5;
-  const everyMs = opts.everyMs ?? 12_000;
+  // Measured in production: 5 checks used 5–7 ms of the free plan's 10 ms CPU per run, too close once a chat
+  // needs reading. 4 checks, 14 s apart, leave room.
+  const rounds = opts.rounds ?? 4;
+  const everyMs = opts.everyMs ?? 14_000;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const clock = opts.clock ?? Date.now;
   const seen = new Map<string, number>();
@@ -182,7 +184,8 @@ export async function runWatchdog(env: Env, now = Date.now(), seen?: Map<string,
   // PUBLIC_ORIGIN=http://127.0.0.1:8787; CHORD_NOTICES_ALLOW_LOCAL=1 opts in, as for payment notices.
   if (!sendsAllowed(env, origin)) return { checked: 0, actions: ['skipped: local server'] };
   const ownHosts = [new URL(origin).hostname];
-  const q = new URLSearchParams({ workspace_id: cfg.workspaceId, control_state: 'agent_active', limit: '25' });
+  // Only the most recent chats matter (15-minute window); a short list keeps each check far below the free plan's 10 ms CPU.
+  const q = new URLSearchParams({ workspace_id: cfg.workspaceId, control_state: 'agent_active', limit: '10' });
   const list = await chord<{ threads?: ThreadRow[] }>(cfg, `/v1/threads?${q}`, 5000);
   if (!list.ok) return { checked: 0, actions: [`list failed: ${chordError(list)}`] };
   const recent = (list.data.threads ?? [])

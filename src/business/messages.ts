@@ -22,17 +22,20 @@ export function afterPaymentTiming(now: number, riderAssigned = false): string {
 export function paymentReceivedMessage(
   job: { id: string; amount_kobo: number; handover_code: string; status?: string; rider_id?: string | null; recipient_name?: string },
   now: number,
+  /** Our /t/… link (src/business/trackLink.ts): always the rider's live position. */
+  track?: string,
 ): string {
   // Short blocks with blank lines between them: it is read on a phone. Names, not roles, where we have them.
   const head = `Payment received: ${formatNaira(job.amount_kobo)} for ${job.id}. Thank you!`;
   const rider = riderById(job.rider_id);
   const code = handoverLines(job, rider);
   if (job.status === 'delivered') return `${head}\n\nIt has been delivered.`;
+  const live = rider && track ? `\nTrack ${riderFirst(rider)} live: ${track}` : '';
   if (job.status === 'dispatched') {
-    return [head, rider ? `${riderLine(rider)} has the package.\n${riderFirst(rider)} (rider): ${riderPhone(rider)}` : 'A rider already has the package.', code].join('\n\n');
+    return [head, rider ? `${riderLine(rider)} has the package.\n${riderFirst(rider)} (rider): ${riderPhone(rider)}${live}` : 'A rider already has the package.', code].join('\n\n');
   }
   const coming = rider
-    ? `${pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now.` : `Your rider is ${riderLine(rider)}.`} ${afterPaymentTiming(now, true)}\n${riderFirst(rider)} (rider): ${riderPhone(rider)}`
+    ? `${pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now.` : `Your rider is ${riderLine(rider)}.`} ${afterPaymentTiming(now, true)}\n${riderFirst(rider)} (rider): ${riderPhone(rider)}${live}`
     : afterPaymentTiming(now, false);
   return [head, coming, code].join('\n\n');
 }
@@ -49,13 +52,14 @@ function handoverLines(job: { handover_code: string; recipient_name?: string }, 
  * When the customer already saw our "Payment received" notice and then asks: confirm briefly, with the
  * rider and the code again, without repeating the whole notice.
  */
-export function paidFollowUp(job: { id: string; handover_code: string; status?: string; rider_id?: string | null; recipient_name?: string }, now: number): string {
+export function paidFollowUp(job: { id: string; handover_code: string; status?: string; rider_id?: string | null; recipient_name?: string }, now: number, track?: string): string {
   if (job.status === 'delivered') return `Yes, ${job.id} is paid and it has been delivered.`;
   const rider = riderById(job.rider_id);
   const who = job.status === 'dispatched'
     ? `${rider ? riderLine(rider) : 'The rider'} has the package and is on the way to the drop-off.`
     : rider ? (pickupWindow(now).now ? `${riderLine(rider)} is on the way to the pickup now.` : `${riderLine(rider)} will collect it. ${pickupWindow(now).note}`) : afterPaymentTiming(now, false);
-  return [`Yes, your payment is confirmed. ${who}${rider ? `\n${riderFirst(rider)} (rider): ${riderPhone(rider)}` : ''}`, handoverLines(job, rider)].join('\n\n');
+  const live = rider && track ? `\nTrack ${riderFirst(rider)} live: ${track}` : '';
+  return [`Yes, your payment is confirmed. ${who}${rider ? `\n${riderFirst(rider)} (rider): ${riderPhone(rider)}${live}` : ''}`, handoverLines(job, rider)].join('\n\n');
 }
 
 /** "bola ahmed" → "Bola Ahmed", for addressing people in messages (stored names keep the customer's spelling). */

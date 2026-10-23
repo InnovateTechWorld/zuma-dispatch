@@ -24,6 +24,7 @@ import {
 } from './jobsShared';
 import { BY_LABEL, dateConditions, orderBy, resolveRange, SORT_LABEL, TIME_PRESETS, timeLabel, watDay, WHEN_LABEL, type DateBy, type Sort, type When } from './listFilters';
 import { home } from './home';
+import { readTrackPath, riderUpdate } from '../business/trackLink';
 import { paymentsPage, systemPage } from './ops';
 export { readFlash } from './flash';
 export { jobCity, listHref, listQuery, searchFilter } from './jobsShared';
@@ -35,6 +36,31 @@ const stateLabel = (p: { lat: number; lng: number }) => {
 
 function toolCtx(env: Env, config: Config, ctx: ExecutionContext, requestId: string, origin: string): ToolContext {
   return { env, config, db: env.DB, requestId, now: () => Date.now(), waitUntil: (p) => ctx.waitUntil(p), publicOrigin: origin, trace: [] };
+}
+
+// ------------------------------------------------------------------ /t/<job>-<code>
+/**
+ * The customer's live tracking link (src/business/trackLink.ts): opens Google Maps at the rider's current
+ * simulated position. Never cached, so each tap shows the position at that moment. A wrong or forged
+ * code, or a job that isn't paid yet, gets a short page instead, never another job's details.
+ */
+export async function trackPage(url: URL, env: Env, config: Config): Promise<Response> {
+  const page1 = (headline: string, detail: string, status: number) =>
+    page({
+      title: 'Track your delivery',
+      status,
+      css: PAY_CSS,
+      body: `${topBar(config.businessName, '<span class="chip">Test mode</span>', null)}
+<main class="wrap pay"><h1>${headline}</h1><p class="pay__detail">${detail}</p></main>`,
+    });
+  const jobId = await readTrackPath(url.pathname, config.mcpBearerToken);
+  if (!jobId) return page1("We couldn't find that delivery", 'Check the link in your WhatsApp chat, or message us there.', 404);
+  const job = await getJob(env.DB, jobId);
+  if (!job) return page1("We couldn't find that delivery", 'Check the link in your WhatsApp chat, or message us there.', 404);
+  if (job.status === 'cancelled') return page1(`${h(job.id)} was cancelled`, 'There is nothing to track. Message us on WhatsApp if that is wrong.', 200);
+  const at = await riderUpdate(env.DB, job, Date.now());
+  if (!at) return page1(`Tracking for ${h(job.id)} starts once it's paid`, 'A rider is assigned as soon as your payment is confirmed. Message us on WhatsApp to pay or check.', 200);
+  return new Response(null, { status: 302, headers: { Location: at.map_url, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex' } });
 }
 
 // ------------------------------------------------------------------ /pay/return
