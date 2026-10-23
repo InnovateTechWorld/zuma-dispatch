@@ -1,6 +1,6 @@
 # TSG Labs take-home: Zuma Dispatch
 
-**Role:** Forward-deployed Engineering
+**Joshua Obimba** · **Role:** Forward-deployed Engineering
 
 ## Problem statement
 
