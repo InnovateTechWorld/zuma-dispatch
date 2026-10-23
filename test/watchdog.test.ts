@@ -145,3 +145,12 @@ describe('runWatchdog against Chord (mocked) and SQLite', () => {
     expect((await runWatchdog(env, NOW)).actions).toEqual(['skipped: CHORD_API_KEY not set']);
   });
 });
+
+it('a local server never touches real chats', async () => {
+  const { env } = d1();
+  const calls: string[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (i) => (calls.push(String(i)), Response.json({ threads: [] })));
+  const local = { ...env, CHORD_API_KEY: 'chord_live_' + 'x'.repeat(43), CHORD_API_BASE: 'https://chord.test', CHORD_WORKSPACE_ID: 'ws-1', PUBLIC_ORIGIN: 'http://127.0.0.1:8787' } as never;
+  expect(await runWatchdog(local, 10_000_000)).toEqual({ checked: 0, actions: ['skipped: local server'] });
+  expect(calls).toEqual([]);
+});

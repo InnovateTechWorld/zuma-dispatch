@@ -1,7 +1,7 @@
 import type { Env } from '../env';
 import { log } from '../lib/log';
 import { HANDOVER_REASON_PREFIX } from './handover';
-import { acknowledgeHandover, chord, chordError, noticeConfig, type ThreadRow } from './notices';
+import { acknowledgeHandover, chord, chordError, noticeConfig, sendsAllowed, type ThreadRow } from './notices';
 
 /**
  * A safety net for two things the model did in a live run (23 Oct 2026) that no instruction can fully
@@ -133,6 +133,9 @@ export async function runWatchdog(env: Env, now = Date.now()): Promise<{ checked
   const cfg = noticeConfig(env);
   if (!cfg) return { checked: 0, actions: ['skipped: CHORD_API_KEY not set'] };
   const origin = env.PUBLIC_ORIGIN?.trim() || 'https://zuma-dispatch.obimz123.workers.dev';
+  // A local server must never take over real chats (23 Oct: a local test run did). Local .env sets
+  // PUBLIC_ORIGIN=http://127.0.0.1:8787; CHORD_NOTICES_ALLOW_LOCAL=1 opts in, as for payment notices.
+  if (!sendsAllowed(env, origin)) return { checked: 0, actions: ['skipped: local server'] };
   const ownHosts = [new URL(origin).hostname];
   const q = new URLSearchParams({ workspace_id: cfg.workspaceId, control_state: 'agent_active', limit: '25' });
   const list = await chord<{ threads?: ThreadRow[] }>(cfg, `/v1/threads?${q}`, 5000);
